@@ -158,3 +158,8 @@ body{background:var(--bg);color:var(--bone);font-family:var(--sans);-webkit-tap-
 .scrim{position:fixed;opacity:1}
 pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0}
 @media (pointer:coarse){.acct .acts button,.sbtn,.chips button{min-height:40px}}
+.sheet-like{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:2px 14px}
+.sheet-like .kv{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.sheet-like .kv:last-child{border-bottom:0}
+.sheet-like .kv span{color:var(--muted)}
+.sheet-like .kv b{font-weight:600;text-align:right;overflow-wrap:anywhere}

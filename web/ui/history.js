@@ -1,0 +1,55 @@
+// History: every operation, logged when sent and verified when the bank's SMS arrives.
+// The code shown is the display form, with any key masked; the dialed form is never kept.
+import { last4 } from "../core/money.js";
+import { h, icon, when } from "./dom.js";
+
+const STATE = { verified: ["✓ verificada", "ok"], failed: ["fallida", "pend"] };
+
+function title(a) {
+  if (a.op === "45") return `Transferencia · ${a.amount} ${a.currency}`;
+  return `Consulta de saldo${a.currency ? ` · Tarjeta ${a.currency}` : ""}`;
+}
+
+/** One history row; the home screen's recent activity uses it too. */
+export function row(ctx, a) {
+  const [label, cls] = STATE[a.state] ?? ["○ sin verificar", "pend"];
+  const detail = a.op === "45" ? `a ····${last4(a.to)}` : (a.available ?? a.reply ?? "");
+  return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
+    icon(a.op === "45" ? "send" : "card", "ic"),
+    h("div", { class: "tx" }, h("b", {}, title(a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
+    h("span", { class: `st ${cls}` }, label),
+    h("span", { class: "chev" }, "›"),
+  );
+}
+
+function detail(ctx, a) {
+  const kv = (k, v) => (v === null || v === undefined || v === "" ? null : h("div", { class: "kv" }, h("span", {}, k), h("b", {}, v)));
+  return h("div", { id: "detail" },
+    h("div", { class: "sbar" },
+      h("button", { class: "back", "aria-label": "Volver", onclick: () => ctx.go("history") }, "‹"),
+      h("div", {}, h("h2", {}, title(a)), h("div", { class: "sub" }, when(a.startedAt)))),
+    h("div", { class: "sheet-like" },
+      kv("Solicitada", when(a.startedAt)),
+      kv("Verificada por SMS", a.verifiedAt ? when(a.verifiedAt) : null),
+      kv("Estado", (STATE[a.state] ?? ["sin verificar"])[0]),
+      kv("Fallo", a.failureCode !== null ? `código ${a.failureCode}` : null),
+      kv("Destino", a.to ? `····${last4(a.to)}` : null),
+      kv("Transacción", a.transactionId),
+      kv("Saldo contable", a.accounting),
+      kv("Saldo disponible", a.available)),
+    a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
+    a.code ? h("details", { class: "codefold" }, h("summary", {}, "Ver el código que marcó Ajé"), h("div", { class: "cc" }, a.code)) : null,
+  );
+}
+
+export function renderHistory(ctx, r) {
+  const attempts = ctx.store.state.attempts;
+  if (r.param) {
+    const a = attempts.find((x) => String(x.id) === r.param);
+    if (a) return detail(ctx, a);
+  }
+  return h("div", { id: "history" },
+    h("div", { class: "topbar" }, h("div", { class: "t" }, "Historial")),
+    attempts.length ? attempts.map((a) => row(ctx, a)) : h("div", { class: "empty" }, "Aún no hay operaciones."),
+  );
+}

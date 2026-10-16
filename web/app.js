@@ -5,6 +5,7 @@ import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
 import { renderHome } from "./ui/deck.js";
+import { renderHistory } from "./ui/history.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet } from "./ui/sheets.js";
@@ -21,6 +22,7 @@ const SCREENS = {
   home: { render: renderHome, live: true },
   settings: { render: renderSettings, live: true },
   transfer: { render: renderTransfer },
+  history: { render: renderHistory, live: true },
   pay: { render: soon("Pagar un servicio") },
   qr: { render: soon("Pagar y cobrar por QR") },
 };

@@ -47,7 +47,11 @@ export function renderSettings(ctx) {
           h("span", {}, "Compilación de desarrollo. Los textos del banco salen con cada dígito cambiado por #.")),
         h("button", { class: `toggle${s.telemetry ? " on" : ""}`, "aria-pressed": s.telemetry ? "true" : "false",
           "aria-label": "Enviar telemetría", onclick: () => store.update({ telemetry: !s.telemetry }) })),
-      ctx.extraSettings?.(ctx),
+      s.telemetry ? h("div", { id: "telemetry-history" },
+        h("div", { class: "group" }, "Lo que se ha enviado"),
+        ctx.telemetry.history().slice(0, 50).map((x) => h("div", { class: "set-row" },
+          h("div", { class: "tx" }, h("b", {}, `${x.event.event} · ${x.sent ? "recibido" : "pendiente"}`),
+            h("pre", { class: "ev" }, JSON.stringify(x.event, null, 2)))))) : null,
     ] : null,
 
     h("div", { class: "empty" }, `Ajé ${config.app} · ${ctx.bridge.kind === "mock" ? "simulador" : "Android"}`),

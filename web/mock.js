@@ -80,16 +80,20 @@ export function createMock({ delayMs = 800, sims = SIMS } = {}) {
 function panel(mock) {
   const box = document.createElement("details");
   box.id = "mock-panel";
-  box.style.cssText = "position:fixed;right:8px;top:8px;z-index:1000;width:min(280px,calc(100vw - 16px));" +
-    "background:#211710;color:#f1e8d8;border:1px solid #3a2a1b;border-radius:10px;padding:6px 10px;font:12px sans-serif";
-  box.innerHTML = '<summary style="cursor:pointer">mock · SMS</summary>' +
+  box.style.cssText = "position:fixed;right:8px;top:8px;z-index:1000;max-width:calc(100vw - 16px);" +
+    "background:#211710;color:#f1e8d8;border:1px solid #3a2a1b;border-radius:10px;padding:4px 9px;font:11px sans-serif;opacity:.85";
+  box.innerHTML = '<summary style="cursor:pointer">SMS</summary>' +
     '<div style="display:flex;gap:6px;margin:6px 0"><button data-sms="balance">Saldo</button>' +
     '<button data-sms="transfer">Transferencia</button><button data-sms="auth">Autenticado</button></div>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
+  box.addEventListener("toggle", () => (box.style.width = box.open ? "280px" : ""));
   const text = box.querySelector("#mock-sms");
   for (const b of box.querySelectorAll("[data-sms]")) b.onclick = () => (text.value = SAMPLES[b.dataset.sms.toUpperCase()]);
-  box.querySelector("#mock-send").onclick = () => mock.injectSms(BANK, text.value);
+  box.querySelector("#mock-send").onclick = () => {
+    mock.injectSms(BANK, text.value);
+    box.open = false;
+  };
   if (document.body) document.body.append(box);
   else document.addEventListener("DOMContentLoaded", () => document.body.append(box));
 }

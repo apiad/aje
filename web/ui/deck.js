@@ -2,6 +2,7 @@
 import { accounts } from "../core/accounts.js";
 import { BANKS, MOBILE_PLANS } from "../core/money.js";
 import { h, icon } from "./dom.js";
+import { row } from "./history.js";
 
 // The front account survives re-renders and screen changes.
 let frontId = null;
@@ -50,6 +51,7 @@ export function renderHome(ctx) {
     h("button", { "data-go-acct": a.id, "aria-label": a.label, onclick: () => setFront(a.id) })));
   const qaLabel = h("div", { class: "section-label" });
   const qa = h("div", { class: "qa", id: "qa" });
+  const recent = h("div", { id: "recent" });
 
   function place() {
     const i = list.findIndex((a) => a.id === frontId);
@@ -68,6 +70,11 @@ export function renderHome(ctx) {
     qa.replaceChildren(...ACTIONS[a.kind].map(([action, label, ic]) =>
       h("button", { class: action === "soon" ? "soon" : null, "data-qa": action, onclick: () => action !== "soon" && ctx.act(action, a) },
         icon(ic), h("span", {}, label))));
+    const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.currency === a.currency).slice(0, 3) : [];
+    recent.replaceChildren(...(mine.length ? [
+      h("div", { class: "section-label" }, "Actividad reciente", h("a", { onclick: () => ctx.go("history") }, "Ver todo")),
+      ...mine.map((x) => row(ctx, x)),
+    ] : []));
   }
   function setFront(id) {
     frontId = id;
@@ -131,5 +138,6 @@ export function renderHome(ctx) {
     ),
     qaLabel,
     qa,
+    recent,
   );
 }

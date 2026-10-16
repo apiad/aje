@@ -74,7 +74,21 @@ def mobile_balance(page):
     expect(line.locator(".bal")).to_have_text("185.00 CUP", timeout=10_000)
 
 
-STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance]
+def history_and_verified_transfer(page):
+    transfer_refuses_decimals(page)
+    page.click("#mock-panel summary")
+    page.click('#mock-panel [data-sms="transfer"]')
+    page.click("#mock-send")
+    expect(page.locator("#sheet .status")).to_contain_text("Verificada", timeout=10_000)
+    page.keyboard.press("Escape")
+    page.click('nav a[href="#/history"]')
+    first = page.locator("#history .row").first
+    expect(first).to_have_attribute("data-state", "verified", timeout=10_000)
+    first.click()
+    expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
+
+
+STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer]
 
 
 def main():
