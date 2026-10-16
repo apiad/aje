@@ -23,11 +23,12 @@ const MEMORY_IDB = `(() => {
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: { open } });
 })();`;
 
-// The page reports its current screen, so the agent can read where the person is.
 // Chrome reports "ResizeObserver loop completed" as an error when the host resizes the frame;
 // it is benign, so it is kept from reaching aegis's error reporter.
 const QUIET_RESIZE = 'addEventListener("error", (e) => { if (/ResizeObserver loop/.test(e.message)) e.stopImmediatePropagation(); }, true);';
-const aegis = flag === "--aegis" ? '<script src="/static/js/artifact.js"></script>\n<script>\n' + MEMORY_IDB + "\n" + QUIET_RESIZE + "\n" +
+// The filter goes before artifact.js, so it is registered ahead of aegis's own error listener.
+// The page reports its current screen, so the agent can read where the person is.
+const aegis = flag === "--aegis" ? `<script>${QUIET_RESIZE}</script>\n` + '<script src="/static/js/artifact.js"></script>\n<script>\n' + MEMORY_IDB + "\n" +
   "aegis.ready(() => { const at = () => aegis.state({ screen: location.hash || \"#/home\" }); at(); addEventListener(\"hashchange\", at); });\n" +
   "</script>\n" : "";
 
