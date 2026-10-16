@@ -88,7 +88,28 @@ def history_and_verified_transfer(page):
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
 
-STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer]
+def double_tap_transfers_once(page):
+    page.goto(page.url.split("#")[0] + "#/transfer?from=CUP")
+    page.fill("#tr-to", "9200950000000001")
+    page.fill("#tr-amount", "77")
+    page.dblclick("#tr-submit")
+    expect(page.locator("#sheet .status")).to_contain_text("marcador")
+    page.keyboard.press("Escape")
+    page.click('nav a[href="#/history"]')
+    expect(page.locator("#history .row", has_text="Transferencia · 77 CUP")).to_have_count(1)
+
+
+def refused_login(page):
+    page.goto(page.url.split("#")[0].split("?")[0] + "?mock=refuse-login#/home")
+    page.locator('#deck .acct[data-id="card:CUP"] [data-action="balance"]').click()
+    page.fill("#pin", "1234")
+    page.click("#pin-submit")
+    expect(page.locator("#sheet")).to_contain_text("Clave incorrecta")
+    expect(page.locator("#pin-retry")).to_be_visible()
+
+
+STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+         double_tap_transfers_once, refused_login]
 
 
 def main():

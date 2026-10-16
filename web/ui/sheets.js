@@ -62,6 +62,7 @@ export async function balanceSheet(ctx, account) {
   let shownId = null;
   let phase = "query"; // query | login | waiting
   let loginError = null;
+  let loginReply = null;
   const latest = () => ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && (shownId === null || a.id >= shownId));
 
   const sheet = openSheet(ctx, () => {
@@ -82,6 +83,8 @@ export async function balanceSheet(ctx, account) {
         loginError = null;
         sheet.redraw();
         const r = await ctx.workflow.login(key, { retryCurrency: account.currency });
+        loginReply = r.ok ? r.reply : null;
+        sheet.redraw();
         if (!r.ok) {
           phase = "login";
           loginError = `El teléfono no la envió (código ${r.failureCode}).`;
@@ -95,8 +98,17 @@ export async function balanceSheet(ctx, account) {
       );
       queueMicrotask(() => pin.focus());
     } else if (phase === "waiting" && (!a || a.id === shownId)) {
+      // The bank's own words: a wrong key or a blocked card says so here, and no SMS will follow.
       parts.push(h("div", { class: "reply pending" },
-        h("div", { class: "k status" }, h("span", { class: "dot" }), "Esperando el SMS del banco; luego Ajé repetirá la consulta.")));
+        h("div", { class: "k status" }, h("span", { class: "dot" }), "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
+        loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
+      if (loginReply) {
+        parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
+          phase = "login";
+          loginReply = null;
+          sheet.redraw();
+        } }, "Volver a escribir la clave"));
+      }
     } else {
       parts.push(...attemptView(a));
     }

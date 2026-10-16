@@ -21,7 +21,9 @@ const BANK = "PAGOxMOVIL";
 
 const SIMS = [{ subId: 3, slot: 0, carrier: "Cubacel" }, { subId: 4, slot: 1, carrier: "Cubacel" }];
 
-export function createMock({ delayMs = 800, sims = SIMS } = {}) {
+const MODE = typeof location === "undefined" ? "" : new URLSearchParams(location.search).get("mock") ?? "";
+
+export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   let session = false;
   let handler = null;
   const buffered = [];
@@ -39,6 +41,7 @@ export function createMock({ delayMs = 800, sims = SIMS } = {}) {
   // The bank answers card operations with "debe autenticarse" until op 40 opens a session.
   function reply(code) {
     if (code.startsWith("*444*40*")) {
+      if (mode === "refuse-login") return "Clave incorrecta";
       session = true;
       later(() => emit(BANK, SAMPLES.AUTH));
       return "Usted esta siendo autenticado";

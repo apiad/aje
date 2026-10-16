@@ -9,7 +9,7 @@ import { fakeBridge, SMS, POSTPAID_REPLY } from "./helpers.js";
 const MIN = 60_000;
 const tick = () => new Promise((r) => setImmediate(r));
 
-async function world(replies = [], stateBackend = memoryBackend()) {
+async function world(replies = [], stateBackend = memoryBackend(), bridgeOptions = {}) {
   const clock = { t: 1_000_000 };
   const now = () => clock.t;
   const store = await openStore(stateBackend, { now, newId: () => "install-1" });
@@ -21,7 +21,7 @@ async function world(replies = [], stateBackend = memoryBackend()) {
     store, backend: telemetryBackend, now, userAgent: "Mozilla/5.0 (Linux; Android 14; Test Phone)",
     fetch: async (url, init) => { posted.push(init.body); return { ok: true, status: 204 }; },
   });
-  const bridge = fakeBridge(replies);
+  const bridge = fakeBridge(replies, bridgeOptions);
   const wf = createWorkflow({ bridge, store, telemetry, now, seed: () => 61 });
   const sms = (body, sender = "PAGOxMOVIL") => wf.handleSms({ sender, body, receivedAt: clock.t });
   return { clock, now, store, telemetry, telemetryBackend, stateBackend, bridge, wf, posted, sms };
@@ -83,6 +83,14 @@ test("a transfer is dialed and the bank's SMS verifies it", async () => {
   await w.sms(SMS.TRANSFER);
   assert.equal(w.store.state.attempts[0].state, "verified");
   assert.equal(w.store.state.attempts[0].transactionId, "AB0000XYZ0001");
+});
+
+test("a transfer whose dial fails is marked failed, not left pending", async () => {
+  const w = await world([], memoryBackend(), { dialFails: true });
+  const a = await w.wf.transfer("CUP", "9200950000000001", 100);
+  assert.equal(a.state, "failed");
+  assert.equal(w.store.state.attempts[0].state, "failed");
+  assert.equal(w.store.state.attempts[0].failureCode, -100);
 });
 
 test("a transfer SMS for another card verifies nothing", async () => {

@@ -25,9 +25,17 @@ export function renderTransfer(ctx, r) {
     const n = parseAmount(amount.value);
     if (n === null) return fail("El monto es un número entero, sin decimales.");
     error.hidden = true;
-    const attempt = await ctx.workflow.transfer(currency, pan, n);
-    transferSheet(ctx, attempt, `Transferencia · ${n} ${currency}`);
+    button.disabled = true;
+    try {
+      const attempt = await ctx.workflow.transfer(currency, pan, n);
+      if (attempt.state === "failed") return fail("El teléfono no pudo abrir el marcador.");
+      transferSheet(ctx, attempt, `Transferencia · ${n} ${currency}`);
+    } finally {
+      button.disabled = false;
+    }
   }
+
+  const button = h("button", { id: "tr-submit", class: "btn gold", onclick: (e) => !e.currentTarget.disabled && submit() }, "Transferir");
 
   return h("div", { id: "transfer" },
     h("div", { class: "sbar" },
@@ -37,7 +45,7 @@ export function renderTransfer(ctx, r) {
     h("div", { class: "field" }, h("label", { for: "tr-amount" }, `Monto en ${currency}`), amount,
       h("div", { class: "hint" }, "Un número entero, sin decimales.")),
     error,
-    h("button", { id: "tr-submit", class: "btn gold", onclick: submit }, "Transferir"),
+    button,
     h("div", { class: "warn" }, "La transferencia termina en el marcador del teléfono, donde confirmas con ", h("b", {}, "1"), "."),
   );
 }

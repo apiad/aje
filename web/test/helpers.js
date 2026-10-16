@@ -25,7 +25,7 @@ export const POSTPAID_REPLY =
  * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
  * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
  */
-export function fakeBridge(replies = []) {
+export function fakeBridge(replies = [], { dialFails = false } = {}) {
   const calls = [];
   const queue = [...replies];
   return {
@@ -37,6 +37,7 @@ export function fakeBridge(replies = []) {
     },
     async dial(code) {
       calls.push({ method: "dial", args: { code } });
+      if (dialFails) throw new Error("SecurityException");
     },
   };
 }

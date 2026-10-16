@@ -9,11 +9,21 @@ function fakeNative() {
   return { native, sent, push };
 }
 
-test("connect says ready to the native object", async () => {
+// Review: the shell deletes its SMS queue on ready, so ready waits until the page can save them.
+test("ready is sent when the first SMS handler registers, not before", async () => {
   const f = fakeNative();
   const b = await connect({ native: f.native });
   assert.equal(b.kind, "native");
-  assert.equal(f.sent[0].method, "ready");
+  assert.equal(f.sent.length, 0);
+  b.onSms(() => {});
+  b.onSms(() => {});
+  assert.deepEqual(f.sent.map((m) => m.method), ["ready"]);
+});
+
+test("a call the shell never answers rejects after the timeout", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native, timeoutMs: 10 });
+  await assert.rejects(b.sendUssd(3, "*222#"), /no answer/);
 });
 
 test("sendUssd posts a request and resolves with its result", async () => {

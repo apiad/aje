@@ -64,13 +64,18 @@ async function boot() {
   const links = NAV.map(([name, label, ic]) => h("a", { href: `#/${name}`, "data-nav": name }, icon(ic), label));
   mount(root, h("div", { style: "display:contents" }, view, h("nav", { class: "nav" }, links)));
 
+  const inFlight = new Set();
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
-      if (action === "balance") balanceSheet(ctx, account).catch(crash);
-      if (action === "transfer") ctx.go(`transfer?from=${account.currency}`);
-      if (action === "mobile-balance") mobileBalanceSheet(ctx, account).catch(crash);
+      if (action === "transfer") return ctx.go(`transfer?from=${account.currency}`);
+      const run = { balance: balanceSheet, "mobile-balance": mobileBalanceSheet }[action];
+      // A second tap while the USSD is in flight would send it again.
+      const key = `${action}:${account.id}`;
+      if (!run || inFlight.has(key)) return;
+      inFlight.add(key);
+      run(ctx, account).catch(crash).finally(() => inFlight.delete(key));
     },
     route,
   };

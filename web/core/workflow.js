@@ -79,8 +79,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op: "45", currency, to: toPan, amount,
     });
     telemetry.event("ussd_sent", { op: "45", bank: settings().bank, via: "dialer" });
-    await bridge.dial(dial(ussd, config, s));
-    return attempt;
+    try {
+      await bridge.dial(dial(ussd, config, s));
+    } catch (e) {
+      // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      telemetry.event("ussd_reply", { op: "45", ok: false, failure_code: -100, error: e.message });
+    }
+    return current(attempt.id);
   }
 
   /** Asks a line for its balance with its plan's code, and keeps the figure for its card. */

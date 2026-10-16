@@ -120,12 +120,18 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
         JSONArray()
     }
 
-    private fun reply(proxy: JavaScriptReplyProxy, id: Int, result: Any) {
-        proxy.postMessage(JSONObject().put("id", id).put("result", result).toString())
-    }
+    private fun reply(proxy: JavaScriptReplyProxy, id: Int, result: Any) =
+        post(proxy, JSONObject().put("id", id).put("result", result))
 
-    private fun fail(proxy: JavaScriptReplyProxy, id: Int, error: String) {
-        proxy.postMessage(JSONObject().put("id", id).put("error", error).toString())
+    private fun fail(proxy: JavaScriptReplyProxy, id: Int, error: String) =
+        post(proxy, JSONObject().put("id", id).put("error", error))
+
+    // A USSD callback can land after its page is gone; the answer then has nowhere to go.
+    private fun post(proxy: JavaScriptReplyProxy, message: JSONObject) {
+        try {
+            proxy.postMessage(message.toString())
+        } catch (_: Exception) {
+        }
     }
 
     companion object {
