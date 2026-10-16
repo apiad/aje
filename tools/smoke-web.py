@@ -98,6 +98,8 @@ def mobile_balance(page):
     line.locator('[data-action="mobile-balance"]').click()
     expect(page.locator("#sheet .spin")).to_be_visible()
     expect(line.locator(".bal")).to_have_text("185,00 CUP", timeout=10_000)
+    for stat, text in [("data", "3,2 GB"), ("voice", "1 h 20 min"), ("sms", "100"), ("cal", "2/2")]:
+        expect(line.locator(f'[data-stat="{stat}"]')).to_have_text(text)
     expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
 
 

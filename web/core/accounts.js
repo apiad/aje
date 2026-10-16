@@ -13,7 +13,7 @@ export function accounts(state, sims) {
   }));
   const lines = sims.map(({ subId, slot, carrier }) => ({
     kind: "line", id: `line:${subId}`, subId, slot, carrier, label: `SIM ${slot + 1} · ${carrier}`,
-    plan: plans[subId] ?? "PREPAGO", balance: state.mobileBalances[subId] ?? null,
+    plan: plans[subId] ?? "PREPAGO", balance: state.mobileBalances[subId] ?? null, details: state.mobileDetails?.[subId] ?? null,
   }));
   return [...cards, ...lines];
 }

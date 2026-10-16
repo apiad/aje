@@ -32,6 +32,26 @@ export function amount(text) {
   return [`${m[1]}${whole}${m[3] ? `,${m[3]}` : ""}`, h("small", {}, ` ${m[4]}`)];
 }
 
+// "3.20 GB" -> "3,2 GB", "180.00 CUP" -> "180 CUP"; whole numbers are left alone.
+const short = (n) => n.replace(/^(\d+)[.,](\d*?)0*( .*)$/, (_, i, f, u) => `${i}${f ? `,${f}` : ""}${u}`);
+const minutes = (hms) => {
+  const [hh, mm] = hms.split(":").map(Number);
+  return hh ? `${hh} h${mm ? ` ${mm} min` : ""}` : `${mm} min`;
+};
+const day = (dmy) => dmy.split("-").slice(0, 2).map(Number).join("/");
+
+/** A line's figures as icons: data, voice, SMS and the date the balance expires. */
+function stats(d) {
+  const items = [
+    d.data && ["data", short(d.data)],
+    // Postpaid has no "Saldo": its voice balance is the card's big figure, so it is not repeated here.
+    d.voice && d.voice.includes(":") && ["voice", minutes(d.voice)],
+    d.sms && ["sms", d.sms.includes("CUP") ? short(d.sms) : d.sms],
+    d.expires && ["cal", day(d.expires)],
+  ].filter(Boolean);
+  return h("div", { class: "stats" }, items.map(([ic, text]) => h("span", { "data-stat": ic }, icon(ic), text)));
+}
+
 function cardFace(a, ctx) {
   const kind = a.kind === "card" ? `Tarjeta · ${a.currency}` : `Línea · ${a.carrier || "Cubacel"}`;
   const no = a.kind === "card" ? BANKS[a.bank].name : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
@@ -44,7 +64,7 @@ function cardFace(a, ctx) {
     ),
     h("div", {},
       a.balance ? h("div", { class: "bal" }, ...amount(a.balance)) : h("div", { class: "bal none" }, "Toca Saldo para consultarlo"),
-      h("div", { class: "no" }, no),
+      a.kind === "line" && a.details ? stats(a.details) : h("div", { class: "no" }, no),
     ),
   );
 }

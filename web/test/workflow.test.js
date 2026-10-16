@@ -107,6 +107,9 @@ test("the mobile balance dials the line's plan and keeps the figure", async () =
   assert.deepEqual(w.bridge.calls[0].args, { subId: 3, code: "*111#" });
   assert.equal(r.value, "180.00 CUP");
   assert.equal(w.store.state.mobileBalances[3], "180.00 CUP");
+  assert.deepEqual(w.store.state.mobileDetails[3], {
+    balance: null, data: "5000 MB", voice: "180.00 CUP", sms: "20.00 CUP", activeUntil: null, expires: null, at: w.clock.t,
+  });
 });
 
 // Review focus 1: the SMS arrives after the app was killed behind the dialer.

@@ -1,6 +1,6 @@
 // The bank operations the app runs, and what each bank SMS does to them.
 import { randomSeed } from "./encoder.js";
-import { MOBILE_PLANS, parseMobileBalance } from "./money.js";
+import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails } from "./money.js";
 import { balance as balanceCode, login as loginCode, needsLogin, transfer as transferCode } from "./ops.js";
 import { BANKISH, parseBankSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
@@ -119,7 +119,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const r = await send(op, subId, code);
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
     const value = parseMobileBalance(r.reply);
-    if (value) await store.setMobileBalance(subId, value);
+    if (value) await store.setMobileBalance(subId, value, parseMobileDetails(r.reply));
     return { ok: true, value, reply: r.reply };
   }
 

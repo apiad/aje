@@ -26,7 +26,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const loaded = await backend.load();
   const defaults = {
     settings: { subId: -1, bank: "METROPOLITANO", currency: "CUP", enabledCurrencies: ["CUP", "CUC", "USD"], plans: {}, telemetry: false },
-    attempts: [], mobileBalances: {}, authenticatedAt: null, retryBalance: null, installId: null, seenSms: [],
+    attempts: [], mobileBalances: {}, mobileDetails: {}, authenticatedAt: null, retryBalance: null, installId: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -102,8 +102,9 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       return at - pending.startedAt;
     },
 
-    async setMobileBalance(subId, value) {
+    async setMobileBalance(subId, value, details = null) {
       state.mobileBalances = { ...state.mobileBalances, [subId]: value };
+      if (details) state.mobileDetails = { ...state.mobileDetails, [subId]: { ...details, at: now() } };
       await commit();
     },
 
