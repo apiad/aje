@@ -16,7 +16,15 @@ fixtures or commits. Test fixtures copy the layout of real texts with made-up va
 
 `make test` is green: the Node tests of `web/`, including the 1600 encoder vectors.
 A change to the interface also passes `make smoke`, and a change to the app builds
-with `make apk`. The build host has no radio: anything about telephony or SMS is
+with `make apk`.
+
+The interface is iterated on in the browser, never on the phone. Moving the logic to
+JavaScript exists so that a screen can change many times an hour and the APK is
+almost certain to work. Build `make preview` (one HTML page with the mock) and show
+that page to the maintainer; an aegis session sends it as a live artifact with
+`node tools/build-preview.mjs <artifact path> --aegis`. Do not send an APK for a
+change to `web/`. An APK goes out only when `app/` changed or a release is cut, and
+then with a short list of what only a phone can check. The build host has no radio: anything about telephony or SMS is
 verified on a phone, and a report says which of the two a claim came from.
 
 ## Where things live
