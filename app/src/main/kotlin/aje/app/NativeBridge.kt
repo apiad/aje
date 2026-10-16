@@ -23,9 +23,9 @@ private val PERMISSIONS = arrayOf(
 private val USSD = Regex("""^\*[0-9*#]+#$""")
 
 /**
- * The five native primitives, over the message channel the page sees as `ajeNative`
+ * The six native primitives, over the message channel the page sees as `ajeNative`
  * (protocol in web/bridge.js). None of them encodes, parses or decides anything.
- * Nothing here logs a code: a login code carries the bank key.
+ * Nothing here logs a code or a secret: a login code and a saved secret carry the bank key.
  */
 class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessageListener {
     private var pushProxy: JavaScriptReplyProxy? = null
@@ -59,6 +59,15 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                 "requestPermissions" -> {
                     permissionReply = replyProxy to id
                     activity.permissions.launch(PERMISSIONS)
+                }
+                "secretStatus" -> reply(replyProxy, id, SecretStore.status(activity, name(args)))
+                "secretSave" -> SecretStore.save(activity, name(args), args.getString("value"), args.optInt("days", 180)) {
+                    reply(replyProxy, id, it)
+                }
+                "secretLoad" -> SecretStore.load(activity, name(args)) { reply(replyProxy, id, it ?: JSONObject.NULL) }
+                "secretForget" -> {
+                    SecretStore.forget(activity, name(args))
+                    reply(replyProxy, id, JSONObject.NULL)
                 }
                 "ready" -> {
                     pushProxy = replyProxy
@@ -101,6 +110,12 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
     fun detach() {
         pushProxy = null
         if (live === this) live = null
+    }
+
+    private fun name(args: JSONObject): String {
+        val name = args.optString("name")
+        require(name.matches(Regex("""^[a-z]+:[A-Za-z0-9_]+$"""))) { "malformed secret name" }
+        return name
     }
 
     private fun code(args: JSONObject): String {

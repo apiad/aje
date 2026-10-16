@@ -1,7 +1,7 @@
-// The five native primitives, over the message channel the WebView shell injects as
+// The six native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
 /** How long a USSD may go unanswered; some phones never call back. */

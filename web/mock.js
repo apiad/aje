@@ -1,4 +1,4 @@
-// The five native primitives, fake, for designing in a browser. Not shipped in the APK.
+// The six native primitives, fake, for designing in a browser. Not shipped in the APK.
 // The texts follow the layout of real bank and ETECSA texts; every number in them is made up.
 
 const SAMPLES = {
