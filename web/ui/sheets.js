@@ -60,15 +60,31 @@ function attemptView(a) {
  */
 export async function balanceSheet(ctx, account) {
   let shownId = null;
-  let phase = "query"; // query | login | waiting
+  let phase = "query"; // query | unlocking | login | waiting
   let loginError = null;
   let loginReply = null;
+  let saved = { available: false, saved: false };
+  let usedSaved = false;
+  let remember = true;
   const latest = () => ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && (shownId === null || a.id >= shownId));
+
+  // Both login paths end here: the USSD went out, or the phone could not send it.
+  function afterLogin(r) {
+    loginReply = r.ok ? r.reply : null;
+    if (!r.ok) {
+      phase = "login";
+      loginError = `El teléfono no la envió (código ${r.failureCode}).`;
+    }
+    sheet.redraw();
+  }
 
   const sheet = openSheet(ctx, () => {
     const a = latest();
     const parts = [h("h3", {}, `Saldo · ${account.label}`)];
-    if (phase === "login") {
+    if (phase === "unlocking") {
+      parts.push(h("div", { class: "reply pending" },
+        h("div", { class: "k status" }, h("span", { class: "dot" }), "Desbloquea la clave guardada con tu huella o el bloqueo del teléfono.")));
+    } else if (phase === "login") {
       const pin = h("input", { id: "pin", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Clave del banco" });
       const err = h("div", { class: "err" }, loginError ?? "");
       const submit = async () => {
@@ -81,19 +97,22 @@ export async function balanceSheet(ctx, account) {
         }
         phase = "waiting";
         loginError = null;
+        usedSaved = false;
         sheet.redraw();
-        const r = await ctx.workflow.login(key, { retryCurrency: account.currency });
-        loginReply = r.ok ? r.reply : null;
-        sheet.redraw();
-        if (!r.ok) {
-          phase = "login";
-          loginError = `El teléfono no la envió (código ${r.failureCode}).`;
-          sheet.redraw();
-        }
+        afterLogin(await ctx.workflow.login(key, { retryCurrency: account.currency, remember: saved.available && remember }));
       };
+      const keep = saved.available ? h("label", { class: "remember" },
+        h("button", { id: "pin-remember", class: `toggle${remember ? " on" : ""}`, "aria-pressed": remember ? "true" : "false", onclick: () => {
+          remember = !remember;
+          keep.querySelector(".toggle").classList.toggle("on", remember);
+          keep.querySelector(".toggle").setAttribute("aria-pressed", String(remember));
+        } }),
+        h("span", {}, h("b", {}, "Recordarla en este teléfono"), "180 días; cada uso pide tu huella o el bloqueo del teléfono.")) : null;
       parts.push(
-        h("p", { class: "lead" }, "El banco pide abrir sesión. Escribe la clave de tu tarjeta; Ajé no la guarda."),
-        h("div", { class: "field" }, pin), err,
+        h("p", { class: "lead" }, saved.available
+          ? "El banco pide abrir sesión. Escribe la clave de tu tarjeta."
+          : "El banco pide abrir sesión. Escribe la clave de tu tarjeta; Ajé no la guarda."),
+        h("div", { class: "field" }, pin), err, keep,
         h("button", { id: "pin-submit", class: "btn gold", onclick: submit }, "Autenticarse"),
       );
       queueMicrotask(() => pin.focus());
@@ -104,6 +123,9 @@ export async function balanceSheet(ctx, account) {
         loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
       if (loginReply) {
         parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
+          // The bank turned down the saved key: it is wrong now, so it goes.
+          if (usedSaved) ctx.workflow.forgetPin();
+          usedSaved = false;
           phase = "login";
           loginReply = null;
           sheet.redraw();
@@ -118,7 +140,20 @@ export async function balanceSheet(ctx, account) {
 
   const { attempt, needsLogin } = await ctx.workflow.balance(account.currency);
   shownId = attempt.id;
-  if (needsLogin) phase = "login";
+  if (!needsLogin) return sheet.redraw();
+  saved = await ctx.workflow.savedPin();
+  if (saved.saved) {
+    phase = "unlocking";
+    sheet.redraw();
+    const r = await ctx.workflow.loginWithSaved({ retryCurrency: account.currency });
+    if (r) {
+      usedSaved = true;
+      phase = "waiting";
+      return afterLogin(r);
+    }
+    loginError = "No se desbloqueó la clave guardada. Escríbela.";
+  }
+  phase = "login";
   sheet.redraw();
 }
 

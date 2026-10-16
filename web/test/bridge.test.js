@@ -59,3 +59,16 @@ test("without a native object it loads the mock", async () => {
   const b = await connect({ native: undefined, loadMock: async () => ({ createMock: () => mock }) });
   assert.equal(b, mock);
 });
+
+test("the secret calls post their name and wait on the person without a timeout", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native, timeoutMs: 10 });
+  const save = b.secretSave("pin:BM", "1234", 180);
+  assert.deepEqual(f.sent.at(-1).args, { name: "pin:BM", value: "1234", days: 180 });
+  const load = b.secretLoad("pin:BM");
+  assert.deepEqual([f.sent.at(-2).method, f.sent.at(-1).method, f.sent.at(-1).args], ["secretSave", "secretLoad", { name: "pin:BM" }]);
+  await new Promise((r) => setTimeout(r, 30));
+  f.push({ id: f.sent.at(-2).id, result: true });
+  f.push({ id: f.sent.at(-1).id, result: "1234" });
+  assert.deepEqual([await save, await load], [true, "1234"]);
+});

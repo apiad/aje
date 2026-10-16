@@ -53,6 +53,12 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     dial: (code) => call("dial", { code }),
     listSims: () => call("listSims"),
     requestPermissions: () => call("requestPermissions"),
+    // The secret store. Save and load show the fingerprint or screen-lock prompt, so they wait on
+    // the person with no timeout; load answers null when nothing is saved or the person cancels.
+    secretStatus: (name) => call("secretStatus", { name }),
+    secretSave: (name, value, days) => call("secretSave", { name, value, days }),
+    secretLoad: (name) => call("secretLoad", { name }),
+    secretForget: (name) => call("secretForget", { name }),
     /**
      * The first handler sends `ready`, which opens the push channel and makes the shell deliver,
      * then delete, the SMS it queued while no page was alive: so only a page that can save them

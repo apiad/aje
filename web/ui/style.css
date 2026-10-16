@@ -163,3 +163,5 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .sheet-like .kv:last-child{border-bottom:0}
 .sheet-like .kv span{color:var(--muted)}
 .sheet-like .kv b{font-weight:600;text-align:right;overflow-wrap:anywhere}
+.remember{display:flex;gap:11px;align-items:center;margin:14px 0 0;font-size:11px;color:var(--muted);line-height:1.4;cursor:pointer}
+.remember b{display:block;font-size:13px;color:var(--bone);font-weight:600}

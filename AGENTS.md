@@ -5,8 +5,8 @@ transfers and their history. Talking to the banks and ETECSA over USSD, SMS and 
 is one module, built on the public *444 USSD service. It never impersonates anyone or uses the banks' online API.
 
 The app is a web frontend in a WebView. All logic lives in JavaScript; Android keeps
-only what JavaScript cannot do: send a USSD, dial, receive an SMS, list the SIMs and
-ask for permissions.
+only what JavaScript cannot do: send a USSD, dial, receive an SMS, list the SIMs,
+ask for permissions and keep the bank PIN in a store locked by the device.
 
 The repo is private until a working 1.0 and then public, so it is written to be
 public now: no real names, numbers, balances, machines or accounts, in code, tests,
@@ -35,9 +35,9 @@ verified on a phone, and a report says which of the two a claim came from.
   the workflows. `web/core/idb.js` is the only browser-only module.
 - `web/ui/`: the screens, hand-written JS over the design mockup's CSS.
 - `web/bridge.js`: the client of the message protocol with the native shell;
-  `web/mock.js` fakes the five primitives in a browser and is not shipped.
+  `web/mock.js` fakes the six primitives in a browser and is not shipped.
 - `app/`: the native shell. `MainActivity` hosts the WebView on
-  `https://appassets.androidplatform.net`, `NativeBridge` holds the five primitives,
+  `https://appassets.androidplatform.net`, `NativeBridge` holds the six primitives, `SecretStore` the Keystore-backed PIN store,
   `SmsQueue` keeps SMS that arrive while no page is alive.
 - `tools/smoke-web.py`: drives the frontend against the mock with Playwright.
 - `telemetry/collector.py`: the dev telemetry endpoint.
@@ -47,6 +47,9 @@ verified on a phone, and a report says which of the two a claim came from.
 
 - A bank PIN or a transfer key is a `field(value, true)` in `web/core/ussd.js`. Only
   `dial` returns it; nothing stores, logs or reports a dialed string that carries one.
+  The one exception is the PIN the person asks to remember: it goes only to the shell's
+  secret store (`secretSave`), encrypted under a Keystore key that needs the fingerprint
+  or the screen lock on each use, and it lapses after `PIN_DAYS` in `web/core/workflow.js`.
 - Telemetry carries the text of bank USSD replies and bank SMS only through `mask`,
   which turns every digit into `#`. No other field carries a phone or card number, an
   amount or a balance. The allowlist is `ALLOWED` in `web/core/telemetry.js`, and a

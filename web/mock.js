@@ -28,6 +28,7 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   let handler = null;
   const buffered = [];
   const calls = [];
+  const secrets = new Map();
 
   const emit = (sender, body) => {
     const at = Date.now();
@@ -69,11 +70,29 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     },
     listSims: async () => sims.map((s) => ({ ...s })),
     requestPermissions: async () => ({ callPhone: true, readPhoneState: true, receiveSms: true }),
+    // The device's fingerprint prompt always succeeds here, except in ?mock=no-unlock.
+    async secretStatus(name) {
+      return { available: true, saved: secrets.has(name), expiresAt: secrets.get(name)?.expiresAt ?? null };
+    },
+    async secretSave(name, value, days) {
+      await wait();
+      if (mode === "no-unlock") return false;
+      secrets.set(name, { value, expiresAt: Date.now() + days * 86_400_000 });
+      return true;
+    },
+    async secretLoad(name) {
+      await wait();
+      return mode === "no-unlock" ? null : secrets.get(name)?.value ?? null;
+    },
+    async secretForget(name) {
+      secrets.delete(name);
+    },
     onSms(fn) {
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
     },
     injectSms: (sender, body) => emit(sender, body),
+    endSession: () => { session = false; },
   };
   if (typeof document !== "undefined") panel(mock);
   return mock;
@@ -88,11 +107,16 @@ function panel(mock) {
   box.innerHTML = '<summary style="cursor:pointer">SMS</summary>' +
     '<div style="display:flex;gap:6px;margin:6px 0"><button data-sms="balance">Saldo</button>' +
     '<button data-sms="transfer">Transferencia</button><button data-sms="auth">Autenticado</button></div>' +
+    '<button id="mock-logout">Cerrar la sesión del banco</button>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
   box.addEventListener("toggle", () => (box.style.width = box.open ? "280px" : ""));
   const text = box.querySelector("#mock-sms");
   for (const b of box.querySelectorAll("[data-sms]")) b.onclick = () => (text.value = SAMPLES[b.dataset.sms.toUpperCase()]);
+  box.querySelector("#mock-logout").onclick = () => {
+    mock.endSession();
+    box.open = false;
+  };
   box.querySelector("#mock-send").onclick = () => {
     mock.injectSms(BANK, text.value);
     box.open = false;

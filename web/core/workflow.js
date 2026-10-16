@@ -6,6 +6,9 @@ import { BANKISH, parseBankSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
+/** How long a remembered bank PIN lasts before the app asks for it again. */
+export const PIN_DAYS = 180;
+
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
   const card = (currency) => ({ bank: settings().bank, currency, pan: null });
@@ -59,14 +62,33 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
    * With `retryCurrency`, the bank's "se ha autenticado" SMS reruns that balance query.
    */
-  async function login(pin, { retryCurrency = null } = {}) {
+  async function login(pin, { retryCurrency = null, remember = false } = {}) {
     if (retryCurrency) await store.setRetryBalance({ currency: retryCurrency, at: now() });
     telemetry.event("ussd_sent", { op: "40", bank: settings().bank, via: "api" });
     const r = await send("40", settings().subId, dial(loginCode(settings().bank, pin), config, seed()));
-    if (r.ok) return { ok: true, reply: r.reply };
-    await store.setRetryBalance(null);
-    return { ok: false, failureCode: r.failureCode };
+    if (!r.ok) {
+      await store.setRetryBalance(null);
+      return { ok: false, failureCode: r.failureCode };
+    }
+    const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(), pin, PIN_DAYS).catch(() => false) : false;
+    return { ok: true, reply: r.reply, remembered };
   }
+
+  /**
+   * The bank PIN can live in the shell's secret store: encrypted with a device key that needs the
+   * fingerprint or the screen lock on every use, and dropped after PIN_DAYS. Nothing else keeps it.
+   */
+  const pinName = () => `pin:${settings().bank}`;
+  async function savedPin() {
+    if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
+    return bridge.secretStatus(pinName()).catch(() => ({ available: false, saved: false, expiresAt: null }));
+  }
+  /** Logs in with the saved PIN once the device unlocks it; null when there is none or the person cancels. */
+  async function loginWithSaved(options = {}) {
+    const pin = bridge.secretLoad ? await bridge.secretLoad(pinName()).catch(() => null) : null;
+    return pin ? login(pin, options) : null;
+  }
+  const forgetPin = () => bridge.secretForget?.(pinName());
 
   /**
    * Dials op 45. The transfer ends in the bank's menu, where the person types 1 to confirm,
@@ -141,7 +163,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, transfer, mobileBalance, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, transfer, mobileBalance, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
