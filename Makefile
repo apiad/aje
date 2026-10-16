@@ -13,8 +13,8 @@ smoke:
 preview:
 	node tools/build-preview.mjs build/preview.html
 
-# A signed dev APK. The version code is the commit count plus 100, so each build installs over the last;
+# A signed dev APK. The version code is the commit count plus 200, so each build installs over the last;
 # the offset clears dev builds made before squash merges shortened the history.
 apk:
-	./gradlew :app:assembleRelease -PversionCode=$$(( $$(git rev-list --count HEAD) + 100 ))
+	./gradlew :app:assembleRelease -PversionCode=$$(( $$(git rev-list --count HEAD) + 200 ))
 	@ls -la app/build/outputs/apk/release/*.apk
