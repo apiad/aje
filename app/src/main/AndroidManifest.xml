@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.telephony" android:required="true" />
+
+    <!-- Dial one-shot USSD codes on the chosen SIM. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- List the SIMs so the person can pick the one registered with the bank. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Read the bank's confirmation SMS as it arrives. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Dev build only: opt-in telemetry. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".AjeApp"
+        android:label="Ajé"
+        android:icon="@drawable/ic_aje"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
