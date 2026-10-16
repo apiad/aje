@@ -27,6 +27,20 @@ const SCREENS = {
   qr: { render: soon("Pagar y cobrar por QR") },
 };
 
+// A form or a detail sits one level inside its tab: it slides in from the right and back out.
+const DEPTH = (r) => (r.name === "transfer" || (r.name === "history" && r.param) ? 1 : 0);
+const tabOf = (r) => (r.name === "transfer" ? "home" : r.name);
+const TABS = NAV.map(([name]) => name);
+const EASE = "cubic-bezier(.2,0,0,1)";
+
+/** Moves into a screen: push and pop slide within a tab, a tab change fades in from its side. */
+function enter(view, from, to) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const sameTab = tabOf(from) === tabOf(to);
+  const dx = sameTab ? (DEPTH(to) >= DEPTH(from) ? 36 : -36) : (TABS.indexOf(tabOf(to)) > TABS.indexOf(tabOf(from)) ? 16 : -16);
+  view.animate([{ opacity: 0, transform: `translateX(${dx}px)` }, { opacity: 1, transform: "none" }], { duration: 360, easing: EASE });
+}
+
 async function loadConfig() {
   try {
     const res = await fetch("./config.json");
@@ -61,8 +75,11 @@ async function boot() {
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
 
   const view = h("main", { id: "view" });
-  const links = NAV.map(([name, label, ic]) => h("a", { href: `#/${name}`, "data-nav": name }, icon(ic), label));
-  mount(root, h("div", { style: "display:contents" }, view, h("nav", { class: "nav" }, links)));
+  const links = NAV.map(([name, label, ic]) => h("a", { href: `#/${name}`, "data-nav": name },
+    name === "qr" ? h("span", { class: "qrbtn" }, icon(ic)) : icon(ic), label));
+  const ind = h("span", { class: "ind", "aria-hidden": "true" });
+  const nav = h("nav", { class: "nav" }, ind, links);
+  mount(root, h("div", { style: "display:contents" }, view, nav));
 
   const inFlight = new Set();
   const ctx = {
@@ -81,21 +98,29 @@ async function boot() {
   };
 
   let current = null;
+  let shown = null;
   function draw() {
     const r = route();
     current = SCREENS[r.name];
     mount(view, current.render(ctx, r));
-    for (const a of links) a.classList.toggle("on", a.dataset.nav === r.name);
+    const tab = tabOf(r);
+    for (const a of links) a.classList.toggle("on", a.dataset.nav === tab);
+    const on = links.find((a) => a.dataset.nav === tab);
+    ind.style.opacity = on ? "1" : "0";
+    if (on) ind.style.transform = `translateX(${on.offsetLeft + on.offsetWidth / 2 - 13}px)`;
+    return r;
   }
   window.addEventListener("hashchange", () => {
     closeSheet();
-    draw();
+    const from = shown;
+    shown = draw();
     view.scrollTop = 0;
+    if (from) enter(view, from, shown);
   });
   store.subscribe(() => current?.live && draw());
 
   telemetry.event("app_start");
-  draw();
+  shown = draw();
 }
 
 boot().catch((e) => {

@@ -24,6 +24,14 @@ const ACTIONS = {
 };
 const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], line: [["mobile-balance", "Saldo"]] };
 
+/** "1200.06 CUP" as the card shows it: "1 200,06" with the currency small after it. */
+export function amount(text) {
+  const m = /^(-?)([0-9]+)(?:\.([0-9]+))?\s*(.*)$/.exec(text);
+  if (!m) return [text];
+  const whole = m[2].replace(/\B(?=([0-9]{3})+$)/g, "\u202f");
+  return [`${m[1]}${whole}${m[3] ? `,${m[3]}` : ""}`, h("small", {}, ` ${m[4]}`)];
+}
+
 function cardFace(a, ctx) {
   const kind = a.kind === "card" ? `Tarjeta · ${a.currency}` : `Línea · ${a.carrier || "Cubacel"}`;
   const no = a.kind === "card" ? BANKS[a.bank].name : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
@@ -35,7 +43,7 @@ function cardFace(a, ctx) {
         h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label))),
     ),
     h("div", {},
-      h("div", { class: `bal${a.balance ? "" : " none"}` }, a.balance ?? "—"),
+      a.balance ? h("div", { class: "bal" }, ...amount(a.balance)) : h("div", { class: "bal none" }, "Toca Saldo para consultarlo"),
       h("div", { class: "no" }, no),
     ),
   );
