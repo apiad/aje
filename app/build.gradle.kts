@@ -13,7 +13,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "aje.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.aje.app"
