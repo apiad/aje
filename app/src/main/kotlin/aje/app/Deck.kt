@@ -129,9 +129,9 @@ fun Deck(accounts: List<Account>, frontIndex: Int, onFront: (Int) -> Unit, modif
                                         val next = offsetX.value < 0 || vx < -900f
                                         scope.launch {
                                             if (go && next && front < accounts.lastIndex) {
-                                                settle(offsetX, -widthPx, context); onFront(front + 1)
+                                                settle(offsetX, -widthPx, context); offsetX.snapTo(0f); onFront(front + 1)
                                             } else if (go && !next && front > 0) {
-                                                settle(offsetX, widthPx, context); onFront(front - 1)
+                                                settle(offsetX, widthPx, context); offsetX.snapTo(0f); onFront(front - 1)
                                             } else {
                                                 settle(offsetX, 0f, context)
                                             }
