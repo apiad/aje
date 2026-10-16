@@ -1,0 +1,80 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { openStore, memoryBackend } from "../core/store.js";
+import { parseBankSms } from "../core/sms.js";
+import { SMS } from "./helpers.js";
+
+const MIN = 60_000;
+const attempt = (over) => ({
+  id: over.id, startedAt: over.startedAt ?? 0, code: "", state: "sent", op: "46", currency: "CUP",
+  to: null, amount: null, transactionId: null, reply: null, failureCode: null,
+  accounting: null, available: null, verifiedAt: null, ...over,
+});
+
+test("defaults, and a second open keeps the install id and the history", async () => {
+  const backend = memoryBackend();
+  const a = await openStore(backend, { now: () => 1 });
+  assert.equal(a.state.settings.subId, -1);
+  assert.deepEqual(a.state.settings.enabledCurrencies, ["CUP", "CUC", "USD"]);
+  assert.equal(a.planFor(3), "PREPAGO");
+  await a.add(attempt({ id: 7 }));
+  const b = await openStore(backend);
+  assert.equal(b.state.installId, a.state.installId);
+  assert.equal(b.state.attempts[0].id, 7);
+});
+
+test("history keeps the newest fifty", async () => {
+  const s = await openStore(memoryBackend());
+  for (let i = 0; i < 55; i++) await s.add(attempt({ id: i }));
+  assert.equal(s.state.attempts.length, 50);
+  assert.equal(s.state.attempts[0].id, 54);
+});
+
+test("a balance SMS verifies the latest pending query inside twenty minutes", async () => {
+  const s = await openStore(memoryBackend());
+  await s.add(attempt({ id: 1, startedAt: 0 }));
+  const latency = await s.verifyBalance(parseBankSms(SMS.BALANCE), 5 * MIN);
+  assert.equal(latency, 5 * MIN);
+  assert.equal(s.state.attempts[0].state, "verified");
+  assert.equal(s.state.attempts[0].available, "1200.06 CUP");
+});
+
+test("a balance SMS outside the window adds its own verified row", async () => {
+  const s = await openStore(memoryBackend());
+  await s.add(attempt({ id: 1, startedAt: 0 }));
+  assert.equal(await s.verifyBalance(parseBankSms(SMS.BALANCE), 21 * MIN), null);
+  assert.equal(s.state.attempts.length, 2);
+  assert.equal(s.state.attempts[0].state, "verified");
+  assert.equal(s.state.attempts[1].state, "sent");
+});
+
+test("a transfer SMS verifies the pending transfer to that card for that amount", async () => {
+  const s = await openStore(memoryBackend());
+  await s.add(attempt({ id: 1, op: "45", state: "dialer", to: "9200950000000002", amount: 100 }));
+  await s.add(attempt({ id: 2, op: "45", state: "dialer", to: "9200950000000001", amount: 100 }));
+  assert.equal(await s.verifyTransfer(parseBankSms(SMS.TRANSFER), MIN), MIN);
+  const byId = Object.fromEntries(s.state.attempts.map((a) => [a.id, a]));
+  assert.equal(byId[2].state, "verified");
+  assert.equal(byId[2].transactionId, "AB0000XYZ0001");
+  assert.equal(byId[2].available, "1134.56 CUP");
+  assert.equal(byId[1].state, "dialer");
+});
+
+test("seen remembers the last fifty keys", async () => {
+  const s = await openStore(memoryBackend());
+  assert.equal(await s.seen("a"), false);
+  assert.equal(await s.seen("a"), true);
+  for (let i = 0; i < 50; i++) await s.seen(`k${i}`);
+  assert.equal(await s.seen("a"), false);
+});
+
+test("subscribers hear every change", async () => {
+  const s = await openStore(memoryBackend());
+  let calls = 0;
+  const off = s.subscribe(() => calls++);
+  await s.update({ currency: "USD" });
+  off();
+  await s.update({ currency: "CUP" });
+  assert.equal(calls, 1);
+  assert.equal(s.state.settings.currency, "CUP");
+});
