@@ -1,9 +1,15 @@
 # Ajé
 
-Personal finance for Cuba, as a native Android app. Offline first; it talks to the
-banks over USSD and SMS from your own SIM.
+Personal finance for Cuba, as an Android app. Offline first; it talks to the
+banks over USSD and SMS from your own SIM. The app is a web frontend in a
+WebView, with a small native shell for what only Android can do.
 
 ```bash
-make test   # JVM tests
+make test   # the logic in Node, including the encoder's reference vectors
+make smoke  # the frontend against a mock, in a phone-sized browser (Playwright)
 make apk    # signed APK (needs keystore.properties)
 ```
+
+To work on the frontend in a browser, serve `web/` (for example
+`python3 -m http.server -d web`) and open `index.html`: without the native
+shell it runs against `web/mock.js`.

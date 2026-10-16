@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "aje"
-include(":core", ":app")
+include(":app")

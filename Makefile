@@ -1,13 +1,9 @@
 # Every mechanical check and build entry point.
-.PHONY: test test-web test-core smoke apk
+.PHONY: test smoke apk
 
-test: test-web test-core
-
-test-web:
+# The logic, including the 1600 encoder vectors, in Node.
+test:
 	cd web && node --test "test/*.test.js"
-
-test-core:
-	./gradlew :core:test
 
 # The frontend against the mock in a phone-sized browser.
 smoke:
