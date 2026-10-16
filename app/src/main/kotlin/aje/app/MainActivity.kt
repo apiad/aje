@@ -140,6 +140,7 @@ private fun Home() {
 
         Setup()
         Balance()
+        Diagnostics()
         TelemetryPanel()
         History()
     }
@@ -297,6 +298,39 @@ private fun AttemptView(a: Attempt, expanded: Boolean) {
                 if (showCode) Text(a.code, fontFamily = FontFamily.Monospace, color = scheme.primary, fontSize = 14.sp)
             }
         }
+    }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+private fun Diagnostics() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var result by remember { mutableStateOf<String?>(null) }
+    Panel {
+        Text("Diagnóstico", fontWeight = FontWeight.SemiBold)
+        Text(
+            "Envía *222# (saldo de Cubacel) por el mismo camino que la consulta del banco. " +
+                "Si esto también falla, el problema es el teléfono y no el código del banco.",
+            color = scheme.onSurfaceVariant, fontSize = 13.sp,
+        )
+        TextButton(onClick = {
+            result = "Enviando…"
+            val start = System.currentTimeMillis()
+            val defaultSub = SubscriptionManager.getDefaultVoiceSubscriptionId() == Store.subId
+            Ussd.send(
+                context, Store.subId, "*222#",
+                onReply = {
+                    result = "Respondió: $it"
+                    Telemetry.event("diag", "op" to "222", "ok" to true, "length" to it.length, "latency_ms" to System.currentTimeMillis() - start, "default_sub" to defaultSub)
+                },
+                onFailure = { code, error ->
+                    result = "Falló con el código $code" + (error?.let { " ($it)" } ?: "")
+                    Telemetry.event("diag", "op" to "222", "ok" to false, "failure_code" to code, "error" to error, "default_sub" to defaultSub)
+                },
+            )
+        }) { Text("Probar *222#") }
+        result?.let { Text(it, fontSize = 14.sp) }
     }
 }
 

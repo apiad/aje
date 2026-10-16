@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
  * carries SMS bodies, phone or card numbers, amounts, balances or USSD replies.
  */
 object Telemetry {
-    val ALLOWED = setOf("op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines", "error", "stack", "bank", "via")
+    val ALLOWED = setOf("op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines", "error", "stack", "bank", "via", "default_sub")
 
     private val io = Executors.newSingleThreadExecutor()
     private lateinit var queue: File

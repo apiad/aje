@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = {"event", "t", "app", "sdk", "device", "install"}
 # Mirrors Telemetry.ALLOWED in app/src/main/kotlin/aje/app/Telemetry.kt.
-ALLOWED = {"op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines", "error", "stack", "bank", "via"}
+ALLOWED = {"op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines", "error", "stack", "bank", "via", "default_sub"}
 MAX_BODY = 256 * 1024
 
 
