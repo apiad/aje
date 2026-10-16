@@ -170,3 +170,5 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .nav a .qrbtn svg{width:22px;height:22px}
 .nav a.on .qrbtn{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--gold-deep)}
 .acct .bal.none{font-size:12.5px;font-weight:500;letter-spacing:0;color:#b49a6f}
+.reply .k .spin{width:13px;height:13px;flex:none;border-radius:50%;border:2px solid var(--line);border-top-color:var(--gold);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}

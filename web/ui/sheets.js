@@ -31,6 +31,9 @@ export function openSheet(ctx, build) {
   return { redraw: draw, close: () => close?.() };
 }
 
+/** How long a sheet shows a settled result before closing by itself. */
+const AUTO_CLOSE_MS = 1200;
+
 const STATUS = {
   sent: "Enviando…",
   replied: "Respuesta del banco",
@@ -44,10 +47,14 @@ function status(a) {
   return STATUS[a.state];
 }
 
+/** The status mark: a spinner while the operation still waits on the bank, a dot once it is settled. */
+const mark = (waiting) => h("span", { class: waiting ? "spin" : "dot", "aria-hidden": "true" });
+
 function attemptView(a) {
+  const waiting = !a || a.state === "sent" || (a.op === "46" && a.state === "replied");
   return [
-    h("div", { class: `reply${a && (a.state === "sent") ? " pending" : ""}` },
-      h("div", { class: "k status" }, h("span", { class: "dot" }), status(a)),
+    h("div", { class: `reply${waiting ? " pending" : ""}` },
+      h("div", { class: "k status" }, mark(waiting), waiting && a?.state === "replied" ? "Respuesta del banco; esperando su SMS…" : status(a)),
       a?.reply ? h("div", { class: "m" }, a.reply) : null),
     a?.state === "verified" && a.available ? h("div", { class: "kv" }, h("span", {}, "Saldo disponible"), h("b", {}, a.available)) : null,
     a?.transactionId ? h("div", { class: "kv" }, h("span", {}, "Transacción"), h("b", {}, a.transactionId)) : null,
@@ -66,7 +73,9 @@ export async function balanceSheet(ctx, account) {
   let saved = { available: false, saved: false };
   let usedSaved = false;
   let remember = true;
-  const latest = () => ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && (shownId === null || a.id >= shownId));
+  let closing = null;
+  // Until this sheet's query is stored, an older verified balance is not its answer.
+  const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && a.id >= shownId));
 
   // Both login paths end here: the USSD went out, or the phone could not send it.
   function afterLogin(r) {
@@ -83,7 +92,7 @@ export async function balanceSheet(ctx, account) {
     const parts = [h("h3", {}, `Saldo · ${account.label}`)];
     if (phase === "unlocking") {
       parts.push(h("div", { class: "reply pending" },
-        h("div", { class: "k status" }, h("span", { class: "dot" }), "Desbloquea la clave guardada con tu huella o el bloqueo del teléfono.")));
+        h("div", { class: "k status" }, mark(true), "Desbloquea la clave guardada con tu huella o el bloqueo del teléfono.")));
     } else if (phase === "login") {
       const pin = h("input", { id: "pin", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Clave del banco" });
       const err = h("div", { class: "err" }, loginError ?? "");
@@ -119,7 +128,7 @@ export async function balanceSheet(ctx, account) {
     } else if (phase === "waiting" && (!a || a.id === shownId)) {
       // The bank's own words: a wrong key or a blocked card says so here, and no SMS will follow.
       parts.push(h("div", { class: "reply pending" },
-        h("div", { class: "k status" }, h("span", { class: "dot" }), "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
+        h("div", { class: "k status" }, mark(true), "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
         loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
       if (loginReply) {
         parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
@@ -133,6 +142,8 @@ export async function balanceSheet(ctx, account) {
       }
     } else {
       parts.push(...attemptView(a));
+      // The verified balance is now on the card: the sheet shows it for a moment and goes.
+      if (a?.state === "verified" && !closing) closing = setTimeout(() => sheet.close(), AUTO_CLOSE_MS);
     }
     parts.push(h("button", { class: "btn ghost", onclick: () => sheet.close() }, "Cerrar"));
     return parts;
@@ -166,15 +177,17 @@ export function transferSheet(ctx, attempt, title) {
   ]);
 }
 
-/** The line balance: the card shows the figure; the sheet opens only when there is none. */
+/** The line balance: a waiting sheet that closes once the figure is on the card, or keeps ETECSA's words. */
 export async function mobileBalanceSheet(ctx, account) {
-  const r = await ctx.workflow.mobileBalance(account.subId);
-  if (r.ok && r.value) return;
-  openSheet(ctx, () => [
+  let r = null;
+  const sheet = openSheet(ctx, () => [
     h("h3", {}, `Saldo móvil · ${account.label}`),
-    h("div", { class: "reply" }, h("div", { class: "k status" }, h("span", { class: "dot" }),
-      r.ok ? "Respuesta de ETECSA" : `El teléfono no la envió (código ${r.failureCode}).`),
-      r.reply ? h("div", { class: "m" }, r.reply) : null),
+    h("div", { class: `reply${r ? "" : " pending"}` }, h("div", { class: "k status" }, mark(!r),
+      !r ? "Consultando a ETECSA…" : r.ok ? "Respuesta de ETECSA" : `El teléfono no la envió (código ${r.failureCode}).`),
+      r?.reply ? h("div", { class: "m" }, r.reply) : null),
     h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar"),
   ]);
+  r = await ctx.workflow.mobileBalance(account.subId);
+  sheet.redraw();
+  if (r.ok && r.value) setTimeout(() => sheet.close(), AUTO_CLOSE_MS / 2);
 }

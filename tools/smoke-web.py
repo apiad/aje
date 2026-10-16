@@ -53,7 +53,10 @@ def balance_with_login(page):
     page.fill("#pin", "1234")
     page.click("#pin-submit")
     expect(page.locator("#pin")).to_have_count(0)
+    expect(page.locator("#sheet .spin")).to_be_visible()
     expect(card.locator(".bal")).to_have_text("1\u202f200,06 CUP", timeout=10_000)
+    # The verified balance is on the card, so the sheet closes by itself.
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
 
 
 def saved_pin_logs_in(page):
@@ -93,7 +96,9 @@ def mobile_balance(page):
     page.click('[data-go-acct="line:3"]')
     line = page.locator('#deck .acct[data-id="line:3"]')
     line.locator('[data-action="mobile-balance"]').click()
+    expect(page.locator("#sheet .spin")).to_be_visible()
     expect(line.locator(".bal")).to_have_text("185,00 CUP", timeout=10_000)
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
 
 
 def history_and_verified_transfer(page):
