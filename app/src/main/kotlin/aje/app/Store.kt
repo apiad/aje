@@ -50,6 +50,8 @@ object Store {
     var enabledCurrencies by mutableStateOf(setOf(Currency.CUP, Currency.CUC, Currency.USD))
     /** The balance code each SIM's line dials, by subscription id; absent means prepaid. */
     var mobilePlans by mutableStateOf<Map<Int, MobilePlan>>(emptyMap())
+    /** The last balance each SIM's line reported, by subscription id, shown on its card. */
+    var mobileBalances by mutableStateOf<Map<Int, String>>(emptyMap())
     var telemetry by mutableStateOf(false)
     /** When the bank's "se ha autenticado" SMS last arrived. */
     var authenticatedAt by mutableStateOf<Long?>(null)
@@ -71,6 +73,9 @@ object Store {
         mobilePlans = JSONObject(prefs.getString("mobilePlans", "{}")!!).let { o ->
             o.keys().asSequence().associate { it.toInt() to MobilePlan.valueOf(o.getString(it)) }
         }
+        mobileBalances = JSONObject(prefs.getString("mobileBalances", "{}")!!).let { o ->
+            o.keys().asSequence().associate { it.toInt() to o.getString(it) }
+        }
         telemetry = prefs.getBoolean("telemetry", false)
         authenticatedAt = prefs.getLong("authenticatedAt", 0L).takeIf { it > 0 }
         installId = prefs.getString("installId", null) ?: UUID.randomUUID().toString().also {
@@ -88,8 +93,17 @@ object Store {
             .putString("currency", currency.name)
             .putString("enabledCurrencies", enabledCurrencies.joinToString(",") { it.name })
             .putString("mobilePlans", JSONObject().also { o -> mobilePlans.forEach { (k, v) -> o.put(k.toString(), v.name) } }.toString())
+            .putString("mobileBalances", JSONObject().also { o -> mobileBalances.forEach { (k, v) -> o.put(k.toString(), v) } }.toString())
             .putBoolean("telemetry", telemetry)
             .apply()
+    }
+
+    /** The last balance a SIM's line reported, or null until Saldo móvil runs once. */
+    fun mobileBalanceFor(subId: Int): String? = mobileBalances[subId]
+
+    fun setMobileBalance(subId: Int, value: String) {
+        mobileBalances = mobileBalances + (subId to value)
+        saveSettings()
     }
 
     /** The plan a SIM's line uses for its balance code; prepaid unless the person set it. */

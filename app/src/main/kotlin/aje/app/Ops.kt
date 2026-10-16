@@ -3,6 +3,7 @@ package aje.app
 import android.content.Context
 import aje.core.money.Card
 import aje.core.money.Currency
+import aje.core.money.MobileBalance
 import aje.core.money.MobileLine
 import aje.core.money.Pan
 import aje.core.ops.BankOps
@@ -96,6 +97,7 @@ object Ops {
             context, line.subId, line.balanceCode,
             onReply = {
                 onStatus(it)
+                MobileBalance.parse(it)?.let { bal -> Store.setMobileBalance(line.subId, bal) }
                 Telemetry.event("ussd_reply", "op" to op, "ok" to true, "length" to it.length, "latency_ms" to System.currentTimeMillis() - start, "text" to it)
             },
             onFailure = { c, e ->

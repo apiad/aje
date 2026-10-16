@@ -167,8 +167,10 @@ private fun CardFace(account: Account) {
                 Text(if (bal == null) "toca Ver saldo" else account.currency.name, color = Color(0xFFB49A6F), fontSize = 12.sp)
             }
             is MobileLine -> {
-                Text(if (account.plan == MobilePlan.POSPAGO) "Pospago" else "Prepago", color = Color(0xFFF1E8D8), fontSize = 14.sp)
-                Text("saldo por ${account.balanceCode}", color = Color(0xFFB49A6F), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                val bal = Store.mobileBalanceFor(account.subId)
+                Text(bal ?: "—", color = Color(0xFFFFF3DD), fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                val plan = if (account.plan == MobilePlan.POSPAGO) "Pospago" else "Prepago"
+                Text(if (bal == null) "toca Saldo móvil" else "$plan · ${account.balanceCode}", color = Color(0xFFB49A6F), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
             }
         }
     }
