@@ -61,6 +61,13 @@ class BankSmsParserTest {
     }
 
     @Test
+    fun crlfLineBreaksAsTheBankSendsThem() {
+        val r = BankSmsParser.parse(balance.replace("\n", "\r\n")) as BankSms.BalanceReport
+        assertEquals(Money(123456, "CUP"), r.accounting)
+        assertEquals(Money(120006, "CUP"), r.available)
+    }
+
+    @Test
     fun unknownTexts() {
         assertNull(BankSmsParser.parse("Hola, nos vemos mañana"))
         assertNull(BankSmsParser.parse("Banco Metropolitano: un aviso que no conocemos"))
