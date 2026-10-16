@@ -1,0 +1,64 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseBankSms, formatMoney, transferMatches, senderTag, BANKISH } from "../core/sms.js";
+import { SMS } from "./helpers.js";
+
+test("balance report", () => {
+  assert.deepEqual(parseBankSms(SMS.BALANCE), {
+    kind: "balance", bank: "METROPOLITANO",
+    accounting: { cents: 123456, currency: "CUP" }, available: { cents: 120006, currency: "CUP" },
+  });
+});
+
+test("transfer done", () => {
+  assert.deepEqual(parseBankSms(SMS.TRANSFER), {
+    kind: "transfer", bank: "METROPOLITANO", date: "1/2/2026", beneficiary: "9200XXXXXXXX0001",
+    amount: { cents: 10000, currency: "CUP" }, transactionId: "AB0000XYZ0001",
+    remaining: { cents: 113456, currency: "CUP" },
+  });
+});
+
+test("transfer matches the masked beneficiary and the amount", () => {
+  const done = parseBankSms(SMS.TRANSFER);
+  assert.ok(transferMatches(done, "9200950000000001", 10000));
+  assert.ok(!transferMatches(done, "9200950000000002", 10000));
+  assert.ok(!transferMatches(done, "9200950000000001", 10100));
+});
+
+test("authenticated", () => {
+  assert.deepEqual(parseBankSms(SMS.AUTH), { kind: "auth", bank: "METROPOLITANO" });
+});
+
+test("debit is negative", () => {
+  const r = parseBankSms(SMS.BALANCE.replace("CR 1234.56", "DB 5.00"));
+  assert.deepEqual(r.accounting, { cents: -500, currency: "CUP" });
+  assert.equal(formatMoney(r.accounting), "-5.00 CUP");
+});
+
+test("thousands separator and decimal comma", () => {
+  assert.equal(parseBankSms(SMS.BALANCE.replace("CR 1234.56", "CR 1,234.56")).accounting.cents, 123456);
+  assert.equal(parseBankSms(SMS.BALANCE.replace("CR 1234.56", "CR 1234,56")).accounting.cents, 123456);
+});
+
+test("CRLF line breaks as the bank sends them", () => {
+  const r = parseBankSms(SMS.BALANCE.replaceAll("\n", "\r\n"));
+  assert.deepEqual(r.accounting, { cents: 123456, currency: "CUP" });
+  assert.deepEqual(r.available, { cents: 120006, currency: "CUP" });
+});
+
+test("a no-break space reads as a space", () => {
+  assert.equal(parseBankSms(SMS.BALANCE.replace("Saldo Contable:", "Saldo Contable:")).accounting.cents, 123456);
+});
+
+test("unknown texts", () => {
+  assert.equal(parseBankSms("Hola, nos vemos mañana"), null);
+  assert.equal(parseBankSms("Banco Metropolitano: un aviso que no conocemos"), null);
+});
+
+test("a long number is a person and is never reported", () => {
+  assert.equal(senderTag("PAGOxMOVIL"), "PAGOxMOVIL");
+  assert.equal(senderTag("2266"), "2266");
+  assert.equal(senderTag("55555555"), "number");
+  assert.ok(BANKISH.test("Banco Metropolitano: un aviso"));
+  assert.ok(!BANKISH.test("Hola, nos vemos mañana"));
+});

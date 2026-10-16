@@ -4,7 +4,7 @@
 test: test-web test-core
 
 test-web:
-	cd web && node --test
+	cd web && node --test "test/*.test.js"
 
 test-core:
 	./gradlew :core:test
