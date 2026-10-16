@@ -33,8 +33,8 @@ const PATHS = {
 
 export function icon(name, cls = "") {
   const span = document.createElement("span");
-  span.className = cls;
   span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${PATHS[name]}</svg>`;
+  if (cls) span.firstChild.setAttribute("class", cls);
   return span.firstChild;
 }
 

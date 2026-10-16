@@ -84,6 +84,8 @@ def history_and_verified_transfer(page):
     page.click('nav a[href="#/history"]')
     first = page.locator("#history .row").first
     expect(first).to_have_attribute("data-state", "verified", timeout=10_000)
+    width = first.locator("svg").first.bounding_box()["width"]
+    assert width <= 24, f"history row icon is {width}px wide"
     first.click()
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
