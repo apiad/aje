@@ -30,6 +30,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -139,10 +143,12 @@ private fun Home() {
         }
 
         Setup()
+        Login()
         Balance()
+        History()
         Diagnostics()
         TelemetryPanel()
-        History()
+        TelemetryHistory()
     }
 }
 
@@ -230,7 +236,7 @@ private fun Balance() {
             context, Store.subId, dialed,
             onReply = { reply ->
                 Store.update(attempt.id) { if (it.state == AttemptState.VERIFIED) it.copy(reply = reply) else it.copy(state = AttemptState.REPLIED, reply = reply) }
-                Telemetry.event("ussd_reply", "op" to "46", "ok" to true, "length" to reply.length, "latency_ms" to System.currentTimeMillis() - now)
+                Telemetry.event("ussd_reply", "op" to "46", "ok" to true, "length" to reply.length, "latency_ms" to System.currentTimeMillis() - now, "text" to reply)
             },
             onFailure = { code, error ->
                 Store.update(attempt.id) { if (it.state == AttemptState.VERIFIED) it else it.copy(state = AttemptState.FAILED, failureCode = code) }
@@ -289,6 +295,9 @@ private fun AttemptView(a: Attempt, expanded: Boolean) {
         }
         if (expanded) {
             a.reply?.let { Text("Respuesta del banco: $it", fontSize = 14.sp) }
+            if (a.reply?.contains("autentic", ignoreCase = true) == true) {
+                Text("El banco pide abrir sesión: autentícate arriba con tu clave y vuelve a consultar.", color = scheme.primary, fontSize = 13.sp)
+            }
             a.failureCode?.let { Text("Código de fallo $it. Prueba a marcar desde el teléfono.", color = scheme.onSurfaceVariant, fontSize = 13.sp) }
             if (a.code.isNotEmpty()) {
                 Text(
@@ -322,7 +331,7 @@ private fun Diagnostics() {
                 context, Store.subId, "*222#",
                 onReply = {
                     result = "Respondió: $it"
-                    Telemetry.event("diag", "op" to "222", "ok" to true, "length" to it.length, "latency_ms" to System.currentTimeMillis() - start, "default_sub" to defaultSub)
+                    Telemetry.event("diag", "op" to "222", "ok" to true, "length" to it.length, "latency_ms" to System.currentTimeMillis() - start, "default_sub" to defaultSub, "text" to it)
                 },
                 onFailure = { code, error ->
                     result = "Falló con el código $code" + (error?.let { " ($it)" } ?: "")
@@ -331,6 +340,76 @@ private fun Diagnostics() {
             )
         }) { Text("Probar *222#") }
         result?.let { Text(it, fontSize = 14.sp) }
+    }
+}
+
+@Composable
+private fun Login() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var pin by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf<String?>(null) }
+    Panel {
+        Text("Abrir sesión en el banco", fontWeight = FontWeight.SemiBold)
+        Text(
+            "El banco pide autenticarse antes de consultar. Ajé envía tu clave de 4 dígitos en el código y no la guarda.",
+            color = scheme.onSurfaceVariant, fontSize = 13.sp,
+        )
+        Store.authenticatedAt?.let {
+            Text("Sesión abierta a las ${timeFormat.format(Date(it))} (confirmada por SMS)", color = River, fontSize = 13.sp)
+        }
+        OutlinedTextField(
+            value = pin,
+            onValueChange = { v -> pin = v.filter { it.isDigit() }.take(4) },
+            label = { Text("Clave") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        )
+        Button(
+            enabled = pin.length == 4,
+            onClick = {
+                val code = BankOps.login(Store.bank, pin)
+                pin = ""
+                status = "Enviando…"
+                val start = System.currentTimeMillis()
+                Telemetry.event("ussd_sent", "op" to "40", "bank" to Store.bank.name, "via" to "api")
+                Ussd.send(
+                    context, Store.subId, code.dial(UssdConfig()),
+                    onReply = {
+                        status = "Respuesta del banco: $it"
+                        Telemetry.event("ussd_reply", "op" to "40", "ok" to true, "latency_ms" to System.currentTimeMillis() - start, "text" to it)
+                    },
+                    onFailure = { c, e ->
+                        status = "El teléfono no la envió (código $c)."
+                        Telemetry.event("ussd_reply", "op" to "40", "ok" to false, "failure_code" to c, "error" to e)
+                    },
+                )
+            },
+        ) { Text("Autenticarse") }
+        status?.let { Text(it, fontSize = 14.sp) }
+    }
+}
+
+@Composable
+private fun TelemetryHistory() {
+    val scheme = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { open = !open }) {
+            Text("Lo que Ajé ha enviado (${Telemetry.history.size})", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(if (open) "Ocultar" else "Ver", color = scheme.primary, fontSize = 13.sp)
+        }
+        if (open) {
+            if (Telemetry.history.isEmpty()) Text("Nada todavía.", color = scheme.onSurfaceVariant, fontSize = 13.sp)
+            Telemetry.history.forEach { e ->
+                Text(
+                    if (e.sent) "Enviado" else "Pendiente, se envía al haber red",
+                    color = if (e.sent) River else scheme.primary, fontSize = 12.sp,
+                )
+                Text(e.json, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = scheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
@@ -348,8 +427,8 @@ private fun TelemetryPanel() {
         }
         Text(
             "Manda la versión de Ajé, de Android y el modelo del teléfono, qué operación corrió, si salió bien, " +
-                "cuánto tardó y los errores. Nunca manda el texto de los SMS, números de teléfono o de tarjeta, " +
-                "importes, saldos ni la respuesta del banco.",
+                "cuánto tardó, los errores, y el texto de las respuestas del banco y de sus SMS con cada número " +
+                "cambiado por #. Abajo ves exactamente lo que se ha enviado.",
             color = scheme.onSurfaceVariant, fontSize = 13.sp,
         )
     }

@@ -22,17 +22,20 @@ class SmsReceiver : BroadcastReceiver() {
         when (val sms = BankSmsParser.parse(body)) {
             is BankSms.BalanceReport -> {
                 val latency = Store.verifyBalance(sms)
-                Telemetry.event("sms", "kind" to "balance", "sender" to senderTag, "bank" to sms.bank.name, "latency_ms" to latency)
+                Telemetry.event("sms", "kind" to "balance", "sender" to senderTag, "bank" to sms.bank.name, "latency_ms" to latency, "text" to body)
             }
-            is BankSms.TransferDone -> Telemetry.event("sms", "kind" to "transfer", "sender" to senderTag, "bank" to sms.bank.name)
-            is BankSms.Authenticated -> Telemetry.event("sms", "kind" to "auth", "sender" to senderTag, "bank" to sms.bank.name)
+            is BankSms.TransferDone -> Telemetry.event("sms", "kind" to "transfer", "sender" to senderTag, "bank" to sms.bank.name, "text" to body)
+            is BankSms.Authenticated -> {
+                Store.authenticatedAt = System.currentTimeMillis()
+                Telemetry.event("sms", "kind" to "auth", "sender" to senderTag, "bank" to sms.bank.name, "text" to body)
+            }
             null -> if (BANKISH in body) {
-                Telemetry.event("sms", "kind" to "unparsed_bank", "sender" to senderTag, "length" to body.length, "lines" to body.lines().size)
+                Telemetry.event("sms", "kind" to "unparsed_bank", "sender" to senderTag, "length" to body.length, "lines" to body.lines().size, "text" to body)
             }
         }
     }
 
     private companion object {
-        val BANKISH = Regex("banco|bpa|bandec|metropolitano|transferm|saldo", RegexOption.IGNORE_CASE)
+        val BANKISH = Regex("banco|bpa|bandec|metropolitano|transferm|saldo|autentic|pagos? m[oó]vil", RegexOption.IGNORE_CASE)
     }
 }

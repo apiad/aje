@@ -38,6 +38,8 @@ object Store {
     var bank by mutableStateOf(Bank.METROPOLITANO)
     var currency by mutableStateOf(Currency.CUP)
     var telemetry by mutableStateOf(false)
+    /** When the bank's "se ha autenticado" SMS last arrived; in memory only. */
+    var authenticatedAt by mutableStateOf<Long?>(null)
     lateinit var installId: String
         private set
 

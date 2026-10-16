@@ -23,6 +23,15 @@ class BankOpsTest {
     }
 
     @Test
+    fun loginSendsAgencyAndAMaskedKey() {
+        val code = BankOps.login(Bank.METROPOLITANO, "1234") as UssdCode.Encoded
+        assertEquals("40", code.op)
+        assertEquals(listOf("03", "1234"), code.fields.map { it.value })
+        assertEquals(listOf(false, true), code.fields.map { it.secret })
+        assertEquals(false, "1234" in code.display(UssdConfig(), seed = 5))
+    }
+
+    @Test
     fun bandecBalanceIsBare() {
         assertEquals(UssdCode.Bare("46"), BankOps.balance(Card("Nómina", Bank.BANDEC, Currency.CUP, null)))
     }
