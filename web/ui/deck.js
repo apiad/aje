@@ -114,8 +114,8 @@ export function renderHome(ctx) {
     layout(k);
     front();
   }
-  // The bottom card slides out right from under the deck, then lands on top.
-  function bringFromBack(vx) {
+  // The mirror of sendToBack: the bottom card slides out left from under the deck, then lands on top.
+  function bringFromBack(vx, onTop = false) {
     if (n < 2) return layout();
     const k = (at() - 1 + n) % n;
     frontId = list[k].id;
@@ -123,12 +123,15 @@ export function renderHome(ctx) {
     const el = cards[k];
     if (reduced()) { layout(); return front(); }
     const w = stack.clientWidth || 300;
-    if (vx) c.p.x.v = vx;
-    if (c.p.x.x > w * 0.48) { el.style.zIndex = "20"; set(c, rest(0), LAND); } else {
+    if (onTop) {
+      el.style.zIndex = "20";
+      if (vx) c.p.x.v = vx;
+      set(c, rest(0), LAND);
+    } else {
       el.style.zIndex = "0";
-      set(c, { x: w * 0.95, y: -14, s: 1, r: 0, o: 1, sh: 0 }, FLY);
+      set(c, { x: -w * 0.95, y: -14, s: 1, r: 0, o: 1, sh: 0 }, FLY);
       c.step = () => {
-        if (c.p.x.x > w * 0.48) { c.step = null; el.style.zIndex = "20"; set(c, rest(0), LAND); }
+        if (c.p.x.x < -w * 0.48) { c.step = null; el.style.zIndex = "20"; set(c, rest(0), LAND); }
       };
     }
     layout(k);
@@ -197,8 +200,12 @@ export function renderHome(ctx) {
       }
       const q = Math.min(dx / (w * 0.5), 1);
       const z = rest(n - 1);
+      const out = Math.min(q / 0.5, 1);
+      drag.incTop = q >= 0.5;
+      cards[drag.inc].style.zIndex = drag.incTop ? "20" : "0";
+      const x = drag.incTop ? -w * 0.95 * (1 - (q - 0.5) / 0.5) : -w * 0.95 * out;
       hold(c, { x: 0, r: 0, y: 0, s: 1 });
-      hold(bodies[drag.inc], { x: dx, y: z.y + (-14 - z.y) * q, s: z.s + (1 - z.s) * q, r: 0, sh: z.sh * (1 - q), o: 1 });
+      hold(bodies[drag.inc], { x, y: z.y + (-14 - z.y) * out, s: z.s + (1 - z.s) * out, r: 0, sh: z.sh * (1 - out), o: 1 });
     }
   });
   const end = (e, cancel) => {
@@ -213,7 +220,7 @@ export function renderHome(ctx) {
     const vx = l[0] > f[0] ? ((l[1] - f[1]) / (l[0] - f[0])) * 1000 : 0;
     const w = stack.clientWidth || 300;
     if (!cancel && d.dx < 0 && (d.dx < -w * 0.3 || vx < -500)) sendToBack(Math.min(vx, 0));
-    else if (!cancel && d.dx > 0 && (d.dx > w * 0.3 || vx > 500)) bringFromBack(Math.max(vx, 0));
+    else if (!cancel && d.dx > 0 && (d.dx > w * 0.3 || vx > 500)) bringFromBack(Math.max(vx, 0), d.incTop);
     else layout();
   };
   stack.addEventListener("pointerup", (e) => end(e, false));
