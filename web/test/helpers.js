@@ -20,3 +20,23 @@ export const PREPAID_REPLY =
 
 export const POSTPAID_REPLY =
   "Voz: Saldo disponible 180.00 CUP. SMS: Saldo disponible 20.00 CUP. Datos: 5000 MB. Roaming:";
+
+/**
+ * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
+ * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
+ */
+export function fakeBridge(replies = []) {
+  const calls = [];
+  const queue = [...replies];
+  return {
+    calls,
+    async sendUssd(subId, code) {
+      calls.push({ method: "sendUssd", args: { subId, code } });
+      const next = queue.shift() ?? { ok: true, reply: "" };
+      return typeof next === "function" ? next() : next;
+    },
+    async dial(code) {
+      calls.push({ method: "dial", args: { code } });
+    },
+  };
+}
