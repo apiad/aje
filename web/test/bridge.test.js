@@ -38,10 +38,10 @@ test("an error reply rejects", async () => {
 test("an SMS pushed before a handler exists is delivered when one registers", async () => {
   const f = fakeNative();
   const b = await connect({ native: f.native });
-  f.push({ event: "sms", sender: "PAGOxMOVIL", body: "texto", receivedAt: 5 });
+  f.push({ event: "sms", sender: "PAGOxMOVIL", body: "texto", sentAt: 4, receivedAt: 5 });
   const got = [];
   b.onSms((m) => got.push(m));
-  assert.deepEqual(got, [{ sender: "PAGOxMOVIL", body: "texto", receivedAt: 5 }]);
+  assert.deepEqual(got, [{ sender: "PAGOxMOVIL", body: "texto", sentAt: 4, receivedAt: 5 }]);
 });
 
 test("without a native object it loads the mock", async () => {

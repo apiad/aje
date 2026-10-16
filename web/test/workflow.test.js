@@ -107,9 +107,27 @@ test("the SMS that arrives after a restart still verifies the transfer", async (
   const a = await world([], backend);
   await a.wf.transfer("CUP", "9200950000000001", 100);
   const b = await world([], backend);
-  b.clock.t = a.clock.t + 3 * MIN;
-  await b.sms(SMS.TRANSFER);
+  b.clock.t = a.clock.t + 25 * MIN;
+  await b.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: a.clock.t + 3 * MIN });
   assert.equal(b.store.state.attempts[0].state, "verified");
+});
+
+test("an SMS that arrived after the window verifies nothing, however soon it is read", async () => {
+  const w = await world();
+  await w.wf.transfer("CUP", "9200950000000001", 100);
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: w.clock.t + 21 * MIN });
+  assert.equal(w.store.state.attempts.at(-1).state, "dialer");
+});
+
+// Review focus 1, auth side: a queued auth SMS read hours later must not send op 46 on its own.
+test("a queued auth SMS read hours later does not rerun the balance", async () => {
+  const w = await world([{ ok: true, reply: "ok" }]);
+  await w.wf.login("1234", { retryCurrency: "CUP" });
+  const loggedAt = w.clock.t;
+  w.clock.t += 5 * 60 * MIN;
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.AUTH, receivedAt: loggedAt + MIN });
+  assert.equal(w.bridge.calls.length, 1);
+  assert.equal(w.store.state.retryBalance, null);
 });
 
 // Review focus 2: the queue drain and the live push deliver the same SMS.
@@ -121,6 +139,20 @@ test("an SMS delivered twice verifies once and adds one row", async () => {
 });
 
 // Review focus 3: the USSD reply lands after the SMS.
+test("a broadcast repeated with a new arrival time verifies once", async () => {
+  const w = await world();
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.BALANCE, sentAt: 7, receivedAt: w.clock.t });
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.BALANCE, sentAt: 7, receivedAt: w.clock.t + 1 });
+  assert.equal(w.store.state.attempts.length, 1);
+});
+
+test("two different texts in the same millisecond are both handled", async () => {
+  const w = await world();
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.BALANCE, sentAt: 7, receivedAt: w.clock.t });
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.BALANCE.replace("1200.06", "1200.07"), sentAt: 7, receivedAt: w.clock.t });
+  assert.equal(w.store.state.attempts.length, 2);
+});
+
 test("a reply that arrives after the SMS keeps the attempt verified", async () => {
   let release;
   const w = await world([() => new Promise((r) => (release = r))]);
@@ -139,6 +171,20 @@ test("a failed send marks the attempt failed with its code", async () => {
   await w.wf.balance("CUP");
   assert.equal(w.store.state.attempts[0].state, "failed");
   assert.equal(w.store.state.attempts[0].failureCode, -1);
+});
+
+test("a bridge call that rejects fails the attempt with -100", async () => {
+  const w = await world([() => Promise.reject(new Error("bad code"))]);
+  await w.wf.balance("CUP");
+  assert.equal(w.store.state.attempts[0].state, "failed");
+  assert.equal(w.store.state.attempts[0].failureCode, -100);
+});
+
+test("a login whose bridge call rejects clears the pending retry", async () => {
+  const w = await world([() => Promise.reject(new Error("bad code"))]);
+  const r = await w.wf.login("1234", { retryCurrency: "CUP" });
+  assert.deepEqual([r.ok, r.failureCode], [false, -100]);
+  assert.equal(w.store.state.retryBalance, null);
 });
 
 test("a failed login clears the pending retry", async () => {

@@ -28,7 +28,8 @@ export function createMock({ delayMs = 800, sims = SIMS } = {}) {
   const calls = [];
 
   const emit = (sender, body) => {
-    const sms = { sender, body, receivedAt: Date.now() };
+    const at = Date.now();
+    const sms = { sender, body, sentAt: at, receivedAt: at };
     if (handler) handler(sms);
     else buffered.push(sms);
   };

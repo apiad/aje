@@ -14,7 +14,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   /** Sends a USSD on the chosen SIM and reports the reply; the result is the bridge's. */
   async function send(op, subId, code) {
     const start = now();
-    const r = await bridge.sendUssd(subId, code);
+    let r;
+    try {
+      r = await bridge.sendUssd(subId, code);
+    } catch (e) {
+      // The shell refused the call (a malformed code, an exception): the same code Ussd.kt uses.
+      r = { ok: false, failureCode: -100, error: e.message };
+    }
     if (r.ok) {
       telemetry.event("ussd_reply", { op, ok: true, length: r.reply.length, latency_ms: now() - start, text: r.reply });
     } else {
@@ -90,7 +96,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   }
 
   /** One incoming SMS. Texts the parser does not know are dropped here and never stored. */
-  async function handleSms({ sender, body, receivedAt = now() }) {
+  async function handleSms({ sender, body, sentAt = null, receivedAt = now() }) {
     const tag = senderTag(sender);
     const sms = parseBankSms(body);
     if (!sms) {
@@ -99,8 +105,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       }
       return null;
     }
-    // The native queue and the live push can deliver the same text twice.
-    if (await store.seen(`${receivedAt}:${body.length}`)) return sms;
+    // The native queue and the live push, or a repeated broadcast, can deliver the same text
+    // twice. The SMSC's timestamp and the text identify it; the arrival time differs per broadcast.
+    if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return sms;
     const base = { sender: tag, bank: sms.bank, text: body };
     switch (sms.kind) {
       case "balance": {
@@ -119,7 +126,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         const retry = store.state.retryBalance;
         if (retry) {
           await store.setRetryBalance(null);
-          if (receivedAt - retry.at < WINDOW_MS) await balance(retry.currency);
+          // A queued SMS can be read hours later: rerun only while the login is recent.
+          if (receivedAt - retry.at < WINDOW_MS && now() - retry.at < WINDOW_MS) await balance(retry.currency);
         }
         break;
       }
@@ -128,4 +136,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   }
 
   return { balance, login, transfer, mobileBalance, handleSms };
+}
+
+/** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
+function fnv1a(text) {
+  let h = 0x811c9dc5;
+  for (const c of text) {
+    h ^= c.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
 }

@@ -2,7 +2,7 @@
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
 // JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready", "args": {...}}
-// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "receivedAt"}
+// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
 export async function connect({ native = globalThis.ajeNative, loadMock = () => import("./mock.js") } = {}) {
   if (!native) {
@@ -18,7 +18,7 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
   native.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.event === "sms") {
-      const sms = { sender: msg.sender, body: msg.body, receivedAt: msg.receivedAt };
+      const sms = { sender: msg.sender, body: msg.body, sentAt: msg.sentAt ?? null, receivedAt: msg.receivedAt };
       if (handler) handler(sms);
       else buffered.push(sms);
       return;
