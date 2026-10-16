@@ -24,7 +24,12 @@ sealed interface BankSms {
         val amount: Money,
         val transactionId: String,
         val remaining: Money?,
-    ) : BankSms
+    ) : BankSms {
+        /** Whether this confirms a transfer of [cents] to [card]; the bank masks the middle of the number with X. */
+        fun matches(card: String, cents: Long): Boolean =
+            amount.cents == cents && beneficiary.length == card.length &&
+                beneficiary.zip(card).all { (b, c) -> b == 'X' || b == c }
+    }
 
     /** The bank opened a mobile-payments session for this phone. */
     data class Authenticated(override val bank: Bank) : BankSms

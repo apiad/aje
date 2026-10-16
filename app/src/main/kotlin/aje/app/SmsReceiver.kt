@@ -12,11 +12,11 @@ class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         messages.groupBy { it.originatingAddress ?: "" }.forEach { (sender, parts) ->
-            handle(sender, parts.joinToString("") { it.messageBody ?: "" })
+            handle(context.applicationContext, sender, parts.joinToString("") { it.messageBody ?: "" })
         }
     }
 
-    private fun handle(sender: String, body: String) {
+    private fun handle(context: Context, sender: String, body: String) {
         // Short or alphanumeric senders are services; a long number is a person and is never reported.
         val senderTag = if (sender.any { it.isLetter() } || sender.length <= 6) sender else "number"
         when (val sms = BankSmsParser.parse(body)) {
@@ -24,10 +24,17 @@ class SmsReceiver : BroadcastReceiver() {
                 val latency = Store.verifyBalance(sms)
                 Telemetry.event("sms", "kind" to "balance", "sender" to senderTag, "bank" to sms.bank.name, "latency_ms" to latency, "text" to body)
             }
-            is BankSms.TransferDone -> Telemetry.event("sms", "kind" to "transfer", "sender" to senderTag, "bank" to sms.bank.name, "text" to body)
+            is BankSms.TransferDone -> {
+                val latency = Store.verifyTransfer(sms)
+                Telemetry.event("sms", "kind" to "transfer", "sender" to senderTag, "bank" to sms.bank.name, "ok" to (latency != null), "latency_ms" to latency, "text" to body)
+            }
             is BankSms.Authenticated -> {
-                Store.authenticatedAt = System.currentTimeMillis()
+                Store.authenticated(System.currentTimeMillis())
                 Telemetry.event("sms", "kind" to "auth", "sender" to senderTag, "bank" to sms.bank.name, "text" to body)
+                if (Store.retryBalanceAfterLogin) {
+                    Store.retryBalanceAfterLogin = false
+                    Ops.balance(context)
+                }
             }
             null -> if (BANKISH in body) {
                 Telemetry.event("sms", "kind" to "unparsed_bank", "sender" to senderTag, "length" to body.length, "lines" to body.lines().size, "text" to body)

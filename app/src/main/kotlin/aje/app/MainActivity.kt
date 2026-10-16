@@ -58,11 +58,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import aje.core.money.Bank
-import aje.core.money.Card
 import aje.core.money.Currency
+import aje.core.money.Pan
 import aje.core.ops.BankOps
-import aje.core.ussd.Encoder
-import aje.core.ussd.UssdConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -145,6 +143,7 @@ private fun Home() {
         Setup()
         Login()
         Balance()
+        Transfer()
         History()
         Diagnostics()
         TelemetryPanel()
@@ -215,45 +214,112 @@ private fun Setup() {
 private fun Balance() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
-    val latest = Store.attempts.firstOrNull()
-
-    fun start(viaDialer: Boolean) {
-        val card = Card("Principal", Store.bank, Store.currency, pan = null)
-        val ussd = BankOps.balance(card)
-        val seed = Encoder.randomSeed()
-        val config = UssdConfig()
-        val now = System.currentTimeMillis()
-        val attempt = Attempt(now, now, ussd.display(config, seed), if (viaDialer) AttemptState.DIALER else AttemptState.SENT)
-        Store.add(attempt)
-        val dialed = ussd.dial(config, seed)
-        if (viaDialer) {
-            Telemetry.event("ussd_sent", "op" to "46", "bank" to Store.bank.name, "via" to "dialer")
-            Ussd.dial(context, dialed)
-            return
-        }
-        Telemetry.event("ussd_sent", "op" to "46", "bank" to Store.bank.name, "via" to "api")
-        Ussd.send(
-            context, Store.subId, dialed,
-            onReply = { reply ->
-                Store.update(attempt.id) { if (it.state == AttemptState.VERIFIED) it.copy(reply = reply) else it.copy(state = AttemptState.REPLIED, reply = reply) }
-                Telemetry.event("ussd_reply", "op" to "46", "ok" to true, "length" to reply.length, "latency_ms" to System.currentTimeMillis() - now, "text" to reply)
-            },
-            onFailure = { code, error ->
-                Store.update(attempt.id) { if (it.state == AttemptState.VERIFIED) it else it.copy(state = AttemptState.FAILED, failureCode = code) }
-                Telemetry.event("ussd_reply", "op" to "46", "ok" to false, "failure_code" to code, "error" to error)
-            },
-        )
-    }
+    val latest = Store.attempts.firstOrNull { it.op == "46" }
 
     Panel {
         Button(
-            onClick = { start(viaDialer = false) },
+            onClick = { Ops.balance(context) },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
             shape = RoundedCornerShape(12.dp),
         ) { Text("Consultar saldo", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
-        TextButton(onClick = { start(viaDialer = true) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+        TextButton(onClick = { Ops.balance(context, viaDialer = true) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Si no responde, marcar desde el teléfono", color = scheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+        if (latest != null) {
+            AttemptView(latest, expanded = true)
+            if (latest.state != AttemptState.VERIFIED && latest.reply?.let(BankOps::needsLogin) == true) LoginAndRetry()
+        }
+    }
+}
+
+/** The bank closed the session: ask for the key here, log in, and rerun the query when the auth SMS arrives. */
+@Composable
+private fun LoginAndRetry() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var status by remember { mutableStateOf<String?>(null) }
+    if (Store.retryBalanceAfterLogin) {
+        Text("Esperando el SMS de sesión abierta. Al llegar, Ajé vuelve a consultar.", color = scheme.primary, fontSize = 13.sp)
+        TextButton(onClick = { Store.retryBalanceAfterLogin = false }) { Text("No llega: volver a escribir la clave", fontSize = 13.sp) }
+    } else {
+        Text("La sesión en el banco se cerró. Escribe tu clave y Ajé vuelve a consultar.", color = scheme.primary, fontSize = 13.sp)
+        PinField { pin ->
+            Store.retryBalanceAfterLogin = true
+            Ops.login(context, pin) { status = it }
+        }
+    }
+    status?.let { Text(it, fontSize = 13.sp, color = scheme.onSurfaceVariant) }
+}
+
+/** A 4-digit key field and its button. The key lives only in this field until it is sent. */
+@Composable
+private fun PinField(label: String = "Autenticarse", onSubmit: (String) -> Unit) {
+    var pin by remember { mutableStateOf("") }
+    OutlinedTextField(
+        value = pin,
+        onValueChange = { v -> pin = v.filter { it.isDigit() }.take(4) },
+        label = { Text("Clave") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+    )
+    Button(enabled = pin.length == 4, onClick = {
+        val p = pin
+        pin = ""
+        onSubmit(p)
+    }) { Text(label) }
+}
+
+@Composable
+private fun Transfer() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var card by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var confirming by remember { mutableStateOf(false) }
+    val latest = Store.attempts.firstOrNull { it.op == "45" }
+    val to = card.takeIf { it.length == 16 }?.let { Pan(it) }
+    val units = amount.toLongOrNull()?.takeIf { it > 0 }
+
+    Panel {
+        Text("Transferir", fontWeight = FontWeight.SemiBold)
+        Text(
+            "Desde tu tarjeta en ${Store.currency.name} a otra tarjeta. Se abre el marcador y el banco te pide " +
+                "escribir 1 para confirmar. El SMS de la transferencia la verifica.",
+            color = scheme.onSurfaceVariant, fontSize = 13.sp,
+        )
+        if (Store.authenticatedAt == null) {
+            Text("Abre sesión en el banco antes: el marcador no le deja a Ajé ver si el banco la pide.", color = scheme.primary, fontSize = 13.sp)
+        }
+        OutlinedTextField(
+            value = card,
+            onValueChange = { v -> card = v.filter { it.isDigit() }.take(16); confirming = false },
+            label = { Text("Tarjeta de destino, 16 dígitos") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        )
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { v -> amount = v.filter { it.isDigit() }.take(7); confirming = false },
+            label = { Text("Monto en ${Store.currency.name}, sin centavos") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        )
+        if (to != null && units != null) {
+            if (!confirming) {
+                Button(onClick = { confirming = true }) { Text("Revisar") }
+            } else {
+                Text("Vas a transferir $units ${Store.currency.name} a la tarjeta ${to.digits.chunked(4).joinToString(" ")}.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        Ops.transfer(context, to, units)
+                        confirming = false
+                        amount = ""
+                    }) { Text("Abrir el marcador") }
+                    TextButton(onClick = { confirming = false }) { Text("Cambiar") }
+                }
+            }
         }
         if (latest != null) AttemptView(latest, expanded = true)
     }
@@ -289,15 +355,19 @@ private fun AttemptView(a: Attempt, expanded: Boolean) {
             Spacer(Modifier.width(10.dp))
             StateChip(a.state)
         }
-        if (a.available != null) {
+        if (a.op == "45") {
+            Text("${a.amount} ${a.currency} → ····${a.to?.takeLast(4)}", fontSize = if (expanded) 22.sp else 16.sp, fontWeight = FontWeight.SemiBold)
+            a.transactionId?.let { Text("Transacción $it", color = scheme.onSurfaceVariant, fontSize = 13.sp) }
+            a.available?.let { Text("Saldo restante $it", color = scheme.onSurfaceVariant, fontSize = 13.sp) }
+            if (expanded && a.state == AttemptState.DIALER) {
+                Text("Si el marcador mostró un error («MMI problem», señal), la transferencia no salió: repítela con buena señal. Si dijo que debes autenticarte, abre sesión arriba y repite.", color = scheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+        } else if (a.available != null) {
             Text(a.available, fontSize = if (expanded) 28.sp else 18.sp, fontWeight = FontWeight.SemiBold)
             Text("Disponible · contable ${a.accounting}", color = scheme.onSurfaceVariant, fontSize = 13.sp)
         }
         if (expanded) {
             a.reply?.let { Text("Respuesta del banco: $it", fontSize = 14.sp) }
-            if (a.reply?.contains("autentic", ignoreCase = true) == true) {
-                Text("El banco pide abrir sesión: autentícate arriba con tu clave y vuelve a consultar.", color = scheme.primary, fontSize = 13.sp)
-            }
             a.failureCode?.let { Text("Código de fallo $it. Prueba a marcar desde el teléfono.", color = scheme.onSurfaceVariant, fontSize = 13.sp) }
             if (a.code.isNotEmpty()) {
                 Text(
@@ -347,7 +417,6 @@ private fun Diagnostics() {
 private fun Login() {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
-    var pin by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     Panel {
         Text("Abrir sesión en el banco", fontWeight = FontWeight.SemiBold)
@@ -356,37 +425,9 @@ private fun Login() {
             color = scheme.onSurfaceVariant, fontSize = 13.sp,
         )
         Store.authenticatedAt?.let {
-            Text("Sesión abierta a las ${timeFormat.format(Date(it))} (confirmada por SMS)", color = River, fontSize = 13.sp)
+            Text("Última sesión confirmada por SMS: ${timeFormat.format(Date(it))}", color = River, fontSize = 13.sp)
         }
-        OutlinedTextField(
-            value = pin,
-            onValueChange = { v -> pin = v.filter { it.isDigit() }.take(4) },
-            label = { Text("Clave") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-        )
-        Button(
-            enabled = pin.length == 4,
-            onClick = {
-                val code = BankOps.login(Store.bank, pin)
-                pin = ""
-                status = "Enviando…"
-                val start = System.currentTimeMillis()
-                Telemetry.event("ussd_sent", "op" to "40", "bank" to Store.bank.name, "via" to "api")
-                Ussd.send(
-                    context, Store.subId, code.dial(UssdConfig()),
-                    onReply = {
-                        status = "Respuesta del banco: $it"
-                        Telemetry.event("ussd_reply", "op" to "40", "ok" to true, "latency_ms" to System.currentTimeMillis() - start, "text" to it)
-                    },
-                    onFailure = { c, e ->
-                        status = "El teléfono no la envió (código $c)."
-                        Telemetry.event("ussd_reply", "op" to "40", "ok" to false, "failure_code" to c, "error" to e)
-                    },
-                )
-            },
-        ) { Text("Autenticarse") }
+        PinField { pin -> Ops.login(context, pin) { status = it } }
         status?.let { Text(it, fontSize = 14.sp) }
     }
 }
@@ -436,7 +477,8 @@ private fun TelemetryPanel() {
 
 @Composable
 private fun History() {
-    val older = Store.attempts.drop(1)
+    val shown = setOfNotNull(Store.attempts.firstOrNull { it.op == "46" }, Store.attempts.firstOrNull { it.op == "45" })
+    val older = Store.attempts.filter { it !in shown }
     if (older.isEmpty()) return
     Panel {
         Text("Historial", fontWeight = FontWeight.SemiBold)

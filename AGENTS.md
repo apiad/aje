@@ -26,7 +26,8 @@ is verified on a phone, and a report says which of the two a claim came from.
 
 - A bank PIN or a transfer key is a `Field(secret = true)`. Only `UssdCode.dial`
   returns it; nothing persists or logs a dialed string that carries one.
-- Telemetry never carries SMS bodies, phone or card numbers, amounts, balances or
-  USSD replies. Adding a field means adding it to both allowlists.
+- Telemetry carries the text of bank USSD replies and bank SMS only through
+  `Telemetry.mask`, which turns every digit into `#`. No other field carries a phone or
+  card number, an amount or a balance. Adding a field means adding it to both allowlists.
 - Signing material and the telemetry token live in `keystore.properties`, which is
   gitignored and points outside the repo.

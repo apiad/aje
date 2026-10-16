@@ -15,12 +15,20 @@ import java.util.UUID
 
 enum class AttemptState { SENT, REPLIED, FAILED, DIALER, VERIFIED }
 
-/** One balance query: logged on send, verified when the bank's SMS arrives. */
+/**
+ * One bank operation, logged on send and verified when the bank's SMS arrives. A balance
+ * query is op 46; a transfer is op 45 and carries the destination card and the amount.
+ */
 data class Attempt(
     val id: Long,
     val startedAt: Long,
     val code: String,
     val state: AttemptState,
+    val op: String = "46",
+    val to: String? = null,
+    val amount: Long? = null,
+    val currency: String? = null,
+    val transactionId: String? = null,
     val reply: String? = null,
     val failureCode: Int? = null,
     val accounting: String? = null,
@@ -38,8 +46,11 @@ object Store {
     var bank by mutableStateOf(Bank.METROPOLITANO)
     var currency by mutableStateOf(Currency.CUP)
     var telemetry by mutableStateOf(false)
-    /** When the bank's "se ha autenticado" SMS last arrived; in memory only. */
+    /** When the bank's "se ha autenticado" SMS last arrived. */
     var authenticatedAt by mutableStateOf<Long?>(null)
+        private set
+    /** Set when the person logged in from a "debe autenticarse" reply: the auth SMS reruns the balance query. */
+    var retryBalanceAfterLogin by mutableStateOf(false)
     lateinit var installId: String
         private set
 
@@ -49,6 +60,7 @@ object Store {
         bank = Bank.valueOf(prefs.getString("bank", Bank.METROPOLITANO.name)!!)
         currency = Currency.valueOf(prefs.getString("currency", Currency.CUP.name)!!)
         telemetry = prefs.getBoolean("telemetry", false)
+        authenticatedAt = prefs.getLong("authenticatedAt", 0L).takeIf { it > 0 }
         installId = prefs.getString("installId", null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString("installId", it).apply()
         }
@@ -64,6 +76,11 @@ object Store {
             .putString("currency", currency.name)
             .putBoolean("telemetry", telemetry)
             .apply()
+    }
+
+    fun authenticated(at: Long) {
+        authenticatedAt = at
+        prefs.edit().putLong("authenticatedAt", at).apply()
     }
 
     fun add(attempt: Attempt) {
@@ -82,7 +99,7 @@ object Store {
 
     /** Promotes the latest pending balance query to verified. Returns the latency, or null if none matched. */
     fun verifyBalance(sms: BankSms.BalanceReport, now: Long = System.currentTimeMillis()): Long? {
-        val pending = attempts.firstOrNull { it.state != AttemptState.VERIFIED && now - it.startedAt < WINDOW_MS }
+        val pending = attempts.firstOrNull { it.op == "46" && it.state != AttemptState.VERIFIED && now - it.startedAt < WINDOW_MS }
         val accounting = sms.accounting.toString()
         val available = sms.available.toString()
         if (pending == null) {
@@ -91,6 +108,24 @@ object Store {
         }
         update(pending.id) {
             it.copy(state = AttemptState.VERIFIED, accounting = accounting, available = available, verifiedAt = now)
+        }
+        return now - pending.startedAt
+    }
+
+    /**
+     * Promotes the pending transfer this SMS confirms, by card and amount, to verified.
+     * Returns the latency, or null if no pending transfer matched.
+     */
+    fun verifyTransfer(sms: BankSms.TransferDone, now: Long = System.currentTimeMillis()): Long? {
+        val pending = attempts.firstOrNull {
+            it.op == "45" && it.state != AttemptState.VERIFIED && now - it.startedAt < WINDOW_MS &&
+                it.to != null && it.amount != null && sms.matches(it.to, it.amount * 100)
+        } ?: return null
+        update(pending.id) {
+            it.copy(
+                state = AttemptState.VERIFIED, transactionId = sms.transactionId,
+                available = sms.remaining?.toString(), verifiedAt = now,
+            )
         }
         return now - pending.startedAt
     }
@@ -108,7 +143,8 @@ object Store {
     }
 
     private fun toJson(a: Attempt) = JSONObject()
-        .put("id", a.id).put("startedAt", a.startedAt).put("code", a.code).put("state", a.state.name)
+        .put("id", a.id).put("startedAt", a.startedAt).put("code", a.code).put("state", a.state.name).put("op", a.op)
+        .putOpt("to", a.to).putOpt("amount", a.amount).putOpt("currency", a.currency).putOpt("transactionId", a.transactionId)
         .putOpt("reply", a.reply).putOpt("failureCode", a.failureCode)
         .putOpt("accounting", a.accounting).putOpt("available", a.available).putOpt("verifiedAt", a.verifiedAt)
 
@@ -117,6 +153,11 @@ object Store {
         startedAt = o.getLong("startedAt"),
         code = o.optString("code"),
         state = AttemptState.valueOf(o.getString("state")),
+        op = o.optString("op", "46"),
+        to = o.optString("to").ifEmpty { null },
+        amount = if (o.has("amount")) o.getLong("amount") else null,
+        currency = o.optString("currency").ifEmpty { null },
+        transactionId = o.optString("transactionId").ifEmpty { null },
         reply = o.optString("reply").ifEmpty { null },
         failureCode = if (o.has("failureCode")) o.getInt("failureCode") else null,
         accounting = o.optString("accounting").ifEmpty { null },

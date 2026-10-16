@@ -22,7 +22,7 @@ data class SentEvent(val json: String, val sent: Boolean)
 object Telemetry {
     val ALLOWED = setOf(
         "op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines",
-        "error", "stack", "bank", "via", "default_sub", "text",
+        "error", "stack", "bank", "via", "default_sub", "text", "age_ms",
     )
 
     /** Every digit becomes `#`. */

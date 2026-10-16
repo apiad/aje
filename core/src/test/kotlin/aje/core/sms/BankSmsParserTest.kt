@@ -3,6 +3,8 @@ package aje.core.sms
 import aje.core.money.Bank
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 
 /** Fixtures follow the layout of real Banco Metropolitano texts; every number in them is made up. */
@@ -38,6 +40,14 @@ class BankSmsParserTest {
             ),
             BankSmsParser.parse(transfer),
         )
+    }
+
+    @Test
+    fun transferMatchesTheMaskedBeneficiaryAndTheAmount() {
+        val done = BankSmsParser.parse(transfer) as BankSms.TransferDone
+        assertTrue(done.matches("9200950000000001", 10000))
+        assertFalse(done.matches("9200950000000002", 10000))
+        assertFalse(done.matches("9200950000000001", 10100))
     }
 
     @Test

@@ -2,6 +2,7 @@ package aje.core.ops
 
 import aje.core.money.Bank
 import aje.core.money.Card
+import aje.core.money.Pan
 import aje.core.ussd.Field
 import aje.core.ussd.UssdCode
 
@@ -20,6 +21,25 @@ object BankOps {
         require(pin.length == 4 && pin.all { it in '0'..'9' }) { "the bank key has 4 digits" }
         return UssdCode.Encoded("40", listOf(Field(agency), Field(pin, secret = true)))
     }
+
+    /**
+     * Opcode 45, card to card, in the order of Metropolitano's transfer screen:
+     * `cuentaDestino*importe*monedaImporte*monedaTarjeta*cuentaOrigen*movilConfirmar*enviarMiMovil*mensaje*enviarSaldo`,
+     * with no confirmation phone, no SMS to the sender's phone, no message and no balance in the SMS.
+     * The amount is in whole units of the card's currency: decimals need the second encoder.
+     * It is dialed, not sent: the bank's last menu asks the person to type 1.
+     */
+    fun transfer(from: Card, to: Pan, amount: Long): UssdCode {
+        require(amount > 0) { "the amount is a positive whole number" }
+        return encoded(
+            "45",
+            listOf(to.digits, amount.toString(), from.currency.index.toString()) +
+                from.selector.fields + listOf("0000", "0", "0000", "0"),
+        )
+    }
+
+    /** The bank's reply to an operation sent without an open session. */
+    fun needsLogin(reply: String): Boolean = Regex("autentic", RegexOption.IGNORE_CASE) in reply
 
     private fun encoded(op: String, values: List<String>) = UssdCode.Encoded(op, values.map { Field(it) })
 }
