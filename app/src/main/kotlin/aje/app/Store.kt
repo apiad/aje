@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import aje.core.money.Bank
 import aje.core.money.Currency
+import aje.core.money.MobilePlan
 import aje.core.sms.BankSms
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,6 +46,10 @@ object Store {
     var subId by mutableStateOf(-1)
     var bank by mutableStateOf(Bank.METROPOLITANO)
     var currency by mutableStateOf(Currency.CUP)
+    /** The currencies whose bank cards show in the deck. */
+    var enabledCurrencies by mutableStateOf(setOf(Currency.CUP, Currency.CUC, Currency.USD))
+    /** The balance code each SIM's line dials, by subscription id; absent means prepaid. */
+    var mobilePlans by mutableStateOf<Map<Int, MobilePlan>>(emptyMap())
     var telemetry by mutableStateOf(false)
     /** When the bank's "se ha autenticado" SMS last arrived. */
     var authenticatedAt by mutableStateOf<Long?>(null)
@@ -59,6 +64,13 @@ object Store {
         subId = prefs.getInt("subId", -1)
         bank = Bank.valueOf(prefs.getString("bank", Bank.METROPOLITANO.name)!!)
         currency = Currency.valueOf(prefs.getString("currency", Currency.CUP.name)!!)
+        enabledCurrencies = prefs.getString("enabledCurrencies", null)
+            ?.split(",")?.filter { it.isNotEmpty() }?.map { Currency.valueOf(it) }?.toSet()
+            ?.ifEmpty { null }
+            ?: setOf(Currency.CUP, Currency.CUC, Currency.USD)
+        mobilePlans = JSONObject(prefs.getString("mobilePlans", "{}")!!).let { o ->
+            o.keys().asSequence().associate { it.toInt() to MobilePlan.valueOf(o.getString(it)) }
+        }
         telemetry = prefs.getBoolean("telemetry", false)
         authenticatedAt = prefs.getLong("authenticatedAt", 0L).takeIf { it > 0 }
         installId = prefs.getString("installId", null) ?: UUID.randomUUID().toString().also {
@@ -74,9 +86,23 @@ object Store {
             .putInt("subId", subId)
             .putString("bank", bank.name)
             .putString("currency", currency.name)
+            .putString("enabledCurrencies", enabledCurrencies.joinToString(",") { it.name })
+            .putString("mobilePlans", JSONObject().also { o -> mobilePlans.forEach { (k, v) -> o.put(k.toString(), v.name) } }.toString())
             .putBoolean("telemetry", telemetry)
             .apply()
     }
+
+    /** The plan a SIM's line uses for its balance code; prepaid unless the person set it. */
+    fun planFor(subId: Int): MobilePlan = mobilePlans[subId] ?: MobilePlan.PREPAGO
+
+    fun setPlan(subId: Int, plan: MobilePlan) {
+        mobilePlans = mobilePlans + (subId to plan)
+        saveSettings()
+    }
+
+    /** The last verified balance shown on a currency's card, or null until one is queried. */
+    fun balanceFor(currency: Currency): String? =
+        attempts.firstOrNull { it.op == "46" && it.state == AttemptState.VERIFIED && it.currency == currency.name }?.available
 
     fun authenticated(at: Long) {
         authenticatedAt = at
