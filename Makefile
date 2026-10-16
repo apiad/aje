@@ -1,7 +1,12 @@
 # Every mechanical check and build entry point.
-.PHONY: test apk
+.PHONY: test test-web test-core apk
 
-test:
+test: test-web test-core
+
+test-web:
+	cd web && node --test "test/*.test.js"
+
+test-core:
 	./gradlew :core:test
 
 # A signed dev APK. The version code is the commit count, so each build installs over the last.

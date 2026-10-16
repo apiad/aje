@@ -14,9 +14,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = {"event", "t", "app", "sdk", "device", "install"}
-# Mirrors Telemetry.ALLOWED in app/src/main/kotlin/aje/app/Telemetry.kt.
+# Mirrors ALLOWED in web/core/telemetry.js; web/test/telemetry.test.js checks it.
 ALLOWED = {"op", "ok", "failure_code", "latency_ms", "kind", "sender", "length", "lines", "error", "stack", "bank", "via", "default_sub", "text", "age_ms"}
 MAX_BODY = 256 * 1024
+# The app's frontend runs in a WebView at this origin and posts with fetch, so it needs CORS.
+ORIGIN = "https://appassets.androidplatform.net"
 
 
 def clean(event):
@@ -49,8 +51,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.reply(404)
 
+    def do_OPTIONS(self):
+        self.reply(204)
+
     def reply(self, code):
         self.send_response(code)
+        self.send_header("Access-Control-Allow-Origin", ORIGIN)
+        self.send_header("Access-Control-Allow-Methods", "POST")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Aje-Token")
+        self.send_header("Access-Control-Max-Age", "86400")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
