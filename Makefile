@@ -1,15 +1,16 @@
 # Every mechanical check and build entry point.
-.PHONY: test test-web test-core apk
+.PHONY: test smoke apk
 
-test: test-web test-core
-
-test-web:
+# The logic, including the 1600 encoder vectors, in Node.
+test:
 	cd web && node --test "test/*.test.js"
 
-test-core:
-	./gradlew :core:test
+# The frontend against the mock in a phone-sized browser.
+smoke:
+	uv run --with playwright python tools/smoke-web.py
 
-# A signed dev APK. The version code is the commit count, so each build installs over the last.
+# A signed dev APK. The version code is the commit count plus 100, so each build installs over the last;
+# the offset clears dev builds made before squash merges shortened the history.
 apk:
-	./gradlew :app:assembleRelease -PversionCode=$$(git rev-list --count HEAD)
+	./gradlew :app:assembleRelease -PversionCode=$$(( $$(git rev-list --count HEAD) + 100 ))
 	@ls -la app/build/outputs/apk/release/*.apk

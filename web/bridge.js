@@ -4,7 +4,10 @@
 // JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
-export async function connect({ native = globalThis.ajeNative, loadMock = () => import("./mock.js") } = {}) {
+/** How long a USSD may go unanswered; some phones never call back. */
+const USSD_TIMEOUT_MS = 60_000;
+
+export async function connect({ native = globalThis.ajeNative, loadMock = () => import("./mock.js"), timeoutMs = USSD_TIMEOUT_MS } = {}) {
   if (!native) {
     const { createMock } = await loadMock();
     return createMock();
@@ -30,25 +33,36 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     else p.resolve(msg.result);
   };
 
-  const call = (method, args = {}) => new Promise((resolve, reject) => {
+  const call = (method, args = {}, timeout = null) => new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject });
+    const timer = timeout && setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`no answer to ${method}`));
+    }, timeout);
+    const done = (fn) => (v) => {
+      clearTimeout(timer);
+      fn(v);
+    };
+    pending.set(id, { resolve: done(resolve), reject: done(reject) });
     native.postMessage(JSON.stringify({ id, method, args }));
   });
 
-  // Opens the push channel; the shell then delivers the SMS it queued while no page was alive.
-  call("ready").catch(() => {});
-
   return {
     kind: "native",
-    sendUssd: (subId, code) => call("sendUssd", { subId, code }),
+    sendUssd: (subId, code) => call("sendUssd", { subId, code }, timeoutMs),
     dial: (code) => call("dial", { code }),
     listSims: () => call("listSims"),
     requestPermissions: () => call("requestPermissions"),
-    /** SMS that arrived before a handler existed are delivered to the first one. */
+    /**
+     * The first handler sends `ready`, which opens the push channel and makes the shell deliver,
+     * then delete, the SMS it queued while no page was alive: so only a page that can save them
+     * asks for them. SMS that arrived before a handler existed are delivered to it.
+     */
     onSms(fn) {
+      const first = handler === null;
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
+      if (first) call("ready").catch(() => {});
     },
   };
 }

@@ -4,45 +4,20 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
-import aje.core.sms.BankSms
-import aje.core.sms.BankSmsParser
+import org.json.JSONObject
 
-/** Reads each incoming SMS; bank confirmations verify the pending operation. */
+/** Hands each incoming SMS, raw, to the page, or queues it when no page is alive. */
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
+        val now = System.currentTimeMillis()
         messages.groupBy { it.originatingAddress ?: "" }.forEach { (sender, parts) ->
-            handle(context.applicationContext, sender, parts.joinToString("") { it.messageBody ?: "" })
+            val sms = JSONObject()
+                .put("sender", sender)
+                .put("body", parts.joinToString("") { it.messageBody ?: "" })
+                .put("sentAt", parts.first().timestampMillis)
+                .put("receivedAt", now)
+            if (NativeBridge.live?.push(sms) != true) SmsQueue.append(context.applicationContext, sms)
         }
-    }
-
-    private fun handle(context: Context, sender: String, body: String) {
-        // Short or alphanumeric senders are services; a long number is a person and is never reported.
-        val senderTag = if (sender.any { it.isLetter() } || sender.length <= 6) sender else "number"
-        when (val sms = BankSmsParser.parse(body)) {
-            is BankSms.BalanceReport -> {
-                val latency = Store.verifyBalance(sms)
-                Telemetry.event("sms", "kind" to "balance", "sender" to senderTag, "bank" to sms.bank.name, "latency_ms" to latency, "text" to body)
-            }
-            is BankSms.TransferDone -> {
-                val latency = Store.verifyTransfer(sms)
-                Telemetry.event("sms", "kind" to "transfer", "sender" to senderTag, "bank" to sms.bank.name, "ok" to (latency != null), "latency_ms" to latency, "text" to body)
-            }
-            is BankSms.Authenticated -> {
-                Store.authenticated(System.currentTimeMillis())
-                Telemetry.event("sms", "kind" to "auth", "sender" to senderTag, "bank" to sms.bank.name, "text" to body)
-                if (Store.retryBalanceAfterLogin) {
-                    Store.retryBalanceAfterLogin = false
-                    Ops.balance(context)
-                }
-            }
-            null -> if (BANKISH in body) {
-                Telemetry.event("sms", "kind" to "unparsed_bank", "sender" to senderTag, "length" to body.length, "lines" to body.lines().size, "text" to body)
-            }
-        }
-    }
-
-    private companion object {
-        val BANKISH = Regex("banco|bpa|bandec|metropolitano|transferm|saldo|autentic|pagos? m[oó]vil", RegexOption.IGNORE_CASE)
     }
 }

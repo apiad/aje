@@ -2,10 +2,9 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// The signing key lives outside the repo; keystore.properties points at it.
+// The signing key and the telemetry endpoint live outside the repo; keystore.properties points at them.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -21,8 +20,6 @@ android {
         targetSdk = 34
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "0.1.0-dev.$versionCode"
-        buildConfigField("String", "TELEMETRY_URL", "\"${keystoreProps.getProperty("telemetryUrl", "")}\"")
-        buildConfigField("String", "TELEMETRY_TOKEN", "\"${keystoreProps.getProperty("telemetryToken", "")}\"")
     }
 
     signingConfigs {
@@ -43,21 +40,43 @@ android {
         }
     }
 
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
+/** Copies web/ into the APK's assets, without tests or the mock, and writes the build's config.json. */
+abstract class WebAssets : DefaultTask() {
+    @get:InputDirectory abstract val source: DirectoryProperty
+    @get:Input abstract val config: MapProperty<String, String>
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun run() {
+        val out = outputDir.get().asFile.resolve("web")
+        out.deleteRecursively()
+        source.get().asFile.copyRecursively(out)
+        listOf("test", "mock.js", "package.json", "config.json").forEach { out.resolve(it).deleteRecursively() }
+        val json = config.get().entries.joinToString(",", "{", "}") { (k, v) ->
+            "\"$k\":\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        }
+        out.resolve("config.json").writeText(json)
+    }
+}
+
+val webAssets = tasks.register<WebAssets>("webAssets") {
+    source.set(rootProject.layout.projectDirectory.dir("web"))
+    config.put("app", android.defaultConfig.versionName!!)
+    config.put("telemetryUrl", keystoreProps.getProperty("telemetryUrl", ""))
+    config.put("telemetryToken", keystoreProps.getProperty("telemetryToken", ""))
+}
+
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(webAssets, WebAssets::outputDir) }
+}
+
 dependencies {
-    implementation(project(":core"))
-    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.activity:activity:1.13.0")
+    implementation("androidx.webkit:webkit:1.17.1")
 }
