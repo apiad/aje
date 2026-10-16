@@ -7,6 +7,8 @@ import { createWorkflow } from "./core/workflow.js";
 import { renderHome } from "./ui/deck.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
+import { balanceSheet, closeSheet, mobileBalanceSheet } from "./ui/sheets.js";
+import { renderTransfer } from "./ui/transfer.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
@@ -18,6 +20,7 @@ const soon = (title) => () => h("div", {},
 const SCREENS = {
   home: { render: renderHome, live: true },
   settings: { render: renderSettings, live: true },
+  transfer: { render: renderTransfer },
   pay: { render: soon("Pagar un servicio") },
   qr: { render: soon("Pagar y cobrar por QR") },
 };
@@ -62,7 +65,11 @@ async function boot() {
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
-    act: () => {},
+    act(action, account) {
+      if (action === "balance") balanceSheet(ctx, account).catch(crash);
+      if (action === "transfer") ctx.go(`transfer?from=${account.currency}`);
+      if (action === "mobile-balance") mobileBalanceSheet(ctx, account).catch(crash);
+    },
     route,
   };
 
@@ -74,6 +81,7 @@ async function boot() {
     for (const a of links) a.classList.toggle("on", a.dataset.nav === r.name);
   }
   window.addEventListener("hashchange", () => {
+    closeSheet();
     draw();
     view.scrollTop = 0;
   });

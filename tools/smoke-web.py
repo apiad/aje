@@ -46,7 +46,35 @@ def deck(page):
     expect(page.locator("#settings")).to_be_visible()
 
 
-STEPS = [deck]  # tasks 10 and 11 append theirs
+def balance_with_login(page):
+    card = page.locator('#deck .acct[data-id="card:CUP"]')
+    card.locator('[data-action="balance"]').click()
+    expect(page.locator("#pin")).to_be_visible()
+    page.fill("#pin", "1234")
+    page.click("#pin-submit")
+    expect(page.locator("#pin")).to_have_count(0)
+    expect(card.locator(".bal")).to_have_text("1200.06 CUP", timeout=10_000)
+
+
+def transfer_refuses_decimals(page):
+    page.goto(page.url.split("#")[0] + "#/transfer?from=CUP")
+    page.fill("#tr-to", "9200 9500 0000 0001")
+    page.fill("#tr-amount", "150.50")
+    page.click("#tr-submit")
+    expect(page.locator("#tr-error")).to_be_visible()
+    page.fill("#tr-amount", "100")
+    page.click("#tr-submit")
+    expect(page.locator("#sheet .status")).to_contain_text("marcador")
+
+
+def mobile_balance(page):
+    page.click('[data-go-acct="line:3"]')
+    line = page.locator('#deck .acct[data-id="line:3"]')
+    line.locator('[data-action="mobile-balance"]').click()
+    expect(line.locator(".bal")).to_have_text("185.00 CUP", timeout=10_000)
+
+
+STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance]
 
 
 def main():
