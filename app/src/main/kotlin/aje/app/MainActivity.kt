@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -55,10 +56,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import aje.core.money.Account
 import aje.core.money.Bank
+import aje.core.money.BankCard
 import aje.core.money.Currency
+import aje.core.money.MobileLine
+import aje.core.money.MobilePlan
 import aje.core.money.Pan
 import aje.core.ops.BankOps
 import java.text.SimpleDateFormat
@@ -99,15 +105,28 @@ class MainActivity : ComponentActivity() {
 private fun granted(context: Context) =
     PERMISSIONS.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
-private data class Sim(val subId: Int, val label: String)
+private data class Sim(val subId: Int, val slot: Int, val label: String)
 
 @SuppressLint("MissingPermission")
 private fun sims(context: Context): List<Sim> = try {
     context.getSystemService(SubscriptionManager::class.java).activeSubscriptionInfoList.orEmpty().map {
-        Sim(it.subscriptionId, "SIM ${it.simSlotIndex + 1} · ${it.carrierName}")
+        Sim(it.subscriptionId, it.simSlotIndex, "SIM ${it.simSlotIndex + 1} · ${it.carrierName}")
     }
 } catch (_: SecurityException) {
     emptyList()
+}
+
+/** The deck's accounts: a bank card per enabled currency, then a phone line per active SIM. */
+private fun accounts(context: Context): List<Account> {
+    val cards = listOf(Currency.CUP, Currency.CUC, Currency.USD)
+        .filter { it in Store.enabledCurrencies }
+        .map { BankCard(Store.bank, it) }
+    val lines = sims(context).map { MobileLine(it.subId, it.slot, it.label, Store.planFor(it.subId)) }
+    return cards + lines
+}
+
+private enum class Screen(val label: String) {
+    INICIO("Inicio"), PAGAR("Pagar"), QR("QR"), HISTORIAL("Historial"), AJUSTES("Ajustes")
 }
 
 @Composable
@@ -120,14 +139,12 @@ private fun Home() {
     }
     val scheme = MaterialTheme.colorScheme
 
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text("Ajé", color = scheme.primary, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-        Text("Versión de prueba ${BuildConfig.VERSION_NAME}", color = scheme.onSurfaceVariant, fontSize = 13.sp)
-
-        if (!hasPermissions) {
+    if (!hasPermissions) {
+        Column(
+            Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Ajé", color = scheme.primary, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             Panel {
                 Text("Ajé necesita tres permisos", fontWeight = FontWeight.SemiBold)
                 Text(
@@ -137,17 +154,179 @@ private fun Home() {
                 )
                 Button(onClick = { ask.launch(PERMISSIONS) }) { Text("Dar permisos") }
             }
+        }
+        return
+    }
+
+    var screen by remember { mutableStateOf(Screen.INICIO) }
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Box(Modifier.weight(1f)) {
+            when (screen) {
+                Screen.INICIO -> Inicio()
+                Screen.PAGAR -> Proximamente("Pagar un servicio", "Electricidad, agua, teléfono y más, desde tu tarjeta.")
+                Screen.QR -> Proximamente("Pagar y cobrar por QR", "Tu QR para que te transfieran, y leer el de otro para pagar.")
+                Screen.HISTORIAL -> HistorialScreen()
+                Screen.AJUSTES -> Ajustes()
+            }
+        }
+        BottomNav(screen) { screen = it }
+    }
+}
+
+@Composable
+private fun Inicio() {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    val accts = accounts(context)
+    var front by remember(accts.size) { mutableStateOf(0) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Hola", color = scheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        if (accts.isEmpty()) {
+            Panel { Text("No hay cuentas. Habilita monedas o una SIM en Ajustes.", color = scheme.onSurfaceVariant) }
             return@Column
         }
+        Deck(accts, front, onFront = { front = it })
+        when (val a = accts.getOrNull(front.coerceIn(0, accts.lastIndex))) {
+            is BankCard -> BankActions(a)
+            is MobileLine -> MobileActions(a)
+            else -> {}
+        }
+        RecentActivity()
+    }
+}
 
-        Setup()
-        Login()
-        Balance()
-        Transfer()
-        History()
-        Diagnostics()
-        TelemetryPanel()
-        TelemetryHistory()
+private class QuickAction(val label: String, val enabled: Boolean, val run: () -> Unit)
+
+@Composable
+private fun QuickActions(items: List<QuickAction>, onSoon: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        items.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                row.forEach { qa -> QuickActionButton(qa, Modifier.weight(1f), onSoon) }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionButton(qa: QuickAction, modifier: Modifier, onSoon: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(scheme.surface)
+            .clickable { if (qa.enabled) qa.run() else onSoon() }
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(qa.label, color = if (qa.enabled) scheme.onSurface else scheme.onSurfaceVariant, fontSize = 11.sp, textAlign = TextAlign.Center)
+        if (!qa.enabled) Text("próximamente", color = scheme.onSurfaceVariant, fontSize = 9.sp)
+    }
+}
+
+@Composable
+private fun BankActions(card: BankCard) {
+    val context = LocalContext.current
+    var transferring by remember(card) { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    QuickActions(
+        listOf(
+            QuickAction("Ver saldo", true) { Ops.balance(context, card.currency); note = null },
+            QuickAction("Transferir", true) { transferring = !transferring; note = null },
+            QuickAction("Pagar servicio", false) {},
+            QuickAction("Cobrar/Pagar QR", false) {},
+            QuickAction("Caja Extra", false) {},
+            QuickAction("Tipo de cambio", false) {},
+        ),
+    ) { note = "Esa operación llega en un incremento próximo." }
+    note?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }
+
+    val latest = Store.attempts.firstOrNull { it.op == "46" && it.currency == card.currency.name }
+    if (latest != null) {
+        Panel {
+            AttemptView(latest, expanded = true)
+            if (latest.state != AttemptState.VERIFIED && latest.reply?.let(BankOps::needsLogin) == true) LoginAndRetry(card.currency)
+        }
+    }
+    if (transferring) TransferForm(card.currency)
+}
+
+@Composable
+private fun MobileActions(line: MobileLine) {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var reply by remember(line) { mutableStateOf<String?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    QuickActions(
+        listOf(
+            QuickAction("Saldo móvil", true) { note = null; Ops.mobileBalance(context, line) { reply = it } },
+            QuickAction("Datos / cuota", false) {},
+            QuickAction("Recargar", false) {},
+            QuickAction("Comprar plan", false) {},
+        ),
+    ) { note = "Esa operación llega en un incremento próximo." }
+    note?.let { Text(it, color = scheme.onSurfaceVariant, fontSize = 13.sp) }
+    reply?.let {
+        Panel {
+            Text("Respuesta de ${line.balanceCode}", fontWeight = FontWeight.SemiBold)
+            Text(it, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun RecentActivity() {
+    val scheme = MaterialTheme.colorScheme
+    if (Store.attempts.isEmpty()) return
+    Panel {
+        Text("Actividad reciente", fontWeight = FontWeight.SemiBold)
+        Store.attempts.take(6).forEach { AttemptView(it, expanded = false) }
+    }
+}
+
+@Composable
+private fun Proximamente(title: String, sub: String) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, color = scheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Panel {
+            Text("Próximamente", color = scheme.primary, fontWeight = FontWeight.SemiBold)
+            Text(sub, color = scheme.onSurfaceVariant, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun HistorialScreen() {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Historial", color = scheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        if (Store.attempts.isEmpty()) Panel { Text("Nada todavía.", color = scheme.onSurfaceVariant) }
+        else Panel { Store.attempts.forEach { AttemptView(it, expanded = false) } }
+    }
+}
+
+@Composable
+private fun BottomNav(current: Screen, onPick: (Screen) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(scheme.outline))
+        Row(Modifier.fillMaxWidth().background(scheme.background).padding(vertical = 8.dp)) {
+            Screen.entries.forEach { s ->
+                Column(
+                    Modifier.weight(1f).clickable { onPick(s) }.padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(s.label, color = if (s == current) scheme.primary else scheme.onSurfaceVariant, fontSize = 11.sp)
+                }
+            }
+        }
     }
 }
 
@@ -177,65 +356,72 @@ private fun Chips(options: List<Pair<String, Boolean>>, onPick: (Int) -> Unit) {
 }
 
 @Composable
-private fun Setup() {
+private fun Ajustes() {
     val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
     val list = remember { sims(context) }
     if (Store.subId < 0 && list.size == 1) {
         Store.subId = list[0].subId
         Store.saveSettings()
     }
-    Panel {
-        Text("La SIM registrada en el banco", fontWeight = FontWeight.SemiBold)
-        if (list.isEmpty()) Text("No veo ninguna SIM activa.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            list.forEach { sim ->
-                Chips(listOf(sim.label to (Store.subId == sim.subId))) {
-                    Store.subId = sim.subId
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Ajustes", color = scheme.onBackground, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Panel {
+            Text("La SIM registrada en el banco", fontWeight = FontWeight.SemiBold)
+            if (list.isEmpty()) Text("No veo ninguna SIM activa.", color = scheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                list.forEach { sim ->
+                    Chips(listOf(sim.label to (Store.subId == sim.subId))) {
+                        Store.subId = sim.subId
+                        Store.saveSettings()
+                    }
+                }
+            }
+            Text("Banco", fontWeight = FontWeight.SemiBold)
+            val banks = listOf(Bank.METROPOLITANO, Bank.BPA, Bank.BANDEC)
+            Chips(banks.map { (if (it == Bank.METROPOLITANO) "Metropolitano" else it.displayName) to (Store.bank == it) }) {
+                Store.bank = banks[it]
+                Store.saveSettings()
+            }
+            Text("Monedas de tus tarjetas", fontWeight = FontWeight.SemiBold)
+            val currencies = listOf(Currency.CUP, Currency.CUC, Currency.USD)
+            Chips(currencies.map { (if (it == Currency.USD) "USD / MLC" else it.name) to (it in Store.enabledCurrencies) }) {
+                val c = currencies[it]
+                val next = if (c in Store.enabledCurrencies) Store.enabledCurrencies - c else Store.enabledCurrencies + c
+                if (next.isNotEmpty()) {
+                    Store.enabledCurrencies = next
+                    if (Store.currency !in next) Store.currency = next.first()
                     Store.saveSettings()
                 }
             }
         }
-        Text("Banco", fontWeight = FontWeight.SemiBold)
-        val banks = listOf(Bank.METROPOLITANO, Bank.BPA, Bank.BANDEC)
-        Chips(banks.map { (if (it == Bank.METROPOLITANO) "Metropolitano" else it.displayName) to (Store.bank == it) }) {
-            Store.bank = banks[it]
-            Store.saveSettings()
+        if (list.isNotEmpty()) {
+            Panel {
+                Text("Saldo de cada línea", fontWeight = FontWeight.SemiBold)
+                Text("Prepago marca *222#; pospago (empresarial) marca *111#.", color = scheme.onSurfaceVariant, fontSize = 13.sp)
+                list.forEach { sim ->
+                    Text(sim.label, fontSize = 13.sp)
+                    val plan = Store.planFor(sim.subId)
+                    Chips(listOf("Prepago" to (plan == MobilePlan.PREPAGO), "Pospago" to (plan == MobilePlan.POSPAGO))) {
+                        Store.setPlan(sim.subId, if (it == 0) MobilePlan.PREPAGO else MobilePlan.POSPAGO)
+                    }
+                }
+            }
         }
-        Text("Moneda de la tarjeta", fontWeight = FontWeight.SemiBold)
-        val currencies = listOf(Currency.CUP, Currency.CUC, Currency.USD)
-        Chips(currencies.map { (if (it == Currency.USD) "USD / MLC" else it.name) to (Store.currency == it) }) {
-            Store.currency = currencies[it]
-            Store.saveSettings()
-        }
-    }
-}
-
-@Composable
-private fun Balance() {
-    val context = LocalContext.current
-    val scheme = MaterialTheme.colorScheme
-    val latest = Store.attempts.firstOrNull { it.op == "46" }
-
-    Panel {
-        Button(
-            onClick = { Ops.balance(context) },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
-            shape = RoundedCornerShape(12.dp),
-        ) { Text("Consultar saldo", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
-        TextButton(onClick = { Ops.balance(context, viaDialer = true) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Si no responde, marcar desde el teléfono", color = scheme.onSurfaceVariant, fontSize = 13.sp)
-        }
-        if (latest != null) {
-            AttemptView(latest, expanded = true)
-            if (latest.state != AttemptState.VERIFIED && latest.reply?.let(BankOps::needsLogin) == true) LoginAndRetry()
-        }
+        Login()
+        TelemetryPanel()
+        Diagnostics()
+        TelemetryHistory()
+        Text("Ajé ${BuildConfig.VERSION_NAME} · dev", color = scheme.onSurfaceVariant, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
 /** The bank closed the session: ask for the key here, log in, and rerun the query when the auth SMS arrives. */
 @Composable
-private fun LoginAndRetry() {
+private fun LoginAndRetry(currency: Currency) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     var status by remember { mutableStateOf<String?>(null) }
@@ -246,6 +432,7 @@ private fun LoginAndRetry() {
         Text("La sesión en el banco se cerró. Escribe tu clave y Ajé vuelve a consultar.", color = scheme.primary, fontSize = 13.sp)
         PinField { pin ->
             Store.retryBalanceAfterLogin = true
+            Store.currency = currency
             Ops.login(context, pin) { status = it }
         }
     }
@@ -272,7 +459,7 @@ private fun PinField(label: String = "Autenticarse", onSubmit: (String) -> Unit)
 }
 
 @Composable
-private fun Transfer() {
+private fun TransferForm(currency: Currency) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     var card by remember { mutableStateOf("") }
@@ -283,14 +470,14 @@ private fun Transfer() {
     val units = amount.toLongOrNull()?.takeIf { it > 0 }
 
     Panel {
-        Text("Transferir", fontWeight = FontWeight.SemiBold)
+        Text("Transferir desde ${currency.name}", fontWeight = FontWeight.SemiBold)
         Text(
-            "Desde tu tarjeta en ${Store.currency.name} a otra tarjeta. Se abre el marcador y el banco te pide " +
-                "escribir 1 para confirmar. El SMS de la transferencia la verifica.",
+            "A otra tarjeta. Se abre el marcador y el banco te pide escribir 1 para confirmar. " +
+                "El SMS de la transferencia la verifica.",
             color = scheme.onSurfaceVariant, fontSize = 13.sp,
         )
         if (Store.authenticatedAt == null) {
-            Text("Abre sesión en el banco antes: el marcador no le deja a Ajé ver si el banco la pide.", color = scheme.primary, fontSize = 13.sp)
+            Text("Abre sesión en el banco antes (en Ajustes): el marcador no le deja a Ajé ver si el banco la pide.", color = scheme.primary, fontSize = 13.sp)
         }
         OutlinedTextField(
             value = card,
@@ -302,7 +489,7 @@ private fun Transfer() {
         OutlinedTextField(
             value = amount,
             onValueChange = { v -> amount = v.filter { it.isDigit() }.take(7); confirming = false },
-            label = { Text("Monto en ${Store.currency.name}, sin centavos") },
+            label = { Text("Monto en ${currency.name}, sin centavos") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
@@ -310,10 +497,10 @@ private fun Transfer() {
             if (!confirming) {
                 Button(onClick = { confirming = true }) { Text("Revisar") }
             } else {
-                Text("Vas a transferir $units ${Store.currency.name} a la tarjeta ${to.digits.chunked(4).joinToString(" ")}.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("Vas a transferir $units ${currency.name} a la tarjeta ${to.digits.chunked(4).joinToString(" ")}.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
-                        Ops.transfer(context, to, units)
+                        Ops.transfer(context, currency, to, units)
                         confirming = false
                         amount = ""
                     }) { Text("Abrir el marcador") }
@@ -368,19 +555,14 @@ private fun AttemptView(a: Attempt, expanded: Boolean) {
         }
         if (expanded) {
             a.reply?.let { Text("Respuesta del banco: $it", fontSize = 14.sp) }
-            a.failureCode?.let { Text("Código de fallo $it. Prueba a marcar desde el teléfono.", color = scheme.onSurfaceVariant, fontSize = 13.sp) }
             if (a.code.isNotEmpty()) {
-                Text(
-                    if (showCode) "Ocultar el código" else "Ver el código", color = scheme.onSurfaceVariant, fontSize = 13.sp,
-                    modifier = Modifier.clickable { showCode = !showCode }.padding(vertical = 6.dp),
-                )
-                if (showCode) Text(a.code, fontFamily = FontFamily.Monospace, color = scheme.primary, fontSize = 14.sp)
+                TextButton(onClick = { showCode = !showCode }) { Text(if (showCode) "Ocultar el código" else "Ver el código", fontSize = 13.sp) }
+                if (showCode) Text(a.code, fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = scheme.primary)
             }
         }
     }
 }
 
-@SuppressLint("MissingPermission")
 @Composable
 private fun Diagnostics() {
     val context = LocalContext.current
@@ -472,16 +654,5 @@ private fun TelemetryPanel() {
                 "cambiado por #. Abajo ves exactamente lo que se ha enviado.",
             color = scheme.onSurfaceVariant, fontSize = 13.sp,
         )
-    }
-}
-
-@Composable
-private fun History() {
-    val shown = setOfNotNull(Store.attempts.firstOrNull { it.op == "46" }, Store.attempts.firstOrNull { it.op == "45" })
-    val older = Store.attempts.filter { it !in shown }
-    if (older.isEmpty()) return
-    Panel {
-        Text("Historial", fontWeight = FontWeight.SemiBold)
-        older.forEach { AttemptView(it, expanded = false) }
     }
 }

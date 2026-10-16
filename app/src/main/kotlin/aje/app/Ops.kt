@@ -2,6 +2,8 @@ package aje.app
 
 import android.content.Context
 import aje.core.money.Card
+import aje.core.money.Currency
+import aje.core.money.MobileLine
 import aje.core.money.Pan
 import aje.core.ops.BankOps
 import aje.core.ussd.Encoder
@@ -9,14 +11,17 @@ import aje.core.ussd.UssdConfig
 
 /** The bank operations the app runs, outside the UI so the SMS receiver can rerun one. */
 object Ops {
-    private fun card() = Card("Principal", Store.bank, Store.currency, pan = null)
+    private fun card(currency: Currency) = Card("Principal", Store.bank, currency, pan = null)
 
-    fun balance(context: Context, viaDialer: Boolean = false) {
-        val ussd = BankOps.balance(card())
+    fun balance(context: Context, currency: Currency = Store.currency, viaDialer: Boolean = false) {
+        val ussd = BankOps.balance(card(currency))
         val seed = Encoder.randomSeed()
         val config = UssdConfig()
         val now = System.currentTimeMillis()
-        val attempt = Attempt(now, now, ussd.display(config, seed), if (viaDialer) AttemptState.DIALER else AttemptState.SENT)
+        val attempt = Attempt(
+            now, now, ussd.display(config, seed), if (viaDialer) AttemptState.DIALER else AttemptState.SENT,
+            currency = currency.name,
+        )
         Store.add(attempt)
         val dialed = ussd.dial(config, seed)
         if (viaDialer) {
@@ -63,19 +68,41 @@ object Ops {
      * Dials op 45. The transfer ends in the bank's menu, where the person types 1 to confirm,
      * so it goes through the system dialer; the bank's transfer SMS verifies it.
      */
-    fun transfer(context: Context, to: Pan, amount: Long) {
-        val ussd = BankOps.transfer(card(), to, amount)
+    fun transfer(context: Context, currency: Currency = Store.currency, to: Pan, amount: Long) {
+        val ussd = BankOps.transfer(card(currency), to, amount)
         val seed = Encoder.randomSeed()
         val config = UssdConfig()
         val now = System.currentTimeMillis()
         Store.add(
             Attempt(
                 now, now, ussd.display(config, seed), AttemptState.DIALER,
-                op = "45", to = to.digits, amount = amount, currency = Store.currency.name,
+                op = "45", to = to.digits, amount = amount, currency = currency.name,
             ),
         )
         Telemetry.event("ussd_sent", "op" to "45", "bank" to Store.bank.name, "via" to "dialer")
         Ussd.dial(context, ussd.dial(config, seed))
+    }
+
+    /**
+     * Sends a line's balance code (*222# prepaid, *111# postpaid) on that SIM and reports the
+     * reply. The reply is text, not an SMS, so it is shown as-is and not matched to an attempt.
+     */
+    fun mobileBalance(context: Context, line: MobileLine, onStatus: (String) -> Unit) {
+        val op = line.balanceCode.filter { it.isDigit() }
+        onStatus("Enviando…")
+        val start = System.currentTimeMillis()
+        Telemetry.event("ussd_sent", "op" to op, "via" to "api")
+        Ussd.send(
+            context, line.subId, line.balanceCode,
+            onReply = {
+                onStatus(it)
+                Telemetry.event("ussd_reply", "op" to op, "ok" to true, "length" to it.length, "latency_ms" to System.currentTimeMillis() - start, "text" to it)
+            },
+            onFailure = { c, e ->
+                onStatus("El teléfono no la envió (código $c).")
+                Telemetry.event("ussd_reply", "op" to op, "ok" to false, "failure_code" to c, "error" to e)
+            },
+        )
     }
 
     /** The bank said the session is closed: report how long ago the last login was confirmed. */
