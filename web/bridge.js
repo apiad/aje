@@ -1,7 +1,7 @@
-// The five native primitives, over the message channel the WebView shell injects as
+// The six native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
 /** How long a USSD may go unanswered; some phones never call back. */
@@ -53,6 +53,12 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     dial: (code) => call("dial", { code }),
     listSims: () => call("listSims"),
     requestPermissions: () => call("requestPermissions"),
+    // The secret store. Save and load show the fingerprint or screen-lock prompt, so they wait on
+    // the person with no timeout; load answers null when nothing is saved or the person cancels.
+    secretStatus: (name) => call("secretStatus", { name }),
+    secretSave: (name, value, days) => call("secretSave", { name, value, days }),
+    secretLoad: (name) => call("secretLoad", { name }),
+    secretForget: (name) => call("secretForget", { name }),
     /**
      * The first handler sends `ready`, which opens the push channel and makes the shell deliver,
      * then delete, the SMS it queued while no page was alive: so only a page that can save them

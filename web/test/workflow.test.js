@@ -107,6 +107,9 @@ test("the mobile balance dials the line's plan and keeps the figure", async () =
   assert.deepEqual(w.bridge.calls[0].args, { subId: 3, code: "*111#" });
   assert.equal(r.value, "180.00 CUP");
   assert.equal(w.store.state.mobileBalances[3], "180.00 CUP");
+  assert.deepEqual(w.store.state.mobileDetails[3], {
+    balance: null, data: "5000 MB", voice: "180.00 CUP", sms: "20.00 CUP", activeUntil: null, expires: null, at: w.clock.t,
+  });
 });
 
 // Review focus 1: the SMS arrives after the app was killed behind the dialer.
@@ -208,4 +211,61 @@ test("a text from a person is dropped and never stored or reported", async () =>
   assert.equal(await w.sms("Hola, nos vemos mañana", "55555555"), null);
   await w.telemetry.idle();
   assert.ok(!JSON.stringify([w.store.state, w.posted]).includes("Hola"));
+});
+
+test("a login with remember keeps the PIN in the device store for 180 days, under the bank", async () => {
+  const w = await world([{ ok: true, reply: "Usted esta siendo autenticado" }]);
+  const r = await w.wf.login("4321", { remember: true });
+  assert.equal(r.remembered, true);
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "secretSave", args: { name: `pin:${w.store.state.settings.bank}`, days: 180 } });
+  assert.deepEqual(await w.wf.savedPin(), { available: true, saved: true, expiresAt: 180 * 86_400_000 });
+});
+
+test("a login the phone did not send does not remember the PIN", async () => {
+  const w = await world([{ ok: false, failureCode: -1, error: null }]);
+  await w.wf.login("4321", { remember: true });
+  assert.ok(w.bridge.calls.every((c) => c.method !== "secretSave"));
+  assert.equal((await w.wf.savedPin()).saved, false);
+});
+
+test("a saved PIN logs in after the device unlocks it", async () => {
+  const w = await world([{ ok: true, reply: "ok" }, { ok: true, reply: "Usted esta siendo autenticado" }]);
+  await w.wf.login("4321", { remember: true });
+  const r = await w.wf.loginWithSaved({ retryCurrency: "CUP" });
+  assert.equal(r.ok, true);
+  const dialed = w.bridge.calls.filter((c) => c.method === "sendUssd");
+  assert.equal(dialed.length, 2);
+  assert.equal(dialed[1].args.code, dialed[0].args.code);
+  assert.equal(w.store.state.retryBalance.currency, "CUP");
+});
+
+test("a cancelled unlock sends nothing and asks for the PIN", async () => {
+  const w = await world([], memoryBackend(), { unlock: false });
+  const r = await w.wf.loginWithSaved({ retryCurrency: "CUP" });
+  assert.equal(r, null);
+  assert.ok(w.bridge.calls.every((c) => c.method !== "sendUssd"));
+  assert.equal(w.store.state.retryBalance, null);
+});
+
+test("forgetting the PIN removes it from the device store", async () => {
+  const w = await world([{ ok: true, reply: "ok" }]);
+  await w.wf.login("4321", { remember: true });
+  await w.wf.forgetPin();
+  assert.equal((await w.wf.savedPin()).saved, false);
+});
+
+test("a shell with no secret store offers no remembering", async () => {
+  const w = await world([{ ok: true, reply: "ok" }], memoryBackend(), { secrets: false });
+  assert.deepEqual(await w.wf.savedPin(), { available: false, saved: false, expiresAt: null });
+  assert.equal((await w.wf.login("4321", { remember: true })).remembered, false);
+  assert.equal(await w.wf.loginWithSaved(), null);
+});
+
+test("a remembered PIN still never reaches the store, the history or the telemetry", async () => {
+  const w = await world([{ ok: true, reply: "ok" }, { ok: true, reply: "ok" }]);
+  await w.wf.login("4321", { remember: true });
+  await w.wf.loginWithSaved();
+  await w.telemetry.idle();
+  const kept = JSON.stringify([w.store.state, w.stateBackend.saved, w.telemetryBackend.saved, w.posted]);
+  assert.ok(!kept.includes("4321"));
 });

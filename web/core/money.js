@@ -45,6 +45,24 @@ export function parseMobileBalance(reply) {
   return m ? `${m[1]} CUP` : null;
 }
 
+/**
+ * Every figure of an ETECSA balance reply. Prepaid (*222#) gives the balance, data, voice time,
+ * SMS count and the line's dates; postpaid (*111#) gives voice and SMS balances and data.
+ * Null when the reply carries none of them.
+ */
+export function parseMobileDetails(reply) {
+  const get = (re) => re.exec(reply)?.[1] ?? null;
+  const d = {
+    balance: get(/^\s*Saldo:\s*(\d+[.,]\d{2}\s*CUP)/i),
+    data: get(/Datos:\s*(\d+(?:[.,]\d+)?\s*[GMK]B)/i),
+    voice: get(/Voz:\s*(\d{1,3}:\d{2}:\d{2})/i) ?? get(/Voz:\s*Saldo disponible\s*(\d+[.,]\d{2}\s*CUP)/i),
+    sms: get(/SMS:\s*(\d+)\b(?![.,]\d)/i) ?? get(/SMS:\s*Saldo disponible\s*(\d+[.,]\d{2}\s*CUP)/i),
+    activeUntil: get(/activa hasta\s*(\d{2}-\d{2}-\d{2})/i),
+    expires: get(/vence\s*(\d{2}-\d{2}-\d{2})/i),
+  };
+  return Object.values(d).some(Boolean) ? d : null;
+}
+
 /** A transfer amount in whole units, or null: decimals and separators are refused, never truncated. */
 export function parseAmount(text) {
   if (!/^\s*\d+\s*$/.test(text)) return null;

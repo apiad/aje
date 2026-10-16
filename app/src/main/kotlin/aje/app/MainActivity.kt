@@ -5,19 +5,19 @@ import android.os.Bundle
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.FragmentActivity
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
 /**
- * Hosts the web frontend bundled in the APK's assets. Everything Ajé does beyond the five
+ * Hosts the web frontend bundled in the APK's assets. Everything Ajé does beyond the six
  * primitives in [NativeBridge] runs there. The page loads only from the bundled assets.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private lateinit var webView: WebView
     private lateinit var bridge: NativeBridge
 

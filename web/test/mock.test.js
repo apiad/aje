@@ -23,3 +23,13 @@ test("the mock answers both mobile balance codes and lists two SIMs", async () =
   assert.match((await m.sendUssd(4, "*111#")).reply, /Saldo disponible/);
   assert.equal((await m.listSims()).length, 2);
 });
+
+test("the mock keeps a secret until it is forgotten", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.deepEqual(await m.secretStatus("pin:BM"), { available: true, saved: false, expiresAt: null });
+  assert.equal(await m.secretSave("pin:BM", "1234", 180), true);
+  assert.equal((await m.secretStatus("pin:BM")).saved, true);
+  assert.equal(await m.secretLoad("pin:BM"), "1234");
+  await m.secretForget("pin:BM");
+  assert.equal(await m.secretLoad("pin:BM"), null);
+});

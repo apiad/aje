@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePan, bankOfPan, last4, MOBILE_PLANS, parseMobileBalance, parseAmount } from "../core/money.js";
+import { parsePan, bankOfPan, last4, MOBILE_PLANS, parseMobileBalance, parseMobileDetails, parseAmount } from "../core/money.js";
 
 test("a card number is 16 digits, dashes and spaces allowed", () => {
   assert.equal(parsePan("9200-9500 0000-0001"), "9200950000000001");
@@ -39,4 +39,22 @@ test("an amount is a positive whole number; decimals and separators are refused,
   assert.equal(parseAmount("1500"), 1500);
   assert.equal(parseAmount(" 25 "), 25);
   for (const bad of ["150.50", "1,500", "1.500", "0", "-5", "", "abc", "1e3"]) assert.equal(parseAmount(bad), null, bad);
+});
+
+test("a prepaid reply yields every figure the line card shows", () => {
+  const reply = "Saldo: 250.50 CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.";
+  assert.deepEqual(parseMobileDetails(reply), {
+    balance: "250.50 CUP", data: "3.20 GB", voice: "01:20:00", sms: "100", activeUntil: "01-01-26", expires: "02-02-26",
+  });
+});
+
+test("a postpaid reply yields the voice and SMS balances and the data", () => {
+  const reply = "Voz: Saldo disponible 180.00 CUP. SMS: Saldo disponible 20.00 CUP. Datos: 5000 MB. Roaming:";
+  assert.deepEqual(parseMobileDetails(reply), {
+    balance: null, data: "5000 MB", voice: "180.00 CUP", sms: "20.00 CUP", activeUntil: null, expires: null,
+  });
+});
+
+test("a reply with no figure has no details", () => {
+  assert.equal(parseMobileDetails("Servicio no disponible, intente mas tarde."), null);
 });

@@ -8,6 +8,23 @@ function chips(options, isOn, pick) {
     h("button", { class: isOn(value) ? "on" : null, "aria-pressed": isOn(value) ? "true" : "false", onclick: () => pick(value) }, label)));
 }
 
+// The saved bank PIN, if any: when it lapses, and a way to drop it now. Filled in once the shell answers.
+function pinRow(ctx) {
+  const box = h("div", { id: "pin-row" });
+  ctx.workflow.savedPin().then((st) => {
+    if (!st.saved) return;
+    const until = st.expiresAt ? new Date(st.expiresAt).toLocaleDateString("es") : null;
+    box.replaceChildren(h("div", { class: "set-row" },
+      h("div", { class: "tx" }, h("b", {}, "Clave del banco guardada"),
+        h("span", {}, `Cifrada en este teléfono${until ? `; caduca el ${until}` : ""}.`)),
+      h("button", { id: "pin-forget", class: "addchip", onclick: async () => {
+        await ctx.workflow.forgetPin();
+        box.replaceChildren();
+      } }, "Olvidar")));
+  });
+  return box;
+}
+
 export function renderSettings(ctx) {
   const { store, sims, config } = ctx;
   const s = store.state.settings;
@@ -30,6 +47,8 @@ export function renderSettings(ctx) {
     h("div", { class: "group" }, "Banco"),
     chips(Object.entries(BANKS).filter(([, b]) => b.agency).map(([k, b]) => [k, b.name]),
       (v) => s.bank === v, (v) => store.update({ bank: v })),
+
+    pinRow(ctx),
 
     h("div", { class: "group" }, "Monedas en la baraja"),
     chips(Object.keys(CURRENCIES).map((c) => [c, c]), (v) => s.enabledCurrencies.includes(v), toggleCurrency),

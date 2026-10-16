@@ -53,7 +53,32 @@ def balance_with_login(page):
     page.fill("#pin", "1234")
     page.click("#pin-submit")
     expect(page.locator("#pin")).to_have_count(0)
-    expect(card.locator(".bal")).to_have_text("1200.06 CUP", timeout=10_000)
+    expect(page.locator("#sheet .spin")).to_be_visible()
+    expect(card.locator(".bal")).to_have_text("1\u202f200,06 CUP", timeout=10_000)
+    # The verified balance is on the card, so the sheet closes by itself.
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
+
+
+def saved_pin_logs_in(page):
+    # balance_with_login left "Recordarla" on, so the next lost session needs no typing.
+    page.keyboard.press("Escape")
+    page.click("#mock-panel summary")
+    page.click("#mock-logout")
+    card = page.locator('#deck .acct[data-id="card:CUP"]')
+    card.locator('[data-action="balance"]').click()
+    expect(page.locator("#sheet")).to_contain_text("Desbloquea la clave guardada")
+    expect(page.locator("#sheet")).to_contain_text("Esperando el SMS del banco", timeout=10_000)
+    expect(page.locator("#pin")).to_have_count(0)
+    page.keyboard.press("Escape")
+    page.goto(page.url.split("#")[0] + "#/settings")
+    page.click("#pin-forget")
+    expect(page.locator("#pin-row .set-row")).to_have_count(0)
+    page.goto(page.url.split("#")[0] + "#/home")
+    page.click("#mock-panel summary")
+    page.click("#mock-logout")
+    page.locator('#deck .acct[data-id="card:CUP"] [data-action="balance"]').click()
+    expect(page.locator("#pin")).to_be_visible(timeout=10_000)
+    page.keyboard.press("Escape")
 
 
 def transfer_refuses_decimals(page):
@@ -71,7 +96,11 @@ def mobile_balance(page):
     page.click('[data-go-acct="line:3"]')
     line = page.locator('#deck .acct[data-id="line:3"]')
     line.locator('[data-action="mobile-balance"]').click()
-    expect(line.locator(".bal")).to_have_text("185.00 CUP", timeout=10_000)
+    expect(page.locator("#sheet .spin")).to_be_visible()
+    expect(line.locator(".bal")).to_have_text("185,00 CUP", timeout=10_000)
+    for stat, text in [("data", "3,2 GB"), ("voice", "1 h 20 min"), ("sms", "100"), ("cal", "2/2")]:
+        expect(line.locator(f'[data-stat="{stat}"]')).to_have_text(text)
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
 
 
 def history_and_verified_transfer(page):
@@ -84,6 +113,8 @@ def history_and_verified_transfer(page):
     page.click('nav a[href="#/history"]')
     first = page.locator("#history .row").first
     expect(first).to_have_attribute("data-state", "verified", timeout=10_000)
+    width = first.locator("svg").first.bounding_box()["width"]
+    assert width <= 24, f"history row icon is {width}px wide"
     first.click()
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
@@ -108,7 +139,7 @@ def refused_login(page):
     expect(page.locator("#pin-retry")).to_be_visible()
 
 
-STEPS = [deck, balance_with_login, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+STEPS = [deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, refused_login]
 
 

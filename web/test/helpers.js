@@ -25,11 +25,34 @@ export const POSTPAID_REPLY =
  * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
  * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
  */
-export function fakeBridge(replies = [], { dialFails = false } = {}) {
+export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true } = {}) {
   const calls = [];
   const queue = [...replies];
+  const vault = new Map();
+  // The device secret store; `unlock: false` is a person who cancels the fingerprint prompt.
+  const secretStore = secrets ? {
+    vault,
+    async secretStatus(name) {
+      return { available: true, saved: vault.has(name), expiresAt: vault.get(name)?.expiresAt ?? null };
+    },
+    async secretSave(name, value, days) {
+      calls.push({ method: "secretSave", args: { name, days } });
+      if (!unlock) return false;
+      vault.set(name, { value, expiresAt: days * 86_400_000 });
+      return true;
+    },
+    async secretLoad(name) {
+      calls.push({ method: "secretLoad", args: { name } });
+      return unlock ? vault.get(name)?.value ?? null : null;
+    },
+    async secretForget(name) {
+      calls.push({ method: "secretForget", args: { name } });
+      vault.delete(name);
+    },
+  } : {};
   return {
     calls,
+    ...secretStore,
     async sendUssd(subId, code) {
       calls.push({ method: "sendUssd", args: { subId, code } });
       const next = queue.shift() ?? { ok: true, reply: "" };

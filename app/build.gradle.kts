@@ -79,4 +79,6 @@ androidComponents {
 dependencies {
     implementation("androidx.activity:activity:1.13.0")
     implementation("androidx.webkit:webkit:1.17.1")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment:1.8.5")
 }
