@@ -19,5 +19,5 @@ python3 -I -c 'import json, sys, zipfile; c = json.loads(zipfile.ZipFile(sys.arg
 PRE=()
 [[ $VERSION == *-* ]] && PRE=(--prerelease)
 gh release create "v$VERSION" "build/release/$APK" "build/release/$APK.sha256" --target "$HEAD" \
-  --title "Ajé $VERSION" "${PRE[@]}" --notes "Ajé $VERSION (versionCode $CODE). Install the APK, or update from Ajé: Ajustes → Buscar actualización."
+  --title "Ajé $VERSION" "${PRE[@]}" --notes "Ajé $VERSION (versionCode $CODE). Instala el APK o actualiza desde Ajé: Ajustes → Buscar actualización. Qué es Ajé y cómo instalarla: https://apiad.github.io/aje/"
 echo "released v$VERSION as $APK"
