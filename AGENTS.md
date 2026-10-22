@@ -29,6 +29,13 @@ change to `web/`. An APK goes out only when `app/` changed or a release is cut, 
 then with a short list of what only a phone can check. The build host has no radio: anything about telephony or SMS is
 verified on a phone, and a report says which of the two a claim came from.
 
+## Releases
+
+`make release VERSION=1.0.0` publishes a signed APK from the pushed HEAD as a GitHub release;
+a version with a suffix (`1.1.0-beta.1`) is a pre-release, which only the app's beta channel
+installs. The assets are `aje-<version>-<versionCode>.apk` and its `.sha256`, the names the
+updater (`web/core/update.js`) reads. A release build carries no telemetry; the script checks.
+
 ## Where things live
 
 - `web/core/`: the logic as plain ES modules with no DOM, imported by Node and the
