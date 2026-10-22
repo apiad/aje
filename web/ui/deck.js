@@ -4,6 +4,7 @@ import { BANKS, MOBILE_PLANS, last4 } from "../core/money.js";
 import { h, icon } from "./dom.js";
 import { body, FIRM, FLY, hold, kick, LAND, reduced, set } from "./motion.js";
 import { row } from "./history.js";
+import { updateBanner } from "./updates.js";
 
 // The front account survives re-renders and screen changes.
 let frontId = null;
@@ -74,7 +75,7 @@ function cardFace(a, ctx) {
 export function renderHome(ctx) {
   const list = accounts(ctx.store.state, ctx.sims);
   const add = h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta");
-  if (list.length === 0) return h("div", { id: "deck" }, h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
+  if (list.length === 0) return h("div", { id: "deck" }, updateBanner(ctx), h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
     h("div", { class: "empty" }, "Aún no hay tarjetas. Añade la primera con una foto."), add);
   if (!list.some((a) => a.id === frontId)) frontId = list[0].id;
 
@@ -265,6 +266,7 @@ export function renderHome(ctx) {
   cards.forEach((el, k) => { el.style.zIndex = String(10 - depth(k)); hold(bodies[k], rest(depth(k))); });
   front();
   return h("div", { id: "deck" },
+    updateBanner(ctx),
     h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
     stack,
     h("div", { class: "stack-ctl" },

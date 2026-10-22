@@ -11,6 +11,7 @@ import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet } from "./ui/sheets.js";
 import { renderTransfer } from "./ui/transfer.js";
+import { autoCheck } from "./ui/updates.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
@@ -126,6 +127,7 @@ async function boot() {
 
   telemetry.event("app_start");
   shown = draw();
+  autoCheck(ctx);
 }
 
 boot().catch((e) => {

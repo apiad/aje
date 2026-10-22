@@ -4,6 +4,7 @@
 """
 
 import functools
+import json
 import subprocess
 import http.server
 import sys
@@ -213,8 +214,7 @@ def pending_card_resumes_guide(page):
     page.locator(f'#deck .acct[data-id="card:{card_id}"] [data-action="resume"]').click()
     expect(page.locator("#add-guide li.now")).to_contain_text("Multibanca")
 
-STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
-         double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, refused_login]
+
 
 
 def scan_reads_card(p, base, out, errors):
@@ -233,6 +233,41 @@ def scan_reads_card(p, base, out, errors):
     browser.close()
 
 
+FAKE_RELEASES = [{
+    "tag_name": "v9.9.0-beta.1", "prerelease": True, "draft": False, "html_url": "https://github.com/apiad/aje/releases/tag/v9.9.0-beta.1",
+    "assets": [
+        {"name": "aje-9.9.0-beta.1-999.apk", "size": 7_400_000,
+         "browser_download_url": "https://github.com/apiad/aje/releases/download/v9.9.0-beta.1/aje-9.9.0-beta.1-999.apk"},
+        {"name": "aje-9.9.0-beta.1-999.apk.sha256", "size": 90,
+         "browser_download_url": "https://github.com/apiad/aje/releases/download/v9.9.0-beta.1/aje-9.9.0-beta.1-999.apk.sha256"},
+    ],
+}]
+
+
+def fake_github(page, releases):
+    """Answers the updater's GitHub requests, so the smoke test never reaches the network."""
+    page.route("https://api.github.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(releases)))
+    page.route("https://github.com/**", lambda r: r.fulfill(status=200, body="ab" * 32 + "  aje.apk\n"))
+
+
+def update_beta(page):
+    """Stable sees no update; switching to beta finds the pre-release and installs it."""
+    fake_github(page, FAKE_RELEASES)
+    page.goto(page.url.split("#")[0] + "#/settings")
+    page.click("#update-check")
+    expect(page.locator("#update-result")).to_contain_text("última versión")
+    page.get_by_role("button", name="Beta").click()
+    page.click("#update-check")
+    expect(page.locator("#update-result")).to_contain_text("9.9.0-beta.1")
+    page.click("#update-settings")
+    expect(page.locator("#update-settings-status")).to_contain_text("instalador")
+    page.goto(page.url.split("#")[0] + "#/home")
+    expect(page.locator("#update-banner")).to_contain_text("9.9.0-beta.1")
+
+STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+         double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, update_beta, refused_login]
+
+
 def main():
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/aje-smoke")
     out.mkdir(parents=True, exist_ok=True)
@@ -241,6 +276,7 @@ def main():
         page = p.chromium.launch().new_page(viewport={"width": 390, "height": 844})
         page.on("console", lambda m: m.type == "error" and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
+        fake_github(page, [])
         base = serve()
         for step in STEPS:
             page.goto(base + "/index.html#/home")

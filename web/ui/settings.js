@@ -2,6 +2,7 @@
 // and the dev build's telemetry.
 import { BANKS } from "../core/money.js";
 import { h } from "./dom.js";
+import { updateSettings } from "./updates.js";
 
 function chips(options, isOn, pick) {
   return h("div", { class: "chips" }, options.map(([value, label]) =>
@@ -45,6 +46,8 @@ export function renderSettings(ctx) {
       h("div", { class: "tx" }, h("b", {}, simLabel(sim)),
         chips([["PREPAGO", "Prepago · *222#"], ["POSPAGO", "Pospago · *111#"]],
           (v) => store.planFor(sim.subId) === v, (v) => store.setPlan(sim.subId, v))))),
+
+    updateSettings(ctx, chips),
 
     config.telemetryUrl ? [
       h("div", { class: "group" }, "Privacidad"),
