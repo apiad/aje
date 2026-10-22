@@ -1,6 +1,6 @@
-// Settings: the SIM registered with the bank, the bank, the deck's currencies, each line's
-// balance code, and the dev build's telemetry.
-import { BANKS, CURRENCIES } from "../core/money.js";
+// Settings: the SIM registered with the banks, the saved bank PINs, each line's balance code,
+// and the dev build's telemetry.
+import { BANKS } from "../core/money.js";
 import { h } from "./dom.js";
 
 function chips(options, isOn, pick) {
@@ -8,17 +8,17 @@ function chips(options, isOn, pick) {
     h("button", { class: isOn(value) ? "on" : null, "aria-pressed": isOn(value) ? "true" : "false", onclick: () => pick(value) }, label)));
 }
 
-// The saved bank PIN, if any: when it lapses, and a way to drop it now. Filled in once the shell answers.
-function pinRow(ctx) {
-  const box = h("div", { id: "pin-row" });
-  ctx.workflow.savedPin().then((st) => {
+// Each bank's saved PIN, if any: when it lapses, and a way to drop it now. Filled in once the shell answers.
+function pinRow(ctx, bank) {
+  const box = h("div", { "data-pin": bank });
+  ctx.workflow.savedPin(bank).then((st) => {
     if (!st.saved) return;
     const until = st.expiresAt ? new Date(st.expiresAt).toLocaleDateString("es") : null;
     box.replaceChildren(h("div", { class: "set-row" },
-      h("div", { class: "tx" }, h("b", {}, "Clave del banco guardada"),
+      h("div", { class: "tx" }, h("b", {}, `Clave guardada · ${BANKS[bank].name}`),
         h("span", {}, `Cifrada en este teléfono${until ? `; caduca el ${until}` : ""}.`)),
-      h("button", { id: "pin-forget", class: "addchip", onclick: async () => {
-        await ctx.workflow.forgetPin();
+      h("button", { class: "addchip pin-forget", onclick: async () => {
+        await ctx.workflow.forgetPin(bank);
         box.replaceChildren();
       } }, "Olvidar")));
   });
@@ -30,28 +30,15 @@ export function renderSettings(ctx) {
   const s = store.state.settings;
   const simLabel = (sim) => `SIM ${sim.slot + 1} · ${sim.carrier || "Cubacel"}`;
 
-  const toggleCurrency = (c) => {
-    const on = s.enabledCurrencies.includes(c);
-    if (on && s.enabledCurrencies.length === 1) return;
-    const next = Object.keys(CURRENCIES).filter((x) => (x === c ? !on : s.enabledCurrencies.includes(x)));
-    store.update({ enabledCurrencies: next });
-  };
 
   return h("div", { id: "settings" },
     h("div", { class: "topbar" }, h("div", { class: "t" }, "Ajustes")),
 
-    h("div", { class: "group" }, "La línea registrada con el banco"),
+    h("div", { class: "group" }, "La línea registrada con los bancos"),
     chips([[-1, "La del sistema"], ...sims.map((sim) => [sim.subId, simLabel(sim)])],
       (v) => s.subId === v, (v) => store.update({ subId: v })),
 
-    h("div", { class: "group" }, "Banco"),
-    chips(Object.entries(BANKS).filter(([, b]) => b.agency).map(([k, b]) => [k, b.name]),
-      (v) => s.bank === v, (v) => store.update({ bank: v })),
-
-    pinRow(ctx),
-
-    h("div", { class: "group" }, "Monedas en la baraja"),
-    chips(Object.keys(CURRENCIES).map((c) => [c, c]), (v) => s.enabledCurrencies.includes(v), toggleCurrency),
+    Object.keys(BANKS).filter((b) => BANKS[b].agency).map((b) => pinRow(ctx, b)),
 
     sims.length ? h("div", { class: "group" }, "Saldo móvil de cada línea") : null,
     sims.map((sim) => h("div", { class: "set-row", "data-line": sim.subId },

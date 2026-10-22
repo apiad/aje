@@ -82,11 +82,14 @@ async function boot() {
   mount(root, h("div", { style: "display:contents" }, view, nav));
 
   const inFlight = new Set();
+  // The smoke test seeds cards through the store; only under the mock, never in the APK.
+  if (bridge.kind === "mock") globalThis.ajeDev = { store };
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
-      if (action === "transfer") return ctx.go(`transfer?from=${account.currency}`);
+      if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
+      if (action === "resume") return ctx.go(`add/${account.cardId}`);
       const run = { balance: balanceSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.
       const key = `${action}:${account.id}`;

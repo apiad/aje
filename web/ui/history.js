@@ -5,9 +5,10 @@ import { h, icon, when } from "./dom.js";
 
 const STATE = { verified: ["✓ verificada", "ok"], failed: ["fallida", "pend"] };
 
-function title(a) {
-  if (a.op === "45") return `Transferencia · ${a.amount} ${a.currency}`;
-  return `Consulta de saldo${a.currency ? ` · Tarjeta ${a.currency}` : ""}`;
+function title(ctx, a) {
+  const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
+  if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
+  return `Consulta de saldo${card ? ` · ${card.alias}` : ""}`;
 }
 
 /** One history row; the home screen's recent activity uses it too. */
@@ -16,7 +17,7 @@ export function row(ctx, a) {
   const detail = a.op === "45" ? `a ····${last4(a.to)}` : (a.available ?? a.reply ?? "");
   return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
     icon(a.op === "45" ? "send" : "card", "ic"),
-    h("div", { class: "tx" }, h("b", {}, title(a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
+    h("div", { class: "tx" }, h("b", {}, title(ctx, a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
     h("span", { class: `st ${cls}` }, label),
     h("span", { class: "chev" }, "›"),
   );
@@ -27,7 +28,7 @@ function detail(ctx, a) {
   return h("div", { id: "detail" },
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => ctx.go("history") }, "‹"),
-      h("div", {}, h("h2", {}, title(a)), h("div", { class: "sub" }, when(a.startedAt)))),
+      h("div", {}, h("h2", {}, title(ctx, a)), h("div", { class: "sub" }, when(a.startedAt)))),
     h("div", { class: "sheet-like" },
       kv("Solicitada", when(a.startedAt)),
       kv("Verificada por SMS", a.verifiedAt ? when(a.verifiedAt) : null),

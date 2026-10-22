@@ -39,15 +39,36 @@ def serve():
     return f"http://127.0.0.1:{httpd.server_address[1]}"
 
 
+METRO = {"alias": "Metro CUP", "pan": "9227959900000001", "bank": "METROPOLITANO", "currency": "CUP"}
+
+
+def card_sel(page):
+    """The seeded card's face on the deck."""
+    page.wait_for_function("globalThis.ajeDev")
+    card_id = page.evaluate("ajeDev.store.state.cards[0].id")
+    return f'#deck .acct[data-id="card:{card_id}"]'
+
+
+def seed_card(page):
+    """Starts with no cards, adds one through the store, and leaves it linked."""
+    expect(page.locator("#add-card")).to_be_visible()
+    page.evaluate("""async (c) => {
+        const s = ajeDev.store;
+        if (!s.state.cards.length) await s.updateCard((await s.addCard(c)).id, { state: "linked", step: 5 });
+    }""", METRO)
+    page.reload()
+
+
 def deck(page):
-    for acct in ["card:CUP", "card:CUC", "card:USD", "line:3", "line:4"]:
-        expect(page.locator(f'#deck .acct[data-id="{acct}"]')).to_have_count(1)
+    for acct in [card_sel(page), '#deck .acct[data-id="line:3"]', '#deck .acct[data-id="line:4"]']:
+        expect(page.locator(acct)).to_have_count(1)
+    expect(page.locator("#add-card")).to_be_visible()
     page.goto(page.url.split("#")[0] + "#/settings")
     expect(page.locator("#settings")).to_be_visible()
 
 
 def balance_with_login(page):
-    card = page.locator('#deck .acct[data-id="card:CUP"]')
+    card = page.locator(card_sel(page))
     card.locator('[data-action="balance"]').click()
     expect(page.locator("#pin")).to_be_visible()
     page.fill("#pin", "1234")
@@ -64,25 +85,25 @@ def saved_pin_logs_in(page):
     page.keyboard.press("Escape")
     page.click("#mock-panel summary")
     page.click("#mock-logout")
-    card = page.locator('#deck .acct[data-id="card:CUP"]')
+    card = page.locator(card_sel(page))
     card.locator('[data-action="balance"]').click()
     expect(page.locator("#sheet")).to_contain_text("Desbloquea la clave guardada")
     expect(page.locator("#sheet")).to_contain_text("Esperando el SMS del banco", timeout=10_000)
     expect(page.locator("#pin")).to_have_count(0)
     page.keyboard.press("Escape")
     page.goto(page.url.split("#")[0] + "#/settings")
-    page.click("#pin-forget")
+    page.click("#settings .pin-forget")
     expect(page.locator("#pin-row .set-row")).to_have_count(0)
     page.goto(page.url.split("#")[0] + "#/home")
     page.click("#mock-panel summary")
     page.click("#mock-logout")
-    page.locator('#deck .acct[data-id="card:CUP"] [data-action="balance"]').click()
+    page.locator(card_sel(page) + ' [data-action="balance"]').click()
     expect(page.locator("#pin")).to_be_visible(timeout=10_000)
     page.keyboard.press("Escape")
 
 
 def transfer_refuses_decimals(page):
-    page.goto(page.url.split("#")[0] + "#/transfer?from=CUP")
+    page.goto(page.url.split("#")[0] + "#/transfer")
     page.fill("#tr-to", "9200 9500 0000 0001")
     page.fill("#tr-amount", "150.50")
     page.click("#tr-submit")
@@ -120,7 +141,7 @@ def history_and_verified_transfer(page):
 
 
 def double_tap_transfers_once(page):
-    page.goto(page.url.split("#")[0] + "#/transfer?from=CUP")
+    page.goto(page.url.split("#")[0] + "#/transfer")
     page.fill("#tr-to", "9200950000000001")
     page.fill("#tr-amount", "77")
     page.dblclick("#tr-submit")
@@ -132,14 +153,14 @@ def double_tap_transfers_once(page):
 
 def refused_login(page):
     page.goto(page.url.split("#")[0].split("?")[0] + "?mock=refuse-login#/home")
-    page.locator('#deck .acct[data-id="card:CUP"] [data-action="balance"]').click()
+    page.locator(card_sel(page) + ' [data-action="balance"]').click()
     page.fill("#pin", "1234")
     page.click("#pin-submit")
     expect(page.locator("#sheet")).to_contain_text("Clave incorrecta")
     expect(page.locator("#pin-retry")).to_be_visible()
 
 
-STEPS = [deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, refused_login]
 
 

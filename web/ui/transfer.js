@@ -1,12 +1,14 @@
-// Card-to-card transfer from the registered card in one currency. It is dialed: the bank's
+// Card-to-card transfer from one of the stored cards. It is dialed: the bank's
 // last menu asks the person to type 1, and the bank's SMS verifies it afterwards.
 import { BANKS, parseAmount, parsePan } from "../core/money.js";
 import { h } from "./dom.js";
 import { transferSheet } from "./sheets.js";
 
 export function renderTransfer(ctx, r) {
-  const currency = r.query.get("from") || "CUP";
-  const bank = BANKS[ctx.store.state.settings.bank].name;
+  const card = ctx.store.state.cards.find((c) => c.id === r.query.get("card")) ?? ctx.store.state.cards[0];
+  if (!card) return h("div", { class: "empty" }, "Añade una tarjeta para transferir.");
+  const { currency } = card;
+  const bank = BANKS[card.bank]?.name ?? "";
   const to = h("input", { id: "tr-to", inputmode: "numeric", autocomplete: "off", placeholder: "9200 0000 0000 0000" });
   const amount = h("input", { id: "tr-amount", inputmode: "numeric", autocomplete: "off" });
   const error = h("div", { id: "tr-error", class: "err", hidden: true });
@@ -27,7 +29,7 @@ export function renderTransfer(ctx, r) {
     error.hidden = true;
     button.disabled = true;
     try {
-      const attempt = await ctx.workflow.transfer(currency, pan, n);
+      const attempt = await ctx.workflow.transfer(card.id, pan, n);
       if (attempt.state === "failed") return fail("El teléfono no pudo abrir el marcador.");
       transferSheet(ctx, attempt, `Transferencia · ${n} ${currency}`);
     } finally {
@@ -40,7 +42,7 @@ export function renderTransfer(ctx, r) {
   return h("div", { id: "transfer" },
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
-      h("div", {}, h("h2", {}, "Transferir"), h("div", { class: "sub" }, `Desde Tarjeta ${currency} · ${bank}`))),
+      h("div", {}, h("h2", {}, "Transferir"), h("div", { class: "sub" }, `Desde ${card.alias} · ${bank}`))),
     h("div", { class: "field" }, h("label", { for: "tr-to" }, "Tarjeta de destino"), to),
     h("div", { class: "field" }, h("label", { for: "tr-amount" }, `Monto en ${currency}`), amount,
       h("div", { class: "hint" }, "Un número entero, sin decimales.")),

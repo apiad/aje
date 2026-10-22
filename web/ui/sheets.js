@@ -62,7 +62,7 @@ function attemptView(a) {
 }
 
 /**
- * Balance query for a card's currency. When the bank asks for a login, the sheet shows the key
+ * Balance query for a card. When the bank asks for a login, the sheet shows the key
  * form; after the login it follows the balance query the bank's auth SMS reruns.
  */
 export async function balanceSheet(ctx, account) {
@@ -75,7 +75,7 @@ export async function balanceSheet(ctx, account) {
   let remember = true;
   let closing = null;
   // Until this sheet's query is stored, an older verified balance is not its answer.
-  const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && a.id >= shownId));
+  const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.cardId === account.cardId && a.id >= shownId));
 
   // Both login paths end here: the USSD went out, or the phone could not send it.
   function afterLogin(r) {
@@ -108,7 +108,7 @@ export async function balanceSheet(ctx, account) {
         loginError = null;
         usedSaved = false;
         sheet.redraw();
-        afterLogin(await ctx.workflow.login(key, { retryCurrency: account.currency, remember: saved.available && remember }));
+        afterLogin(await ctx.workflow.login(account.bank, key, { retryCardId: account.cardId, remember: saved.available && remember }));
       };
       const keep = saved.available ? h("label", { class: "remember" },
         h("button", { id: "pin-remember", class: `toggle${remember ? " on" : ""}`, "aria-pressed": remember ? "true" : "false", onclick: () => {
@@ -133,7 +133,7 @@ export async function balanceSheet(ctx, account) {
       if (loginReply) {
         parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
           // The bank turned down the saved key: it is wrong now, so it goes.
-          if (usedSaved) ctx.workflow.forgetPin();
+          if (usedSaved) ctx.workflow.forgetPin(account.bank);
           usedSaved = false;
           phase = "login";
           loginReply = null;
@@ -149,14 +149,14 @@ export async function balanceSheet(ctx, account) {
     return parts;
   });
 
-  const { attempt, needsLogin } = await ctx.workflow.balance(account.currency);
+  const { attempt, needsLogin } = await ctx.workflow.balance(account.cardId);
   shownId = attempt.id;
   if (!needsLogin) return sheet.redraw();
-  saved = await ctx.workflow.savedPin();
+  saved = await ctx.workflow.savedPin(account.bank);
   if (saved.saved) {
     phase = "unlocking";
     sheet.redraw();
-    const r = await ctx.workflow.loginWithSaved({ retryCurrency: account.currency });
+    const r = await ctx.workflow.loginWithSaved(account.bank, { retryCardId: account.cardId });
     if (r) {
       usedSaved = true;
       phase = "waiting";

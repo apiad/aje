@@ -1,6 +1,6 @@
 // Home: the account deck (bank cards, then phone lines) and the front account's operations.
 import { accounts } from "../core/accounts.js";
-import { BANKS, MOBILE_PLANS } from "../core/money.js";
+import { BANKS, MOBILE_PLANS, last4 } from "../core/money.js";
 import { h, icon } from "./dom.js";
 import { body, FIRM, FLY, hold, kick, LAND, reduced, set } from "./motion.js";
 import { row } from "./history.js";
@@ -22,7 +22,7 @@ const ACTIONS = {
     ["soon", "Pasar saldo", "send"],
   ],
 };
-const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], line: [["mobile-balance", "Saldo"]] };
+const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], pending: [["resume", "Continuar"]], line: [["mobile-balance", "Saldo"]] };
 
 /** "1200.06 CUP" as the card shows it: "1 200,06" with the currency small after it. */
 export function amount(text) {
@@ -53,17 +53,19 @@ function stats(d) {
 }
 
 function cardFace(a, ctx) {
-  const kind = a.kind === "card" ? `Tarjeta · ${a.currency}` : `Línea · ${a.carrier || "Cubacel"}`;
-  const no = a.kind === "card" ? BANKS[a.bank].name : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
-  const tone = a.kind === "line" ? "line" : a.currency === "CUP" ? "cup" : "usd";
+  const kind = a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`;
+  const no = a.kind === "card" ? `${BANKS[a.bank]?.name ?? "Cuenta"} · ···· ${last4(a.pan)}` : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
+  const tone = a.kind === "line" ? "line" : a.currency === "USD" ? "usd" : "cup";
+  const chips = a.pending ? CHIPS.pending : CHIPS[a.kind];
   return h("div", { class: `acct ${tone}`, "data-id": a.id },
     h("div", { class: "top" },
       h("div", {}, h("div", { class: "kind" }, kind), h("div", { class: "name" }, a.label)),
-      h("div", { class: "acts" }, CHIPS[a.kind].map(([action, label]) =>
+      h("div", { class: "acts" }, chips.map(([action, label]) =>
         h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label))),
     ),
     h("div", {},
-      a.balance ? h("div", { class: "bal" }, ...amount(a.balance)) : h("div", { class: "bal none" }, "Toca Saldo para consultarlo"),
+      a.balance ? h("div", { class: "bal" }, ...amount(a.balance))
+        : h("div", { class: "bal none" }, a.pending ? "Falta asociarla con el banco" : "Toca Saldo para consultarlo"),
       a.kind === "line" && a.details ? stats(a.details) : h("div", { class: "no" }, no),
     ),
   );
@@ -71,7 +73,9 @@ function cardFace(a, ctx) {
 
 export function renderHome(ctx) {
   const list = accounts(ctx.store.state, ctx.sims);
-  if (list.length === 0) return h("div", { class: "empty" }, "No hay cuentas: activa una moneda en Ajustes.");
+  const add = h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta");
+  if (list.length === 0) return h("div", { id: "deck" }, h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
+    h("div", { class: "empty" }, "Aún no hay tarjetas. Añade la primera con una foto."), add);
   if (!list.some((a) => a.id === frontId)) frontId = list[0].id;
 
   const cards = list.map((a) => cardFace(a, ctx));
@@ -117,7 +121,7 @@ export function renderHome(ctx) {
     qa.replaceChildren(...ACTIONS[a.kind].map(([action, label, ic]) =>
       h("button", { class: action === "soon" ? "soon" : null, "data-qa": action, onclick: () => action !== "soon" && ctx.act(action, a) },
         icon(ic), h("span", {}, label))));
-    const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.currency === a.currency).slice(0, 3) : [];
+    const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.cardId === a.cardId).slice(0, 3) : [];
     recent.replaceChildren(...(mine.length ? [
       h("div", { class: "section-label" }, "Actividad reciente", h("a", { onclick: () => ctx.go("history") }, "Ver todo")),
       ...mine.map((x) => row(ctx, x)),
@@ -268,6 +272,7 @@ export function renderHome(ctx) {
       dots,
       h("button", { class: "sbtn", "aria-label": "Cuenta siguiente", onclick: () => step(1) }, "›"),
     ),
+    add,
     qaLabel,
     qa,
     recent,
