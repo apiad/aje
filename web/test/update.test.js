@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkForUpdate, parseRelease, pickUpdate, shouldAutoCheck } from "../core/update.js";
 
-const asset = (name) => ({ name, browser_download_url: `https://github.com/apiad/aje/releases/download/x/${name}`, size: 7_000_000 });
+const asset = (name) => ({ name, browser_download_url: `https://github.com/apiad/aje/releases/download/x/${name}`, size: 7_000_000, digest: `sha256:${"ab".repeat(32)}` });
 const release = (tag, code, prerelease = false, draft = false) => ({
   tag_name: tag, name: tag, prerelease, draft, html_url: `https://github.com/apiad/aje/releases/tag/${tag}`,
   assets: [asset(`aje-${tag.slice(1)}-${code}.apk`), asset(`aje-${tag.slice(1)}-${code}.apk.sha256`)],
@@ -15,12 +15,12 @@ const RELEASES = [
   { tag_name: "v0.9", prerelease: false, draft: false, assets: [] },
 ];
 
-test("parseRelease reads the APK, its checksum file and the version code", () => {
+test("parseRelease reads the APK, its checksum from the API and the version code", () => {
   const r = parseRelease(RELEASES[1]);
   assert.equal(r.version, "1.0.1");
   assert.equal(r.versionCode, 262);
   assert.match(r.apkUrl, /aje-1\.0\.1-262\.apk$/);
-  assert.match(r.sha256Url, /\.apk\.sha256$/);
+  assert.equal(r.sha256, "ab".repeat(32));
   assert.equal(parseRelease(RELEASES[4]), null);
 });
 
@@ -31,23 +31,22 @@ test("stable takes the newest normal release; beta also takes pre-releases; draf
   assert.equal(pickUpdate(RELEASES, { channel: "beta", currentCode: 270 }), null);
 });
 
-test("checkForUpdate fetches the releases and the checksum of the pick", async () => {
+// Release downloads on github.com answer without CORS headers, so a page cannot read them:
+// the checksum comes from the API's asset digest, and the page makes one request.
+test("checkForUpdate makes one request and takes the checksum from the asset digest", async () => {
   const urls = [];
-  const fetch = async (url) => {
-    urls.push(url);
-    if (url.endsWith("/releases?per_page=30")) return { ok: true, json: async () => RELEASES };
-    return { ok: true, text: async () => "ab".repeat(32) + "  aje-1.0.1-262.apk\n" };
-  };
+  const fetch = async (url) => { urls.push(url); return { ok: true, json: async () => RELEASES }; };
   const u = await checkForUpdate({ fetch, channel: "stable", currentCode: 255 });
-  assert.equal(urls[0], "https://api.github.com/repos/apiad/aje/releases?per_page=30");
+  assert.deepEqual(urls, ["https://api.github.com/repos/apiad/aje/releases?per_page=30"]);
   assert.equal(u.sha256, "ab".repeat(32));
   assert.equal(await checkForUpdate({ fetch, channel: "stable", currentCode: 262 }), null);
 });
 
-test("checkForUpdate refuses a release whose checksum is not 64 hex digits", async () => {
-  const fetch = async (url) => (url.includes("api.github.com")
-    ? { ok: true, json: async () => RELEASES } : { ok: true, text: async () => "Not Found" });
-  await assert.rejects(checkForUpdate({ fetch, channel: "stable", currentCode: 255 }), /checksum/);
+test("a release whose APK has no sha256 digest is skipped", async () => {
+  const bare = structuredClone(RELEASES);
+  delete bare[1].assets[0].digest;
+  const fetch = async () => ({ ok: true, json: async () => bare });
+  assert.equal((await checkForUpdate({ fetch, channel: "stable", currentCode: 0 })).version, "1.0.0");
 });
 
 test("checkForUpdate reports GitHub's status when it fails", async () => {
