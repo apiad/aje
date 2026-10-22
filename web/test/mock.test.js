@@ -33,3 +33,11 @@ test("the mock keeps a secret until it is forgotten", async () => {
   await m.secretForget("pin:BM");
   assert.equal(await m.secretLoad("pin:BM"), null);
 });
+
+test("op 49 starts a registration and op 60 links a card once logged in", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.match((await m.sendUssd(3, "*444*49*0100*1260416#")).reply, /registro/i);
+  assert.match((await m.sendUssd(3, "*444*60*0100*1260416#")).reply, /autenticarse/i);
+  await m.sendUssd(3, "*444*40*0100*1260416#");
+  assert.match((await m.sendUssd(3, "*444*60*0100*1260416#")).reply, /asociada/i);
+});

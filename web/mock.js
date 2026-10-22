@@ -52,6 +52,9 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       later(() => emit(BANK, SAMPLES.BALANCE));
       return "Su solicitud esta siendo procesada, espere un SMS";
     }
+    // Ops 49 and 60 have no captured replies yet: these texts are guesses, made to drive the screens.
+    if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
+    if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";
     if (code === "*222#") return PREPAID;
     if (code === "*111#") return POSTPAID;
     return "Opcion no valida";

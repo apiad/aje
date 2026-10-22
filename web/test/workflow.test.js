@@ -5,15 +5,20 @@ import { openTelemetry } from "../core/telemetry.js";
 import { createWorkflow } from "../core/workflow.js";
 import { balanceFor } from "../core/accounts.js";
 import { fakeBridge, SMS, POSTPAID_REPLY } from "./helpers.js";
+import { balance as balanceCode, link as linkCode } from "../core/ops.js";
+import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
 
 const MIN = 60_000;
+const METRO_CARD = { alias: "Metro CUP", pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" };
 const tick = () => new Promise((r) => setImmediate(r));
 
 async function world(replies = [], stateBackend = memoryBackend(), bridgeOptions = {}) {
   const clock = { t: 1_000_000 };
   const now = () => clock.t;
-  const store = await openStore(stateBackend, { now, newId: () => "install-1" });
+  let ids = 0;
+  const store = await openStore(stateBackend, { now, newId: () => (ids++ === 0 ? "install-1" : `card-${ids}`) });
   await store.update({ telemetry: true, subId: 3 });
+  const card = store.state.cards[0] ?? await store.addCard(METRO_CARD);
   const telemetryBackend = memoryBackend();
   const posted = [];
   const telemetry = await openTelemetry({
@@ -24,19 +29,19 @@ async function world(replies = [], stateBackend = memoryBackend(), bridgeOptions
   const bridge = fakeBridge(replies, bridgeOptions);
   const wf = createWorkflow({ bridge, store, telemetry, now, seed: () => 61 });
   const sms = (body, sender = "PAGOxMOVIL") => wf.handleSms({ sender, body, receivedAt: clock.t });
-  return { clock, now, store, telemetry, telemetryBackend, stateBackend, bridge, wf, posted, sms };
+  return { card, clock, now, store, telemetry, telemetryBackend, stateBackend, bridge, wf, posted, sms };
 }
 
 test("a balance query goes out on the chosen SIM and the SMS verifies it", async () => {
   const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" }]);
-  const { needsLogin } = await w.wf.balance("CUP");
+  const { needsLogin } = await w.wf.balance(w.card.id);
   assert.equal(needsLogin, false);
-  assert.deepEqual(w.bridge.calls[0], { method: "sendUssd", args: { subId: 3, code: "*444*46*61012*046615*1260416#" } });
+  assert.deepEqual(w.bridge.calls[0], { method: "sendUssd", args: { subId: 3, code: dial(balanceCode(METRO_CARD), DEFAULT_CONFIG, 61) } });
   assert.equal(w.store.state.attempts[0].state, "replied");
   w.clock.t += 30_000;
   await w.sms(SMS.BALANCE);
   assert.equal(w.store.state.attempts[0].state, "verified");
-  assert.equal(balanceFor(w.store.state.attempts, "CUP"), "1200.06 CUP");
+  assert.equal(balanceFor(w.store.state.attempts, w.card.id), "1200.06 CUP");
 });
 
 test("'debe autenticarse' asks for login, and the auth SMS reruns the balance", async () => {
@@ -45,19 +50,19 @@ test("'debe autenticarse' asks for login, and the auth SMS reruns the balance", 
     { ok: true, reply: "Su solicitud esta siendo procesada" },
     { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" },
   ]);
-  assert.equal((await w.wf.balance("CUP")).needsLogin, true);
-  await w.wf.login("1234", { retryCurrency: "CUP" });
+  assert.equal((await w.wf.balance(w.card.id)).needsLogin, true);
+  await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
   await w.sms(SMS.AUTH);
   assert.equal(w.bridge.calls.length, 3);
   assert.ok(w.bridge.calls[1].args.code.startsWith("*444*40*"));
   assert.ok(w.bridge.calls[2].args.code.startsWith("*444*46*"));
   assert.equal(w.store.state.retryBalance, null);
-  assert.equal(w.store.state.authenticatedAt, w.clock.t);
+  assert.equal(w.store.state.banks.METROPOLITANO.authenticatedAt, w.clock.t);
 });
 
 test("a stale auth SMS does not rerun the balance", async () => {
   const w = await world([{ ok: true, reply: "ok" }]);
-  await w.wf.login("1234", { retryCurrency: "CUP" });
+  await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
   w.clock.t += 21 * MIN;
   await w.sms(SMS.AUTH);
   assert.equal(w.bridge.calls.length, 1);
@@ -65,7 +70,7 @@ test("a stale auth SMS does not rerun the balance", async () => {
 
 test("the PIN never reaches the store, the history or the telemetry", async () => {
   const w = await world([{ ok: true, reply: "Usted esta siendo autenticado" }]);
-  await w.wf.login("4321");
+  await w.wf.login("METROPOLITANO", "4321");
   await w.telemetry.idle();
   const dialed = w.bridge.calls[0].args.code;
   const kept = JSON.stringify([w.store.state, w.stateBackend.saved, w.telemetryBackend.saved, w.posted]);
@@ -76,7 +81,7 @@ test("the PIN never reaches the store, the history or the telemetry", async () =
 
 test("a transfer is dialed and the bank's SMS verifies it", async () => {
   const w = await world();
-  await w.wf.transfer("CUP", "9200950000000001", 100);
+  await w.wf.transfer(w.card.id, "9200950000000001", 100);
   assert.equal(w.bridge.calls[0].method, "dial");
   assert.ok(w.bridge.calls[0].args.code.startsWith("*444*45*"));
   assert.equal(w.store.state.attempts[0].state, "dialer");
@@ -87,7 +92,7 @@ test("a transfer is dialed and the bank's SMS verifies it", async () => {
 
 test("a transfer whose dial fails is marked failed, not left pending", async () => {
   const w = await world([], memoryBackend(), { dialFails: true });
-  const a = await w.wf.transfer("CUP", "9200950000000001", 100);
+  const a = await w.wf.transfer(w.card.id, "9200950000000001", 100);
   assert.equal(a.state, "failed");
   assert.equal(w.store.state.attempts[0].state, "failed");
   assert.equal(w.store.state.attempts[0].failureCode, -100);
@@ -95,7 +100,7 @@ test("a transfer whose dial fails is marked failed, not left pending", async () 
 
 test("a transfer SMS for another card verifies nothing", async () => {
   const w = await world();
-  await w.wf.transfer("CUP", "9200950000000002", 100);
+  await w.wf.transfer(w.card.id, "9200950000000002", 100);
   await w.sms(SMS.TRANSFER);
   assert.equal(w.store.state.attempts[0].state, "dialer");
 });
@@ -116,7 +121,7 @@ test("the mobile balance dials the line's plan and keeps the figure", async () =
 test("the SMS that arrives after a restart still verifies the transfer", async () => {
   const backend = memoryBackend();
   const a = await world([], backend);
-  await a.wf.transfer("CUP", "9200950000000001", 100);
+  await a.wf.transfer(a.card.id, "9200950000000001", 100);
   const b = await world([], backend);
   b.clock.t = a.clock.t + 25 * MIN;
   await b.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: a.clock.t + 3 * MIN });
@@ -125,7 +130,7 @@ test("the SMS that arrives after a restart still verifies the transfer", async (
 
 test("an SMS that arrived after the window verifies nothing, however soon it is read", async () => {
   const w = await world();
-  await w.wf.transfer("CUP", "9200950000000001", 100);
+  await w.wf.transfer(w.card.id, "9200950000000001", 100);
   await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: w.clock.t + 21 * MIN });
   assert.equal(w.store.state.attempts.at(-1).state, "dialer");
 });
@@ -133,7 +138,7 @@ test("an SMS that arrived after the window verifies nothing, however soon it is 
 // Review focus 1, auth side: a queued auth SMS read hours later must not send op 46 on its own.
 test("a queued auth SMS read hours later does not rerun the balance", async () => {
   const w = await world([{ ok: true, reply: "ok" }]);
-  await w.wf.login("1234", { retryCurrency: "CUP" });
+  await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
   const loggedAt = w.clock.t;
   w.clock.t += 5 * 60 * MIN;
   await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.AUTH, receivedAt: loggedAt + MIN });
@@ -167,7 +172,7 @@ test("two different texts in the same millisecond are both handled", async () =>
 test("a reply that arrives after the SMS keeps the attempt verified", async () => {
   let release;
   const w = await world([() => new Promise((r) => (release = r))]);
-  const pending = w.wf.balance("CUP");
+  const pending = w.wf.balance(w.card.id);
   await tick();
   await w.sms(SMS.BALANCE);
   release({ ok: true, reply: "Su solicitud esta siendo procesada" });
@@ -179,28 +184,28 @@ test("a reply that arrives after the SMS keeps the attempt verified", async () =
 // Review focus 5: the phone does not send the code.
 test("a failed send marks the attempt failed with its code", async () => {
   const w = await world([{ ok: false, failureCode: -1, error: null }]);
-  await w.wf.balance("CUP");
+  await w.wf.balance(w.card.id);
   assert.equal(w.store.state.attempts[0].state, "failed");
   assert.equal(w.store.state.attempts[0].failureCode, -1);
 });
 
 test("a bridge call that rejects fails the attempt with -100", async () => {
   const w = await world([() => Promise.reject(new Error("bad code"))]);
-  await w.wf.balance("CUP");
+  await w.wf.balance(w.card.id);
   assert.equal(w.store.state.attempts[0].state, "failed");
   assert.equal(w.store.state.attempts[0].failureCode, -100);
 });
 
 test("a login whose bridge call rejects clears the pending retry", async () => {
   const w = await world([() => Promise.reject(new Error("bad code"))]);
-  const r = await w.wf.login("1234", { retryCurrency: "CUP" });
+  const r = await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
   assert.deepEqual([r.ok, r.failureCode], [false, -100]);
   assert.equal(w.store.state.retryBalance, null);
 });
 
 test("a failed login clears the pending retry", async () => {
   const w = await world([{ ok: false, failureCode: -100, error: "SecurityException" }]);
-  const r = await w.wf.login("1234", { retryCurrency: "CUP" });
+  const r = await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
   assert.equal(r.ok, false);
   assert.equal(r.failureCode, -100);
   assert.equal(w.store.state.retryBalance, null);
@@ -215,33 +220,33 @@ test("a text from a person is dropped and never stored or reported", async () =>
 
 test("a login with remember keeps the PIN in the device store for 180 days, under the bank", async () => {
   const w = await world([{ ok: true, reply: "Usted esta siendo autenticado" }]);
-  const r = await w.wf.login("4321", { remember: true });
+  const r = await w.wf.login("METROPOLITANO", "4321", { remember: true });
   assert.equal(r.remembered, true);
-  assert.deepEqual(w.bridge.calls.at(-1), { method: "secretSave", args: { name: `pin:${w.store.state.settings.bank}`, days: 180 } });
-  assert.deepEqual(await w.wf.savedPin(), { available: true, saved: true, expiresAt: 180 * 86_400_000 });
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "secretSave", args: { name: "pin:METROPOLITANO", days: 180 } });
+  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: true, saved: true, expiresAt: 180 * 86_400_000 });
 });
 
 test("a login the phone did not send does not remember the PIN", async () => {
   const w = await world([{ ok: false, failureCode: -1, error: null }]);
-  await w.wf.login("4321", { remember: true });
+  await w.wf.login("METROPOLITANO", "4321", { remember: true });
   assert.ok(w.bridge.calls.every((c) => c.method !== "secretSave"));
-  assert.equal((await w.wf.savedPin()).saved, false);
+  assert.equal((await w.wf.savedPin("METROPOLITANO")).saved, false);
 });
 
 test("a saved PIN logs in after the device unlocks it", async () => {
   const w = await world([{ ok: true, reply: "ok" }, { ok: true, reply: "Usted esta siendo autenticado" }]);
-  await w.wf.login("4321", { remember: true });
-  const r = await w.wf.loginWithSaved({ retryCurrency: "CUP" });
+  await w.wf.login("METROPOLITANO", "4321", { remember: true });
+  const r = await w.wf.loginWithSaved("METROPOLITANO", { retryCardId: w.card.id });
   assert.equal(r.ok, true);
   const dialed = w.bridge.calls.filter((c) => c.method === "sendUssd");
   assert.equal(dialed.length, 2);
   assert.equal(dialed[1].args.code, dialed[0].args.code);
-  assert.equal(w.store.state.retryBalance.currency, "CUP");
+  assert.equal(w.store.state.retryBalance.cardId, w.card.id);
 });
 
 test("a cancelled unlock sends nothing and asks for the PIN", async () => {
   const w = await world([], memoryBackend(), { unlock: false });
-  const r = await w.wf.loginWithSaved({ retryCurrency: "CUP" });
+  const r = await w.wf.loginWithSaved("METROPOLITANO", { retryCardId: w.card.id });
   assert.equal(r, null);
   assert.ok(w.bridge.calls.every((c) => c.method !== "sendUssd"));
   assert.equal(w.store.state.retryBalance, null);
@@ -249,23 +254,90 @@ test("a cancelled unlock sends nothing and asks for the PIN", async () => {
 
 test("forgetting the PIN removes it from the device store", async () => {
   const w = await world([{ ok: true, reply: "ok" }]);
-  await w.wf.login("4321", { remember: true });
-  await w.wf.forgetPin();
-  assert.equal((await w.wf.savedPin()).saved, false);
+  await w.wf.login("METROPOLITANO", "4321", { remember: true });
+  await w.wf.forgetPin("METROPOLITANO");
+  assert.equal((await w.wf.savedPin("METROPOLITANO")).saved, false);
 });
 
 test("a shell with no secret store offers no remembering", async () => {
   const w = await world([{ ok: true, reply: "ok" }], memoryBackend(), { secrets: false });
-  assert.deepEqual(await w.wf.savedPin(), { available: false, saved: false, expiresAt: null });
-  assert.equal((await w.wf.login("4321", { remember: true })).remembered, false);
-  assert.equal(await w.wf.loginWithSaved(), null);
+  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: false, saved: false, expiresAt: null });
+  assert.equal((await w.wf.login("METROPOLITANO", "4321", { remember: true })).remembered, false);
+  assert.equal(await w.wf.loginWithSaved("METROPOLITANO"), null);
 });
 
 test("a remembered PIN still never reaches the store, the history or the telemetry", async () => {
   const w = await world([{ ok: true, reply: "ok" }, { ok: true, reply: "ok" }]);
-  await w.wf.login("4321", { remember: true });
-  await w.wf.loginWithSaved();
+  await w.wf.login("METROPOLITANO", "4321", { remember: true });
+  await w.wf.loginWithSaved("METROPOLITANO");
   await w.telemetry.idle();
   const kept = JSON.stringify([w.store.state, w.stateBackend.saved, w.telemetryBackend.saved, w.posted]);
   assert.ok(!kept.includes("4321"));
+});
+
+test("balance sends 0*pan", async () => {
+  const w = await world([{ ok: true, reply: "ok" }]);
+  await w.wf.balance(w.card.id);
+  assert.equal(w.bridge.calls[0].args.code, dial(balanceCode({ bank: "METROPOLITANO", pan: METRO_CARD.pan }), DEFAULT_CONFIG, 61));
+  assert.equal(w.store.state.attempts[0].cardId, w.card.id);
+});
+
+test("pin key per bank", async () => {
+  const w = await world([{ ok: true, reply: "ok" }, { ok: true, reply: "ok" }]);
+  await w.wf.login("METROPOLITANO", "1234", { remember: true });
+  await w.wf.login("BANDEC", "5678", { remember: true });
+  const saved = w.bridge.calls.filter((c) => c.method === "secretSave").map((c) => c.args.name);
+  assert.deepEqual(saved, ["pin:METROPOLITANO", "pin:BANDEC"]);
+});
+
+test("linkCard asks for login first", async () => {
+  const w = await world([]);
+  const r = await w.wf.linkCard(w.card.id, "D7", "1234");
+  assert.equal(r.needsLogin, true);
+  assert.equal(w.bridge.calls.length, 0);
+});
+
+test("linkCard sends op 60 and links on a confirming reply", async () => {
+  const w = await world([{ ok: true, reply: "Su cuenta ha sido asociada satisfactoriamente" }]);
+  await w.store.authenticated("METROPOLITANO", w.clock.t);
+  const r = await w.wf.linkCard(w.card.id, "D7", "1234");
+  assert.equal(r.ok, true);
+  assert.equal(w.bridge.calls[0].args.code, dial(linkCode("METROPOLITANO", METRO_CARD.pan, "D7", "1234"), DEFAULT_CONFIG, 61));
+  assert.equal(w.store.state.cards[0].state, "linked");
+});
+
+test("linkCard keeps a card pending on a reply it does not know", async () => {
+  const w = await world([{ ok: true, reply: "Operacion no permitida" }]);
+  await w.store.authenticated("METROPOLITANO", w.clock.t);
+  const r = await w.wf.linkCard(w.card.id, "D7", "1234");
+  assert.equal(r.ok, false);
+  assert.equal(r.reply, "Operacion no permitida");
+  assert.equal(w.store.state.cards[0].state, "pending");
+});
+
+test("linkCard keeps the value out of history and telemetry", async () => {
+  const w = await world([{ ok: true, reply: "asociada" }]);
+  await w.store.authenticated("METROPOLITANO", w.clock.t);
+  await w.wf.linkCard(w.card.id, "D7", "8642");
+  await w.telemetry.idle();
+  const kept = JSON.stringify([w.store.state, w.stateBackend.saved, w.telemetryBackend.saved, w.posted]);
+  assert.ok(!kept.includes("8642"));
+  assert.ok(!kept.includes(w.bridge.calls[0].args.code));
+});
+
+test("registerBank marks the bank on a known reply", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud de registro esta siendo procesada" }]);
+  const person = { card: "9227069900000009", name: "Ana", ci: "00000000000" };
+  const r = await w.wf.registerBank("BANDEC", person);
+  assert.equal(r.ok, true);
+  assert.ok(w.bridge.calls[0].args.code.startsWith("*444*49*"));
+  assert.equal(w.store.state.banks.BANDEC.registered, true);
+  await w.telemetry.idle();
+  assert.ok(!JSON.stringify([w.store.state, w.posted]).includes("00000000000"));
+});
+
+test("an auth SMS records its own bank", async () => {
+  const w = await world([]);
+  await w.sms(SMS.AUTH);
+  assert.equal(w.store.state.banks.METROPOLITANO.authenticatedAt, w.clock.t);
 });
