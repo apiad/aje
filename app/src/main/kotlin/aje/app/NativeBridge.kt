@@ -23,7 +23,7 @@ private val PERMISSIONS = arrayOf(
 private val USSD = Regex("""^\*[0-9*#]+#$""")
 
 /**
- * The six native primitives, over the message channel the page sees as `ajeNative`
+ * The native primitives, over the message channel the page sees as `ajeNative`
  * (protocol in web/bridge.js). None of them encodes, parses or decides anything.
  * Nothing here logs a code or a secret: a login code and a saved secret carry the bank key.
  */
@@ -68,6 +68,9 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                 "secretForget" -> {
                     SecretStore.forget(activity, name(args))
                     reply(replyProxy, id, JSONObject.NULL)
+                }
+                "installUpdate" -> Updater.install(activity, args.getString("url"), args.getString("sha256")) {
+                    reply(replyProxy, id, it)
                 }
                 "ready" -> {
                     pushProxy = replyProxy
