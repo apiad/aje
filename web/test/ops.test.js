@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { balance, login, transfer, needsLogin } from "../core/ops.js";
+import { balance, drawCoordinate, link, login, register, transfer, needsLogin } from "../core/ops.js";
 import { dial, display, DEFAULT_CONFIG } from "../core/ussd.js";
 
 const principal = { bank: "METROPOLITANO", currency: "CUP", pan: null };
@@ -51,4 +51,33 @@ test("transfer amount is a positive whole number", () => {
 test("reply that asks for login", () => {
   assert.ok(needsLogin("Respuesta del banco: Debe autenticarse primero"));
   assert.ok(!needsLogin("Su solicitud esta siendo procesada, espere un SMS"));
+});
+
+const person = { card: "9227959900000001", name: "Ana", surname1: "Gil", surname2: "Paz", ci: "00000000000" };
+
+test("register: op 49 with each bank's fields", () => {
+  assert.equal(register("METROPOLITANO", person).op, "49");
+  assert.deepEqual(values(register("METROPOLITANO", person)), ["03", person.card, "Ana", "Gil", "Paz", person.ci]);
+  assert.deepEqual(values(register("BPA", person)), ["01", person.card, "Ana", "Gil", "Paz", person.ci]);
+  assert.deepEqual(values(register("BANDEC", person)), ["02", person.card, "Ana", person.ci]);
+  assert.throws(() => register("MITRANSFER", person), RangeError);
+});
+
+test("link: op 60, card * coordinate * value, value secret", () => {
+  const c = link("METROPOLITANO", "9227959900000002", "D7", "1234");
+  assert.equal(c.op, "60");
+  assert.deepEqual(values(c), ["9227959900000002", "D7", "1234"]);
+  assert.deepEqual(c.fields.map((f) => f.secret), [false, false, true]);
+  assert.match(display(c, DEFAULT_CONFIG, 7), /••••/);
+  assert.doesNotMatch(display(c, DEFAULT_CONFIG, 7), /1234/);
+});
+
+test("link: BPA sends the card only; other banks need the coordinate", () => {
+  assert.deepEqual(values(link("BPA", "9227129900000002")), ["9227129900000002"]);
+  assert.throws(() => link("BANDEC", "9227069900000002"), RangeError);
+});
+
+test("drawCoordinate covers A-J by 1-10", () => {
+  assert.equal(drawCoordinate(() => 0), "A1");
+  assert.equal(drawCoordinate(() => 0.999), "J10");
 });

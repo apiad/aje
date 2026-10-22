@@ -35,5 +35,31 @@ export function transfer(from, toPan, amount) {
   ]));
 }
 
+/**
+ * Opcode 49: registers the phone with a bank, once per bank, with the number of the bank's
+ * coordinates card (Telebanca, Multibanca) and the holder's data, in each bank's form order.
+ */
+export function register(bank, { card, name, surname1, surname2, ci }) {
+  const agency = BANKS[bank]?.agency;
+  if (!agency) throw new RangeError(`${bank} has no agency code`);
+  const params = bank === "BANDEC" ? [agency, card, name, ci] : [agency, card, name, surname1, surname2, ci];
+  return encoded("49", fieldsOf(params));
+}
+
+/**
+ * Opcode 60: links another card to the bank the person last authenticated with. The bank checks
+ * the value at a coordinate of its matrix; BPA's form sends the card alone.
+ */
+export function link(bank, pan, coordinate, value) {
+  if (bank === "BPA") return encoded("60", [field(pan)]);
+  if (!coordinate || !/^[0-9]+$/.test(value ?? "")) throw new RangeError("linking needs a coordinate and its value");
+  return encoded("60", [field(pan), field(coordinate), field(value, true)]);
+}
+
+/** A cell of the 10×10 coordinates matrix: a letter A–J and a row 1–10. */
+export function drawCoordinate(random = Math.random) {
+  return "ABCDEFGHIJ"[Math.floor(random() * 10)] + (Math.floor(random() * 10) + 1);
+}
+
 /** The bank's reply to an operation sent without an open session. */
 export const needsLogin = (reply) => /autentic/i.test(reply);
