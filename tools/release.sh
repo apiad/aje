@@ -13,6 +13,8 @@ CODE=$(( $(git rev-list --count HEAD) + 200 ))
 APK="aje-$VERSION-$CODE.apk"
 mkdir -p build/release
 cp app/build/outputs/apk/release/app-release.apk "build/release/$APK"
+# A public release must not carry the dev telemetry endpoint or its token.
+python3 -I -c 'import json, sys, zipfile; c = json.loads(zipfile.ZipFile(sys.argv[1]).read("assets/web/config.json")); sys.exit("telemetry in a release build" if c.get("telemetryUrl") or c.get("telemetryToken") else 0)' "build/release/$APK"
 (cd build/release && sha256sum "$APK" > "$APK.sha256")
 PRE=()
 [[ $VERSION == *-* ]] && PRE=(--prerelease)

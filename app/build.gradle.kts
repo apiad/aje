@@ -70,8 +70,10 @@ val webAssets = tasks.register<WebAssets>("webAssets") {
     source.set(rootProject.layout.projectDirectory.dir("web"))
     config.put("app", android.defaultConfig.versionName!!)
     config.put("versionCode", android.defaultConfig.versionCode!!.toString())
-    config.put("telemetryUrl", keystoreProps.getProperty("telemetryUrl", ""))
-    config.put("telemetryToken", keystoreProps.getProperty("telemetryToken", ""))
+    // Telemetry is for dev builds only: a public release never carries the collector or its token.
+    val release = project.hasProperty("versionName")
+    config.put("telemetryUrl", if (release) "" else keystoreProps.getProperty("telemetryUrl", ""))
+    config.put("telemetryToken", if (release) "" else keystoreProps.getProperty("telemetryToken", ""))
 }
 
 androidComponents {
