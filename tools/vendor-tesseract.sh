@@ -23,6 +23,8 @@ mkdir -p "$OUT"
 cp "$TMP/lib/package/dist/tesseract.min.js" "$TMP/lib/package/dist/worker.min.js" "$OUT/"
 # The SIMD build only: every Android WebView that runs Ajé supports WebAssembly SIMD.
 cp "$TMP/core/package/tesseract-core-simd-lstm.wasm.js" "$OUT/"
-cp "$TMP/eng/package/4.0.0_best_int/eng.traineddata.gz" "$OUT/"
+# Uncompressed: Android packaging gunzips assets named .gz and drops the suffix, so the
+# file would not be found under that name; the APK compresses it anyway.
+gunzip -c "$TMP/eng/package/4.0.0_best_int/eng.traineddata.gz" > "$OUT/eng.traineddata"
 cp "$TMP/lib/package/LICENSE.md" "$OUT/LICENSE-tesseract.js.md" 2>/dev/null || cp "$TMP/lib/package/LICENSE" "$OUT/LICENSE-tesseract.js"
 ls -la "$OUT"

@@ -4,6 +4,9 @@
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
     <!-- Dial one-shot USSD codes on the chosen SIM. -->
+    <!-- The card scanner reads the number from the camera, in the WebView. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- List the SIMs so the person can pick the one registered with the bank. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

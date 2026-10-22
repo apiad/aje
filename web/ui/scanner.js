@@ -25,7 +25,7 @@ export function ocrWorker() {
     if (!globalThis.Tesseract) await loadScript(`${VENDOR}tesseract.min.js`);
     const w = await globalThis.Tesseract.createWorker("eng", 1, {
       workerPath: `${VENDOR}worker.min.js`, corePath: `${VENDOR}tesseract-core-simd-lstm.wasm.js`,
-      langPath: VENDOR.replace(/\/$/, ""), gzip: true, workerBlobURL: false,
+      langPath: VENDOR.replace(/\/$/, ""), gzip: false, workerBlobURL: false,
     });
     await w.setParameters({ tessedit_char_whitelist: "0123456789 ", tessedit_pageseg_mode: "6" });
     return w;

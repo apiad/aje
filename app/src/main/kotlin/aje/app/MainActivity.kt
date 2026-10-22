@@ -1,7 +1,11 @@
 package aje.app
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -25,6 +29,13 @@ class MainActivity : FragmentActivity() {
         bridge.onPermissionsResult()
     }
 
+    // The page's camera request waits here while Android asks the person for the camera.
+    private var cameraRequest: PermissionRequest? = null
+    private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        cameraRequest?.let { if (granted) it.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) else it.deny() }
+        cameraRequest = null
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +56,21 @@ class MainActivity : FragmentActivity() {
 
             // The page never navigates away from the bundled frontend.
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
+        }
+        // The card scanner: video capture for the bundled frontend only, and nothing else.
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val video = PermissionRequest.RESOURCE_VIDEO_CAPTURE
+                if (request.origin.toString().trimEnd('/') != ORIGIN || request.resources.toList() != listOf(video)) {
+                    request.deny()
+                } else if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    request.grant(arrayOf(video))
+                } else {
+                    cameraRequest?.deny()
+                    cameraRequest = request
+                    cameraPermission.launch(Manifest.permission.CAMERA)
+                }
+            }
         }
         bridge = NativeBridge(this)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
