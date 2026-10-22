@@ -1,5 +1,5 @@
 # Every mechanical check and build entry point.
-.PHONY: test smoke preview apk
+.PHONY: test smoke ocr preview apk
 
 # The logic, including the 1600 encoder vectors, in Node.
 test:
@@ -7,7 +7,11 @@ test:
 
 # The frontend against the mock in a phone-sized browser.
 smoke:
-	uv run --with playwright python tools/smoke-web.py
+	uv run --with playwright --with pillow python tools/smoke-web.py
+
+# The card scanner on synthetic cards, with the vendored Tesseract. Slow: run before a release.
+ocr:
+	uv run --with playwright --with pillow python tools/ocr-check.py
 
 # The frontend and the mock as one HTML page, for iterating on the interface without an APK.
 preview:

@@ -4,6 +4,7 @@
 """
 
 import functools
+import subprocess
 import http.server
 import sys
 import threading
@@ -160,10 +161,18 @@ def refused_login(page):
     expect(page.locator("#pin-retry")).to_be_visible()
 
 
+def type_number(page):
+    """Skips the camera; without one, the scanner already went to the review screen."""
+    try:
+        expect(page.locator("#add-pan")).to_be_visible(timeout=3_000)
+    except AssertionError:
+        page.click("#add-type")
+
+
 def add_card_linked_bank(page):
     """A second Metropolitano card: typed, linked with a coordinate after the bank's login."""
     page.click("#add-card")
-    page.click("#add-type")
+    type_number(page)
     page.fill("#add-pan", "9227 9599 0000 0002")
     expect(page.locator("#add-facts")).to_contain_text("Banco Metropolitano")
     page.fill("#add-alias", "Metro dos")
@@ -191,7 +200,7 @@ def add_card_linked_bank(page):
 def pending_card_resumes_guide(page):
     """A first BANDEC card, saved for later, reopens the guide where it stopped."""
     page.click("#add-card")
-    page.click("#add-type")
+    type_number(page)
     page.fill("#add-pan", "9227 0699 0000 0003")
     page.click("#add-next")
     page.click("#add-not-registered")
@@ -208,6 +217,22 @@ STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuse
          double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, refused_login]
 
 
+def scan_reads_card(p, base, out, errors):
+    """The scanner reads a synthetic card from Chromium's fake camera into the review screen."""
+    fixtures = out / "fixtures"
+    subprocess.run([sys.executable, str(Path(__file__).parent / "gen-card-fixtures.py"), str(fixtures)], check=True, capture_output=True)
+    browser = p.chromium.launch(args=["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+                                      f"--use-file-for-fake-video-capture={fixtures / 'camera.mjpeg'}"])
+    page = browser.new_context(viewport={"width": 390, "height": 844}, permissions=["camera"]).new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "/index.html#/home")
+    page.click("#add-card")
+    expect(page.locator("#add-pan")).to_have_value("9227959900000001", timeout=60_000)
+    expect(page.locator("#add-facts")).to_contain_text("Banco Metropolitano")
+    page.screenshot(path=out / "scan_reads_card.png", full_page=True)
+    browser.close()
+
+
 def main():
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/aje-smoke")
     out.mkdir(parents=True, exist_ok=True)
@@ -222,9 +247,10 @@ def main():
             step(page)
             page.screenshot(path=out / f"{step.__name__}.png", full_page=True)
         width = page.evaluate("document.documentElement.scrollWidth")
+        scan_reads_card(p, base, out, errors)
     assert width <= 390, f"page is {width}px wide on a 390px phone"
     assert not errors, errors
-    print(f"{len(STEPS)} steps passed, 0 errors, {width}px wide")
+    print(f"{len(STEPS) + 1} steps passed, 0 errors, {width}px wide")
 
 
 if __name__ == "__main__":
