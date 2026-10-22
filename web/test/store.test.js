@@ -6,7 +6,7 @@ import { SMS } from "./helpers.js";
 
 const MIN = 60_000;
 const attempt = (over) => ({
-  id: over.id, startedAt: over.startedAt ?? 0, code: "", state: "sent", op: "46", currency: "CUP",
+  id: over.id, startedAt: over.startedAt ?? 0, code: "", state: "sent", op: "46", cardId: "c1",
   to: null, amount: null, transactionId: null, reply: null, failureCode: null,
   accounting: null, available: null, verifiedAt: null, ...over,
 });
@@ -15,7 +15,8 @@ test("defaults, and a second open keeps the install id and the history", async (
   const backend = memoryBackend();
   const a = await openStore(backend, { now: () => 1 });
   assert.equal(a.state.settings.subId, -1);
-  assert.deepEqual(a.state.settings.enabledCurrencies, ["CUP", "CUC", "USD"]);
+  assert.deepEqual(a.state.cards, []);
+  assert.deepEqual(a.state.banks, {});
   assert.equal(a.planFor(3), "PREPAGO");
   await a.add(attempt({ id: 7 }));
   const b = await openStore(backend);
@@ -32,7 +33,8 @@ test("history keeps the newest fifty", async () => {
 
 test("a balance SMS verifies the latest pending query inside twenty minutes", async () => {
   const s = await openStore(memoryBackend());
-  await s.add(attempt({ id: 1, startedAt: 0 }));
+  const card = await s.addCard(metro);
+  await s.add(attempt({ id: 1, startedAt: 0, cardId: card.id }));
   const latency = await s.verifyBalance(parseBankSms(SMS.BALANCE), 5 * MIN);
   assert.equal(latency, 5 * MIN);
   assert.equal(s.state.attempts[0].state, "verified");
@@ -77,4 +79,55 @@ test("subscribers hear every change", async () => {
   await s.update({ currency: "CUP" });
   assert.equal(calls, 1);
   assert.equal(s.state.settings.currency, "CUP");
+});
+
+const metro = { alias: "Metro CUP", pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" };
+const bandec = { alias: "BANDEC CUP", pan: "9227069900000001", bank: "BANDEC", currency: "CUP" };
+
+test("a card is added pending at step 1, and a number already stored is refused", async () => {
+  let n = 0;
+  const s = await openStore(memoryBackend(), { newId: () => `id${++n}` });
+  const c = await s.addCard(metro);
+  assert.deepEqual(c, { id: "id2", ...metro, state: "pending", step: 1 });
+  await assert.rejects(s.addCard({ ...metro, alias: "otra" }), /ya está/);
+  await s.updateCard(c.id, { state: "linked" });
+  assert.equal(s.state.cards[0].state, "linked");
+  await s.removeCard(c.id);
+  assert.deepEqual(s.state.cards, []);
+});
+
+test("a bank's record is patched, and authenticated is per bank", async () => {
+  const s = await openStore(memoryBackend());
+  await s.setBank("BANDEC", { registered: true });
+  await s.authenticated("BANDEC", 42);
+  assert.deepEqual(s.state.banks.BANDEC, { registered: true, authenticatedAt: 42 });
+});
+
+test("a balance SMS verifies the pending query of a card of its bank", async () => {
+  const s = await openStore(memoryBackend());
+  const m = await s.addCard(metro);
+  const b = await s.addCard(bandec);
+  await s.add(attempt({ id: 1, startedAt: 0, cardId: m.id }));
+  await s.add(attempt({ id: 2, startedAt: 1, cardId: b.id }));
+  await s.verifyBalance(parseBankSms(SMS.BALANCE), 5 * MIN);
+  assert.equal(s.state.attempts.find((a) => a.id === 1).state, "verified");
+  assert.equal(s.state.attempts.find((a) => a.id === 2).state, "sent");
+});
+
+test("verifyBalance picks the latest pending card", async () => {
+  const s = await openStore(memoryBackend());
+  const m = await s.addCard(metro);
+  const m2 = await s.addCard({ ...metro, pan: "9227959900000002" });
+  await s.add(attempt({ id: 1, startedAt: 0, cardId: m.id }));
+  await s.add(attempt({ id: 2, startedAt: 1, cardId: m2.id }));
+  await s.verifyBalance(parseBankSms(SMS.BALANCE), 5 * MIN);
+  assert.deepEqual(s.state.attempts.map((a) => a.state), ["verified", "sent"]);
+});
+
+test("old settings keys are dropped on load", async () => {
+  const s = await openStore(memoryBackend({ settings: { bank: "BPA", currency: "USD", enabledCurrencies: ["CUP"], subId: 3 } }));
+  assert.equal(s.state.settings.subId, 3);
+  assert.equal("bank" in s.state.settings, false);
+  assert.equal("enabledCurrencies" in s.state.settings, false);
+  assert.equal("currency" in s.state.settings, false);
 });

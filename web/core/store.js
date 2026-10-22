@@ -1,6 +1,5 @@
 // Settings, history and session state, kept as one JSON document in a backend:
 // IndexedDB in the WebView (idb.js), memory in tests.
-import { CURRENCIES } from "./money.js";
 import { formatMoney, transferMatches } from "./sms.js";
 
 /** How long after an operation its bank SMS still verifies it. */
@@ -9,7 +8,7 @@ const HISTORY = 50;
 const SEEN = 50;
 
 const ATTEMPT = {
-  id: null, startedAt: null, code: "", state: "sent", op: "46", currency: null, to: null, amount: null,
+  id: null, startedAt: null, code: "", state: "sent", op: "46", cardId: null, to: null, amount: null,
   transactionId: null, reply: null, failureCode: null, accounting: null, available: null, verifiedAt: null,
 };
 
@@ -25,11 +24,14 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, bank: "METROPOLITANO", currency: "CUP", enabledCurrencies: ["CUP", "CUC", "USD"], plans: {}, telemetry: false },
-    attempts: [], mobileBalances: {}, mobileDetails: {}, authenticatedAt: null, retryBalance: null, installId: null, seenSms: [],
+    settings: { subId: -1, plans: {}, telemetry: false },
+    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, installId: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
+  // Keys of the one-bank model, which stored cards replaced; nothing is migrated.
+  for (const k of ["bank", "currency", "enabledCurrencies"]) delete state.settings[k];
+  delete state.authenticatedAt;
   const listeners = new Set();
 
   async function commit() {
@@ -81,10 +83,10 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     async verifyBalance(sms, at = now()) {
       const accounting = formatMoney(sms.accounting);
       const available = formatMoney(sms.available);
-      const pending = pendingWhere(at, (a) => a.op === "46");
+      const bankOf = (cardId) => state.cards.find((c) => c.id === cardId)?.bank;
+      const pending = pendingWhere(at, (a) => a.op === "46" && bankOf(a.cardId) === sms.bank);
       if (!pending) {
-        const currency = sms.available.currency in CURRENCIES ? sms.available.currency : null;
-        await store.add({ startedAt: at, state: "verified", op: "46", currency, accounting, available, verifiedAt: at });
+        await store.add({ startedAt: at, state: "verified", op: "46", accounting, available, verifiedAt: at });
         return null;
       }
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", accounting, available, verifiedAt: at }));
@@ -113,13 +115,35 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** When the bank's "se ha autenticado" SMS last arrived. */
-    async authenticated(at) {
-      state.authenticatedAt = at;
+    /** Adds a card, pending at the first step of its bank's onboarding. A number already stored is refused. */
+    async addCard({ alias, pan, bank, currency }) {
+      if (state.cards.some((c) => c.pan === pan)) throw new Error("Esta tarjeta ya está en tus cuentas.");
+      const card = { id: newId(), alias, pan, bank, currency, state: "pending", step: 1 };
+      state.cards = [...state.cards, card];
+      await commit();
+      return card;
+    },
+
+    async updateCard(id, patch) {
+      state.cards = state.cards.map((c) => (c.id === id ? { ...c, ...patch } : c));
       await commit();
     },
 
-    /** `{currency, at}` while a login should rerun a balance query once its SMS arrives, else null. */
+    async removeCard(id) {
+      state.cards = state.cards.filter((c) => c.id !== id);
+      await commit();
+    },
+
+    /** Patches what the app knows of a bank: `{registered, authenticatedAt}`. */
+    async setBank(bank, patch) {
+      state.banks = { ...state.banks, [bank]: { registered: false, authenticatedAt: null, ...state.banks[bank], ...patch } };
+      await commit();
+    },
+
+    /** When the bank's "se ha autenticado" SMS last arrived. */
+    authenticated: (bank, at) => store.setBank(bank, { authenticatedAt: at }),
+
+    /** `{cardId, at}` while a login should rerun a balance query once its SMS arrives, else null. */
     async setRetryBalance(value) {
       state.retryBalance = value;
       await commit();
