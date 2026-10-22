@@ -4,6 +4,7 @@ import { idbBackend } from "./core/idb.js";
 import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
+import { renderAddCard } from "./ui/addcard.js";
 import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
 import { h, icon, mount } from "./ui/dom.js";
@@ -22,14 +23,15 @@ const SCREENS = {
   home: { render: renderHome, live: true },
   settings: { render: renderSettings, live: true },
   transfer: { render: renderTransfer },
+  add: { render: renderAddCard },
   history: { render: renderHistory, live: true },
   pay: { render: soon("Pagar un servicio") },
   qr: { render: soon("Pagar y cobrar por QR") },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const DEPTH = (r) => (r.name === "transfer" || (r.name === "history" && r.param) ? 1 : 0);
-const tabOf = (r) => (r.name === "transfer" ? "home" : r.name);
+const DEPTH = (r) => (r.name === "transfer" || r.name === "add" || (r.name === "history" && r.param) ? 1 : 0);
+const tabOf = (r) => (r.name === "transfer" || r.name === "add" ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
 const EASE = "cubic-bezier(.2,0,0,1)";
 

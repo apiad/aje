@@ -160,8 +160,52 @@ def refused_login(page):
     expect(page.locator("#pin-retry")).to_be_visible()
 
 
+def add_card_linked_bank(page):
+    """A second Metropolitano card: typed, linked with a coordinate after the bank's login."""
+    page.click("#add-card")
+    page.click("#add-type")
+    page.fill("#add-pan", "9227 9599 0000 0002")
+    expect(page.locator("#add-facts")).to_contain_text("Banco Metropolitano")
+    page.fill("#add-alias", "Metro dos")
+    page.click("#add-next")
+    # An earlier login proved the registration, so Ajé may skip the question.
+    expect(page.locator("#add-registered, #add-pin, #add-coord, #addcard .pending").first).to_be_visible()
+    if page.locator("#add-registered").count():
+        page.click("#add-registered")
+    # The bank may ask for a login before or after op 60; the mock drops its session between steps.
+    for _ in range(2):
+        expect(page.locator("#add-pin, #add-coord").first).to_be_visible(timeout=10_000)
+        if page.locator("#add-pin").count():
+            page.fill("#add-pin", "1234")
+            page.click("#add-pin-submit")
+            expect(page.locator("#add-coord")).to_be_visible(timeout=10_000)
+        page.fill("#add-coord", "12")
+        page.click("#add-link")
+        expect(page.locator("#add-done, #add-pin").first).to_be_visible(timeout=10_000)
+        if page.locator("#add-done").count():
+            break
+    expect(page.locator("#add-done")).to_contain_text("Metro dos", timeout=10_000)
+    assert page.evaluate("ajeDev.store.state.cards.find((c) => c.alias === 'Metro dos').state") == "linked"
+
+
+def pending_card_resumes_guide(page):
+    """A first BANDEC card, saved for later, reopens the guide where it stopped."""
+    page.click("#add-card")
+    page.click("#add-type")
+    page.fill("#add-pan", "9227 0699 0000 0003")
+    page.click("#add-next")
+    page.click("#add-not-registered")
+    expect(page.locator("#add-guide li.now")).to_contain_text("Multibanca")
+    page.click("#add-later")
+    page.reload()
+    page.wait_for_function("globalThis.ajeDev")
+    card_id = page.evaluate("ajeDev.store.state.cards.find((c) => c.bank === 'BANDEC').id")
+    page.click(f'[data-go-acct="card:{card_id}"]')
+    page.locator(f'#deck .acct[data-id="card:{card_id}"] [data-action="resume"]').click()
+    expect(page.locator("#add-guide li.now")).to_contain_text("Multibanca")
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
-         double_tap_transfers_once, refused_login]
+         double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, refused_login]
 
 
 def main():

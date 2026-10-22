@@ -134,14 +134,15 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Patches what the app knows of a bank: `{registered, authenticatedAt}`. */
+    /** Patches what the app knows of a bank: `{registered, authenticatedAt}`; `registered` is null while unknown. */
     async setBank(bank, patch) {
-      state.banks = { ...state.banks, [bank]: { registered: false, authenticatedAt: null, ...state.banks[bank], ...patch } };
+      state.banks = { ...state.banks, [bank]: { registered: null, authenticatedAt: null, ...state.banks[bank], ...patch } };
       await commit();
     },
 
     /** When the bank's "se ha autenticado" SMS last arrived. */
-    authenticated: (bank, at) => store.setBank(bank, { authenticatedAt: at }),
+    // A session the bank opened proves the phone is registered with it.
+    authenticated: (bank, at) => store.setBank(bank, { registered: true, authenticatedAt: at }),
 
     /** `{cardId, at}` while a login should rerun a balance query once its SMS arrives, else null. */
     async setRetryBalance(value) {

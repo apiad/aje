@@ -131,3 +131,11 @@ test("old settings keys are dropped on load", async () => {
   assert.equal("enabledCurrencies" in s.state.settings, false);
   assert.equal("currency" in s.state.settings, false);
 });
+
+test("an auth from a bank marks it registered; a bank only patched otherwise stays unknown", async () => {
+  const s = await openStore(memoryBackend());
+  await s.authenticated("METROPOLITANO", 7);
+  assert.deepEqual(s.state.banks.METROPOLITANO, { registered: true, authenticatedAt: 7 });
+  await s.setBank("BPA", { authenticatedAt: null });
+  assert.equal(s.state.banks.BPA.registered, null);
+});
