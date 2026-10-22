@@ -14,7 +14,9 @@ fixtures or commits. Test fixtures copy the layout of real texts with made-up va
 
 ## Done means
 
-`make test` is green: the Node tests of `web/`, including the 1600 encoder vectors.
+`make test` is green: the Node tests of `web/`, including the 1600 encoder vectors. A change to the card
+scanner also passes `make ocr` (synthetic cards read by the vendored Tesseract), which a
+release runs too.
 A change to the interface also passes `make smoke`, and a change to the app builds
 with `make apk`.
 
@@ -34,6 +36,8 @@ verified on a phone, and a report says which of the two a claim came from.
   the operation catalog, the money model, the SMS parser, the store, telemetry and
   the workflows. `web/core/idb.js` is the only browser-only module.
 - `web/ui/`: the screens, hand-written JS over the design mockup's CSS.
+- `web/vendor/tesseract/`: Tesseract.js for the card scanner, fetched by
+  `tools/vendor-tesseract.sh` from pinned npm tarballs; never edited by hand.
 - `web/bridge.js`: the client of the message protocol with the native shell;
   `web/mock.js` fakes the six primitives in a browser and is not shipped.
 - `app/`: the native shell. `MainActivity` hosts the WebView on
