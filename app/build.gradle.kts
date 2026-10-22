@@ -19,7 +19,8 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = "0.1.0-dev.$versionCode"
+        // A release passes its version (make release); any other build is a dev build.
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.0-dev.$versionCode"
     }
 
     signingConfigs {
@@ -68,6 +69,7 @@ abstract class WebAssets : DefaultTask() {
 val webAssets = tasks.register<WebAssets>("webAssets") {
     source.set(rootProject.layout.projectDirectory.dir("web"))
     config.put("app", android.defaultConfig.versionName!!)
+    config.put("versionCode", android.defaultConfig.versionCode!!.toString())
     config.put("telemetryUrl", keystoreProps.getProperty("telemetryUrl", ""))
     config.put("telemetryToken", keystoreProps.getProperty("telemetryToken", ""))
 }
