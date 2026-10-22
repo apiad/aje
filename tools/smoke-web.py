@@ -236,7 +236,7 @@ def scan_reads_card(p, base, out, errors):
 FAKE_RELEASES = [{
     "tag_name": "v9.9.0-beta.1", "prerelease": True, "draft": False, "html_url": "https://github.com/apiad/aje/releases/tag/v9.9.0-beta.1",
     "assets": [
-        {"name": "aje-9.9.0-beta.1-999.apk", "size": 7_400_000,
+        {"name": "aje-9.9.0-beta.1-999.apk", "size": 7_400_000, "digest": "sha256:" + "ab" * 32,
          "browser_download_url": "https://github.com/apiad/aje/releases/download/v9.9.0-beta.1/aje-9.9.0-beta.1-999.apk"},
         {"name": "aje-9.9.0-beta.1-999.apk.sha256", "size": 90,
          "browser_download_url": "https://github.com/apiad/aje/releases/download/v9.9.0-beta.1/aje-9.9.0-beta.1-999.apk.sha256"},
@@ -247,7 +247,8 @@ FAKE_RELEASES = [{
 def fake_github(page, releases):
     """Answers the updater's GitHub requests, so the smoke test never reaches the network."""
     page.route("https://api.github.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(releases)))
-    page.route("https://github.com/**", lambda r: r.fulfill(status=200, body="ab" * 32 + "  aje.apk\n"))
+    # Release downloads send no CORS headers, so a page can never read them: fail them, as a phone does.
+    page.route("https://github.com/**", lambda r: r.abort())
 
 
 def update_beta(page):
