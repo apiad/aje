@@ -139,3 +139,12 @@ test("an auth from a bank marks it registered; a bank only patched otherwise sta
   await s.setBank("BPA", { authenticatedAt: null });
   assert.equal(s.state.banks.BPA.registered, null);
 });
+
+test("the update channel defaults to stable, and the last check is kept", async () => {
+  const backend = memoryBackend();
+  const s = await openStore(backend);
+  assert.equal(s.state.settings.channel, "stable");
+  assert.deepEqual(s.state.update, { checkedAt: null, available: null });
+  await s.setUpdate({ checkedAt: 9, available: { version: "1.0.1" } });
+  assert.equal((await openStore(backend)).state.update.available.version, "1.0.1");
+});

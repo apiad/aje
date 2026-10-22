@@ -24,7 +24,8 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, plans: {}, telemetry: false },
+    settings: { subId: -1, plans: {}, telemetry: false, channel: "stable" },
+    update: { checkedAt: null, available: null },
     cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, installId: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
@@ -131,6 +132,12 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
 
     async removeCard(id) {
       state.cards = state.cards.filter((c) => c.id !== id);
+      await commit();
+    },
+
+    /** When the app last asked GitHub for releases, and the update it found, if any. */
+    async setUpdate(patch) {
+      state.update = { ...state.update, ...patch };
       await commit();
     },
 

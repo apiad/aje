@@ -41,3 +41,8 @@ test("op 49 starts a registration and op 60 links a card once logged in", async 
   await m.sendUssd(3, "*444*40*0100*1260416#");
   assert.match((await m.sendUssd(3, "*444*60*0100*1260416#")).reply, /asociada/i);
 });
+
+test("the mock pretends to install an update", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.deepEqual(await m.installUpdate("https://example.test/aje.apk", "ab".repeat(32)), { ok: true });
+});

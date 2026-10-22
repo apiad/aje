@@ -72,3 +72,14 @@ test("the secret calls post their name and wait on the person without a timeout"
   f.push({ id: f.sent.at(-1).id, result: "1234" });
   assert.deepEqual([await save, await load], [true, "1234"]);
 });
+
+test("installUpdate posts the url and checksum and waits for the shell without a timeout", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native, timeoutMs: 10 });
+  const done = b.installUpdate("https://github.com/x/aje-1.0.1-262.apk", "ab".repeat(32));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(f.sent[0].args, { url: "https://github.com/x/aje-1.0.1-262.apk", sha256: "ab".repeat(32) });
+  assert.equal(f.sent[0].method, "installUpdate");
+  f.push({ id: f.sent[0].id, result: { ok: true } });
+  assert.deepEqual(await done, { ok: true });
+});

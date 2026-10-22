@@ -94,6 +94,11 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
     },
+    async installUpdate(url, sha256) {
+      calls.push({ method: "installUpdate", args: { url, sha256 } });
+      await wait();
+      return { ok: true };
+    },
     injectSms: (sender, body) => emit(sender, body),
     endSession: () => { session = false; },
   };
