@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePan, bankOfPan, last4, MOBILE_PLANS, parseMobileBalance, parseMobileDetails, parseAmount } from "../core/money.js";
+import { parsePan, classifyPan, last4, MOBILE_PLANS, parseMobileBalance, parseMobileDetails, parseAmount } from "../core/money.js";
 
 test("a card number is 16 digits, dashes and spaces allowed", () => {
   assert.equal(parsePan("9200-9500 0000-0001"), "9200950000000001");
@@ -8,12 +8,33 @@ test("a card number is 16 digits, dashes and spaces allowed", () => {
   assert.equal(last4("9200950000000001"), "0001");
 });
 
-test("the bank comes from the prefix", () => {
-  assert.equal(bankOfPan("9200950000000001"), "METROPOLITANO");
-  assert.equal(bankOfPan("9200120000000001"), "BPA");
-  assert.equal(bankOfPan("9200060000000001"), "BANDEC");
-  assert.equal(bankOfPan("9760030000000001"), "MITRANSFER");
-  assert.equal(bankOfPan("4000000000000001"), null);
+test("PAN: bank from digits 5-6, currency from digits 3-4", () => {
+  assert.deepEqual(classifyPan("9227 9599 0000 0001"), { pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" });
+  assert.deepEqual(classifyPan("9225-0699-0000-0001"), { pan: "9225069900000001", bank: "BANDEC", currency: "USD" });
+  assert.equal(classifyPan("9235129900000001").currency, "USD");
+  for (const d of ["25", "26", "28", "29", "35", "45"]) assert.equal(classifyPan(`92${d}959900000001`).currency, "USD");
+  assert.equal(classifyPan("9227129900000001").bank, "BPA");
+});
+
+test("PAN with an unknown bank code is refused", () => {
+  assert.match(classifyPan("9227779900000001").error, /banco/);
+});
+
+test("wallet and classic business prefixes", () => {
+  assert.equal(classifyPan("9760030000000001").bank, "MITRANSFER");
+  assert.equal(classifyPan("9760040000000001").bank, "CLASICAEMP");
+});
+
+test("account number: currency from character 15", () => {
+  assert.equal(classifyPan("0599000000000011").currency, "CUP");
+  assert.equal(classifyPan("0599000000000021").currency, "CUC");
+  assert.equal(classifyPan("0599000000000031").currency, "USD");
+  assert.match(classifyPan("4000000000000001").error, /número/);
+});
+
+test("strips separators", () => {
+  assert.equal(classifyPan(" 9227 9599-0000 0001\n").pan, "9227959900000001");
+  assert.match(classifyPan("9227 9599").error, /16/);
 });
 
 test("mobile plan codes", () => {
