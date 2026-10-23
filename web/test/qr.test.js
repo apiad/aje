@@ -30,3 +30,28 @@ test("parseCharge refuses what it cannot pay", () => {
     assert.deepEqual(parseCharge(t), { ok: false, reason: "bad" }, t);
   }
 });
+
+// The QR on screen is read back by the same decoder the scanner uses.
+test("qrSvg draws a QR that jsQR reads back", async () => {
+  const { qrMatrix, qrSvg } = await import("../core/qrimage.js");
+  // The reader is a UMD script the WebView loads with <script>; here it runs with a CommonJS module.
+  const { readFileSync } = await import("node:fs");
+  const vm = await import("node:vm");
+  const module = { exports: {} };
+  vm.runInNewContext(readFileSync(new URL("../vendor/qr/jsQR.js", import.meta.url), "utf8"), { module, exports: module.exports });
+  const jsQR = module.exports.default ?? module.exports;
+  const text = chargeUri({ number: "55555555", amount: 150, name: "Ñico" });
+  assert.match(qrSvg(text), /^<svg[^>]*viewBox="0 0 \d+ \d+"/);
+  // Rasterize the module matrix at 4 px per module with a 4-module quiet zone, as RGBA.
+  const m = qrMatrix(text);
+  const scale = 4, quiet = 4, size = (m.length + 2 * quiet) * scale;
+  const px = new Uint8ClampedArray(size * size * 4).fill(255);
+  for (let y = 0; y < m.length; y++) for (let x = 0; x < m.length; x++) {
+    if (!m[y][x]) continue;
+    for (let dy = 0; dy < scale; dy++) for (let dx = 0; dx < scale; dx++) {
+      const i = (((y + quiet) * scale + dy) * size + (x + quiet) * scale + dx) * 4;
+      px[i] = px[i + 1] = px[i + 2] = 0;
+    }
+  }
+  assert.equal(jsQR(px, size, size)?.data, text);
+});
