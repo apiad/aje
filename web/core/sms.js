@@ -1,4 +1,4 @@
-// Reads bank confirmation SMS. Only Banco Metropolitano's texts have been seen so far;
+// Reads bank confirmation SMS. Only Banco Metropolitano's texts, and MiTransfer's login, have been seen so far;
 // a text from another bank, or one this parser does not know, returns null.
 
 const MONEY = String.raw`(CR|DB)?\s*([0-9][0-9.,]*)\s*(CUP|CUC|USD|MLC|EUR)`;
@@ -84,7 +84,10 @@ export function senderTag(sender) {
 }
 
 function bankOf(text) {
-  return /Banco Metropolitano/i.test(text) ? "METROPOLITANO" : null;
+  if (/Banco Metropolitano/i.test(text)) return "METROPOLITANO";
+  // MiTransfer's login SMS names its wallet: "en el Monedero Mi Transfer".
+  if (/Monedero\s+Mi\s*Transfer/i.test(text)) return "MITRANSFER";
+  return null;
 }
 
 function field(text, label) {

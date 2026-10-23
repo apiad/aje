@@ -27,6 +27,7 @@ test("transfer matches the masked beneficiary and the amount", () => {
 
 test("authenticated", () => {
   assert.deepEqual(parseBankSms(SMS.AUTH), { kind: "auth", bank: "METROPOLITANO" });
+  assert.deepEqual(parseBankSms(SMS.MITRANSFER_AUTH), { kind: "auth", bank: "MITRANSFER" });
 });
 
 test("debit is negative", () => {
