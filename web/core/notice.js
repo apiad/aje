@@ -11,7 +11,7 @@ const INTL_AMOUNT = new RegExp(String.raw`(?:recibi[oó]|recibido|recargada con)
 const INTL_PLAN = /recibi[oó]\s+(.+?)\s+v[aá]lidos?\s/i;
 const RECHARGE = new RegExp(String.raw`recarga de saldo m[oó]vil por un monto de\s+${AMOUNT}CUP`, "i");
 const GIFT = /Ha recibido un plan de\s+(.+?)\s+v[aá]lido/i;
-const EXPIRY = /Su\s+(plan|bonificaci[oó]n)\s+de\s+(.+?)\s+vence el\s+(\d{2}-\d{2}-\d{2,4})/i;
+const EXPIRY = /Su\s+(plan|bonificaci[oó]n)\s+de\s+(.+?)\s+vence el\s+(\d{2}-\d{2}-\d{2,4})/gi;
 
 /**
  * The notice an incoming SMS gives, or null: `{kind, amount, number, account, plan}`, where
@@ -40,7 +40,9 @@ export function noticeOf(sender, body) {
   }
   if ((m = RECHARGE.exec(text))) return money(m[1]) && n("recharge", { amount: money(m[1]) });
   if ((m = GIFT.exec(text))) return n("plan-gift", { plan: m[1] });
-  if ((m = EXPIRY.exec(text))) {
+  // One text can list several expiries; the data one matters most, else the first.
+  const expiries = [...text.matchAll(EXPIRY)];
+  if ((m = expiries.find((x) => /^datos/i.test(x[2])) ?? expiries[0])) {
     const what = /^p/i.test(m[1]) ? "plan" : "bonificación";
     return n("plan-expiry", { plan: `${what} de ${m[2].toLowerCase()} vence el ${m[3]}` });
   }

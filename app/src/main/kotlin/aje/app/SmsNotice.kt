@@ -47,7 +47,9 @@ object SmsNotice {
         }
         RECHARGE.find(text)?.let { m -> return money(m.groupValues[1])?.let { n("recharge", amount = it) } }
         GIFT.find(text)?.let { m -> return n("plan-gift", plan = m.groupValues[1]) }
-        EXPIRY.find(text)?.let { m ->
+        // One text can list several expiries; the data one matters most, else the first.
+        val expiries = EXPIRY.findAll(text).toList()
+        (expiries.firstOrNull { it.groupValues[2].startsWith("datos", ignoreCase = true) } ?: expiries.firstOrNull())?.let { m ->
             val what = if (m.groupValues[1].startsWith("p", ignoreCase = true)) "plan" else "bonificación"
             return n("plan-expiry", plan = "$what de ${m.groupValues[2].lowercase()} vence el ${m.groupValues[3]}")
         }
@@ -81,11 +83,12 @@ object SmsNotice {
         return Integer.toHexString(h)
     }
 
-    /** `25904.29` or `25,904.29` to cents; a lone comma with two digits after it is a decimal comma. */
+    /** `25904.29` or `25,904.29` to cents; a lone comma with two digits after it is a decimal comma. Over 12 whole digits, null. */
     private fun centsOf(number: String): Long? {
         val n = if (Regex("""^\d+,\d{2}$""").matches(number)) number.replace(",", ".") else number.replace(",", "")
         val parts = n.split(".")
-        fun int(s: String) = if (Regex("""^\d+$""").matches(s)) s.toLong() else null
+        if (parts[0].length > 12) return null
+        fun int(s: String) = if (Regex("""^\d+$""").matches(s)) s.toLongOrNull() else null
         return when (parts.size) {
             1 -> int(parts[0])?.times(100)
             2 -> {

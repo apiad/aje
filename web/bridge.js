@@ -83,16 +83,16 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
      * then delete, the SMS it queued while no page was alive: so only a page that can save them
      * asks for them. SMS that arrived before a handler existed are delivered to it.
      */
-    /** The route a tapped notification opens; one pushed before a handler is delivered to it. */
-    onOpen(fn) {
-      openHandler = fn;
-      for (const route of opens.splice(0)) fn(route);
-    },
     onSms(fn) {
       const first = handler === null;
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
       if (first) call("ready").catch(() => {});
+    },
+    /** The route a tapped notification opens; one pushed before a handler is delivered to it. */
+    onOpen(fn) {
+      openHandler = fn;
+      for (const route of opens.splice(0)) fn(route);
     },
   };
 }

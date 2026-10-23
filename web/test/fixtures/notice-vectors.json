@@ -301,5 +301,25 @@
     "sentAt": 1792701560000,
     "id": "1792701560000:d627d92c",
     "out": null
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Usted ha recibido una recarga de saldo movil por un monto de 99999999999999999999999 CUP.",
+    "sentAt": 1792701620000,
+    "id": "1792701620000:5b4338b9",
+    "out": null
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Su bonificacion de minutos vence el 01-11-2026. Su bonificacion de SMS vence el 01-11-2026. Su bonificacion de datos vence el 05-11-2026.",
+    "sentAt": 1792701680000,
+    "id": "1792701680000:4365c544",
+    "out": {
+      "kind": "plan-expiry",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "bonificación de datos vence el 05-11-2026"
+    }
   }
 ]

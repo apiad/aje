@@ -101,11 +101,15 @@ function money(text, label) {
   return { cents: sign?.toUpperCase() === "DB" ? -cents : cents, currency: currency.toUpperCase() };
 }
 
-/** `25904.29` or `25,904.29` to cents. A lone comma with two digits after it is a decimal comma. */
+/**
+ * `25904.29` or `25,904.29` to cents. A lone comma with two digits after it is a decimal comma.
+ * A whole part over 12 digits is no amount anyone holds, and is refused (SmsNotice.kt does the same).
+ */
 export function centsOf(number) {
   const n = /^\d+,\d{2}$/.test(number) ? number.replace(",", ".") : number.replaceAll(",", "");
   const parts = n.split(".");
   const int = (s) => (/^\d+$/.test(s) ? Number(s) : null);
+  if (parts[0].length > 12) return null;
   if (parts.length === 1) return int(parts[0]) === null ? null : int(parts[0]) * 100;
   if (parts.length === 2) {
     const whole = int(parts[0]);

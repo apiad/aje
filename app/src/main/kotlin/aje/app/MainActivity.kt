@@ -151,7 +151,9 @@ class MainActivity : FragmentActivity() {
         })
         setContentView(webView)
         webView.loadUrl("$ORIGIN/assets/web/index.html")
-        openRoute(intent)
+        // A recreated activity, or one reopened from Recents, gets the old intent back: its notice was already opened.
+        val replayed = savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (!replayed) openRoute(intent)
     }
 
     // A tapped notification while Ajé is open (launchMode singleTask) lands here instead of onCreate.

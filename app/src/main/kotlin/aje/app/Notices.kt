@@ -34,8 +34,9 @@ object Notices {
         val open = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.ROUTE, "inbox/$id")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        // The hash part of the id, as an int, tells notices apart and keeps each one's tap intent its own.
-        val tag = id.substringAfter(':').toLong(16).toInt()
+        // The whole id, send time included, tells apart two SMS with the same text, such as two equal recharges,
+        // and keeps each one's tap intent its own.
+        val tag = id.hashCode()
         val tap = PendingIntent.getActivity(context, tag, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(context, CHANNELS.getValue(title))
             .setSmallIcon(R.drawable.ic_aje)
