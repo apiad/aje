@@ -13,8 +13,9 @@ const MAX_FRAMES = 20;
 export const fold = (word) => word.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 export function redact(text, vocab = VOCAB) {
-  return text.split(/([\p{L}\p{N}\p{M}]+)/u).map((token, i) => {
-    if (i % 2 === 0) return token;
+  // ‹w› is already redacted: redacting twice (phone, then collector) gives the same text.
+  return text.split(/(‹w›|[\p{L}\p{N}\p{M}]+)/u).map((token, i) => {
+    if (i % 2 === 0 || token === "‹w›") return token;
     if (/\p{N}/u.test(token)) return token.replace(/\p{N}/gu, "#").replace(/\p{Lu}/gu, "A").replace(/[\p{Ll}\p{Lo}\p{Lm}\p{Lt}]/gu, "a");
     return vocab.has(fold(token)) ? token : "‹w›";
   }).join("");
