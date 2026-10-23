@@ -70,3 +70,9 @@ test("the mock walks a *133 plan tree, and a purchase takes the price off the ba
   assert.match(await at("*222#"), /Saldo: 135\.00 CUP/);
   assert.equal(parseMenu(await at("*133*9#")), null);
 });
+
+test("in ?mock=ussd-menu the *133 levels answer -1, as a network menu does", async () => {
+  const m = createMock({ delayMs: 0, mode: "ussd-menu" });
+  assert.deepEqual(await m.sendUssd(3, "*133#"), { ok: false, failureCode: -1 });
+  assert.equal((await m.sendUssd(3, "*222#")).ok, true);
+});

@@ -106,6 +106,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     async sendUssd(subId, code) {
       calls.push({ method: "sendUssd", args: { subId, code } });
       await wait();
+      // ?mock=ussd-menu: the *133 levels answer with a network menu the API cannot follow.
+      if (mode === "ussd-menu" && code.startsWith("*133")) return { ok: false, failureCode: -1 };
       return { ok: true, reply: reply(code) };
     },
     async dial(code) {

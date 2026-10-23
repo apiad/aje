@@ -297,13 +297,12 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   async function planMenu(subId, path) {
     telemetry.event("ussd_sent", { op: "133", via: "api" });
     const r = await send("133", subId, dial(planPath(path), config));
+    const view = r.ok ? parseMenu(r.reply) : null;
+    // The menu is the network's public catalog; its option numbers and prices are what to learn.
+    // A level Ajé cannot read is counted too, without its text.
+    if (r.ok || r.failureCode === -1) telemetry.event("plan_menu", { op: "133", kind: view?.kind ?? "none", menu: view ? r.reply : null });
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
-    const view = parseMenu(r.reply);
-    if (view) {
-      await store.setPlanMenu(path.join("*"), view);
-      // The menu is the network's public catalog; its option numbers and prices are what to learn.
-      telemetry.event("plan_menu", { op: "133", kind: view.kind, menu: r.reply });
-    }
+    if (view) await store.setPlanMenu(path.join("*"), view);
     return { ok: true, view, reply: r.reply };
   }
 

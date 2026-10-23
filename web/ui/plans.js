@@ -1,6 +1,6 @@
 // Comprar plan: walks the *133 menu by chained shortcuts over the USSD API and draws each level as
 // buttons. Only the confirm view's "Comprar" buys, with the path plus 1, the network's confirm option.
-import { planPath } from "../core/lines.js";
+import { planPath, purchaseOutcome } from "../core/lines.js";
 import { dial } from "../core/ussd.js";
 import { h } from "./dom.js";
 
@@ -48,12 +48,17 @@ export function renderPlans(ctx, r) {
       buy];
   }
 
-  /** A reply that is neither a menu nor a confirm: its text, and the same shortcut in the dialer. */
+  /**
+   * A reply that is neither a menu nor a confirm, or a menu the API cannot follow (-1): its text, and
+   * the same browsing shortcut in the dialer. A reply that reads as a purchase gets no dialer, which
+   * would buy again.
+   */
   function raw(reply) {
     return [h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Respuesta de Cubacel"),
-      h("div", { class: "m" }, reply || "Sin texto.")),
-      h("button", { id: "plan-dialer", class: "btn ghost", onclick: () => ctx.bridge.dial(dial(planPath(path))).catch(() => null) },
-        "Seguir en el marcador")];
+      h("div", { class: "m" }, reply || "Cubacel respondió con un menú que Ajé no puede leer.")),
+      reply && purchaseOutcome(reply) ? null
+        : h("button", { id: "plan-dialer", class: "btn ghost", onclick: () => ctx.bridge.dial(dial(planPath(path))).catch(() => null) },
+          "Seguir en el marcador")];
   }
 
   function draw(view, busy) {
@@ -67,6 +72,7 @@ export function renderPlans(ctx, r) {
     draw(ctx.store.state.planMenus[key] ?? null, true);
     const res = await ctx.workflow.planMenu(subId, [...path]);
     if (mine !== seq) return;
+    if (!res.ok && res.failureCode === -1) return show(...raw(""));
     if (!res.ok) {
       return show(h("div", { class: "err" }, `No se pudo consultar la red (código ${res.failureCode}).`),
         h("button", { id: "plan-retry", class: "btn ghost", onclick: () => load() }, "Reintentar"));
@@ -76,12 +82,14 @@ export function renderPlans(ctx, r) {
   }
 
   function down(o) {
+    if (buying) return;
     path.push(o.key);
     labels.push(o.label);
     load();
   }
 
   function up() {
+    if (buying) return;
     path.pop();
     labels.pop();
     load();
@@ -91,6 +99,7 @@ export function renderPlans(ctx, r) {
     if (buying) return;
     buying = true;
     button.disabled = true;
+    back.hidden = true;
     seq++;
     const res = await ctx.workflow.buyPlan(subId, [...path]);
     buying = false;

@@ -586,12 +586,12 @@ test("buyPlan reports an unknown reply and a failed USSD without dialing", async
   for (const w of [a, b]) assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
 });
 
-test("a *133 menu reaches telemetry with its digits; other replies do not", async () => {
+test("a *133 menu reaches telemetry with its digits; other replies carry no text", async () => {
   const w = await world([{ ok: true, reply: PLAN.SUBMENU }, { ok: true, reply: "Opcion no valida" }]);
   await w.wf.planMenu(2, ["1"]);
   await w.wf.planMenu(2, ["9"]);
   await w.telemetry.idle();
-  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
+  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu" && e.menu);
   assert.equal(menus.length, 1);
   assert.equal(menus[0].menu, PLAN.SUBMENU);
   assert.equal(menus[0].kind, "menu");
@@ -602,4 +602,14 @@ test("a purchase reply with options after it is bought, not dialed", async () =>
   const w = await world([{ ok: true, reply: "Su compra se ha realizado con exito.\n1-Comprar otro\n2-Salir" }, { ok: true, reply: PREPAID_REPLY }]);
   assert.equal((await w.wf.buyPlan(2, ["1", "1"])).outcome, "bought");
   assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
+});
+
+// Review finding 5: a level the API cannot read still reaches telemetry, with no text.
+test("a *133 level that is neither menu nor confirm, or needs the dialer, is counted as none", async () => {
+  const w = await world([{ ok: true, reply: "Opcion no valida" }, { ok: false, failureCode: -1 }]);
+  await w.wf.planMenu(2, ["9"]);
+  await w.wf.planMenu(2, []);
+  await w.telemetry.idle();
+  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
+  assert.deepEqual(menus.map((e) => [e.kind, e.menu]), [["none", undefined], ["none", undefined]]);
 });

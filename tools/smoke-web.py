@@ -346,6 +346,26 @@ def buy_plan_via_133(page):
     page.click("#plan-back")
     expect(page.locator("#plan-opt-4")).to_be_visible()
     expect(page.locator("#plan-back")).to_be_hidden()
+    # Review finding 3: Atrás during a purchase sends nothing and does not hide the result.
+    page.click("#plan-opt-2")
+    page.click("#plan-opt-1")
+    expect(page.locator("#plan-buy")).to_be_visible()
+    before = len(ussd_codes(page))
+    page.evaluate("document.querySelector('#plan-buy').click(); document.querySelector('#plan-back').click()")
+    expect(page.locator('#plan-result[data-outcome="bought"]')).to_be_visible(timeout=10_000)
+    page.wait_for_timeout(1500)
+    expect(page.locator("#plan-result")).to_be_visible()
+    codes = ussd_codes(page)[before:]
+    assert codes == ["*133*2*1*1#", "*222#"], codes
+
+
+def plans_when_the_network_needs_the_dialer(page):
+    # Review finding 5: a -1 while browsing offers the dialer with the browsing code.
+    page.goto(page.url.split("#")[0].split("?")[0] + "?mock=ussd-menu#/plans?sub=3")
+    expect(page.locator("#plan-dialer")).to_be_visible(timeout=10_000)
+    page.click("#plan-dialer")
+    page.wait_for_function("ajeDev.bridge.calls.some((c) => c.method === 'dial' && c.args.code === '*133#')")
+    page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
 
 
 def line_transfer_by_number(page):
@@ -442,7 +462,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_via_133, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
+         line_transfer_by_number, buy_plan_via_133, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
 
 
 def main():
