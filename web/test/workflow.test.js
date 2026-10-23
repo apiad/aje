@@ -16,7 +16,7 @@ async function world(replies = [], stateBackend = memoryBackend(), bridgeOptions
   const clock = { t: 1_000_000 };
   const now = () => clock.t;
   let ids = 0;
-  const store = await openStore(stateBackend, { now, newId: () => (ids++ === 0 ? "install-1" : `card-${ids}`) });
+  const store = await openStore(stateBackend, { now, newId: () => `card-${++ids + 1}` });
   await store.update({ telemetry: true, subId: 3 });
   const card = store.state.cards[0] ?? await store.addCard(METRO_CARD);
   const telemetryBackend = memoryBackend();

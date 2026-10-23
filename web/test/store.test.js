@@ -20,7 +20,7 @@ test("defaults, and a second open keeps the install id and the history", async (
   assert.equal(a.planFor(3), "PREPAGO");
   await a.add(attempt({ id: 7 }));
   const b = await openStore(backend);
-  assert.equal(b.state.installId, a.state.installId);
+  assert.equal("installId" in b.state, false);
   assert.equal(b.state.attempts[0].id, 7);
 });
 
@@ -88,7 +88,7 @@ test("a card is added pending at step 1, and a number already stored is refused"
   let n = 0;
   const s = await openStore(memoryBackend(), { newId: () => `id${++n}` });
   const c = await s.addCard(metro);
-  assert.deepEqual(c, { id: "id2", ...metro, state: "pending", step: 1 });
+  assert.deepEqual(c, { id: "id1", ...metro, state: "pending", step: 1 });
   await assert.rejects(s.addCard({ ...metro, alias: "otra" }), /ya está/);
   await s.updateCard(c.id, { state: "linked" });
   assert.equal(s.state.cards[0].state, "linked");

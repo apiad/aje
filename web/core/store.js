@@ -26,23 +26,20 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const defaults = {
     settings: { subId: -1, plans: {}, telemetry: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, installId: null, seenSms: [],
+    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
   // Keys of the one-bank model, which stored cards replaced; nothing is migrated.
   for (const k of ["bank", "currency", "enabledCurrencies"]) delete state.settings[k];
   delete state.authenticatedAt;
+  // Telemetry no longer carries an install id; an older build stored one.
+  delete state.installId;
   const listeners = new Set();
 
   async function commit() {
     await backend.save(state);
     for (const fn of listeners) fn(state);
-  }
-
-  if (!state.installId) {
-    state.installId = newId();
-    await backend.save(state);
   }
 
   function pendingWhere(at, test) {

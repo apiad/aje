@@ -1,25 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ALLOWED, mask, openTelemetry } from "../core/telemetry.js";
+import { ALLOWED, openTelemetry } from "../core/telemetry.js";
 import { openStore, memoryBackend } from "../core/store.js";
 
-const UA = "Mozilla/5.0 (Linux; Android 14; Test Phone Build/AB12; wv) AppleWebKit/537.36";
-const CONFIG = { app: "0.1.0-dev.9", telemetryUrl: "https://collector.example/e", telemetryToken: "tok" };
+const UA = "Mozilla/5.0 (Linux; Android 14; Test Phone Build/AB12; wv) AppleWebKit/537.36 AjeMaker/Acme";
+const CONFIG = { app: "0.1.0-dev.9", commit: "abc1234", telemetryUrl: "https://collector.example/e", telemetryToken: "tok" };
 
-async function world({ on = true, config = CONFIG, respond = () => ({ ok: true, status: 204 }) } = {}) {
+async function world({ on = true, config = CONFIG, respond = () => ({ ok: true, status: 204 }), backend = memoryBackend() } = {}) {
   const store = await openStore(memoryBackend());
   await store.update({ telemetry: on });
   const posts = [];
   const fetch = async (url, init) => { posts.push({ url, init }); return respond(); };
-  const t = await openTelemetry({ config, store, backend: memoryBackend(), fetch, now: () => 42, userAgent: UA });
-  return { store, t, posts };
+  const t = await openTelemetry({ config, store, backend, fetch, userAgent: UA });
+  return { store, t, posts, backend };
 }
 
-test("every digit becomes #, whatever its script", () => {
-  assert.equal(mask("Saldo: 1234.56 CUP"), "Saldo: ####.## CUP");
-  assert.equal(mask("١٢"), "##");
-});
+const bodies = (posts) => posts.map((p) => JSON.parse(p.init.body));
 
 test("a field outside the allowlist is refused", async () => {
   const { t } = await world();
@@ -35,20 +32,34 @@ test("nothing is queued or sent when telemetry is off or has no URL", async () =
   }
 });
 
-test("an event carries the base fields and a masked text, with the token header", async () => {
-  const { store, t, posts } = await world();
-  t.event("ussd_reply", { op: "46", ok: true, text: "Saldo: 1234.56 CUP" });
+test("an event is one object with the base fields, redacted text and no id or time", async () => {
+  const { t, posts } = await world();
+  t.event("ussd_reply", { op: "46", ok: true, latency_ms: 2349, text: "Saldo: 1234.56 CUP ANA" });
   await t.idle();
-  const [e] = JSON.parse(posts[0].init.body);
-  assert.deepEqual(e, {
-    event: "ussd_reply", t: 42, app: "0.1.0-dev.9", sdk: "14", device: "Test Phone",
-    install: store.state.installId, op: "46", ok: true, text: "Saldo: ####.## CUP",
-  });
+  assert.deepEqual(bodies(posts), [{
+    event: "ussd_reply", app: "0.1.0-dev.9", commit: "abc1234", android: "14", maker: "acme",
+    op: "46", ok: true, latency_ms: 2300, text: "Saldo: ####.## CUP ‹w›",
+  }]);
   assert.equal(posts[0].url, CONFIG.telemetryUrl);
   assert.equal(posts[0].init.headers["X-Aje-Token"], "tok");
 });
 
-test("a failed send keeps the queue and the next one sends both", async () => {
+test("a crash sends a redacted message and a reduced stack", async () => {
+  const { t, posts } = await world();
+  t.event("crash", { error: "TypeError: x is 5", stack: "TypeError\n    at f (https://appassets.androidplatform.net/assets/web/app.js:3:7)" });
+  await t.idle();
+  assert.equal(bodies(posts)[0].error, "‹w›: ‹w› ‹w› #");
+  assert.equal(bodies(posts)[0].stack, "f@app.js:3:7");
+});
+
+test("three events are three requests", async () => {
+  const { t, posts } = await world();
+  for (const op of ["40", "46", "60"]) t.event("ussd_sent", { op });
+  await t.idle();
+  assert.deepEqual(bodies(posts).map((b) => b.op), ["40", "46", "60"]);
+});
+
+test("a failed send keeps the queue and the next event sends both, one per request", async () => {
   let up = false;
   const { t, posts } = await world({ respond: () => (up ? { ok: true, status: 204 } : Promise.reject(new Error("offline"))) });
   t.event("app_start");
@@ -57,8 +68,30 @@ test("a failed send keeps the queue and the next one sends both", async () => {
   up = true;
   t.event("app_start");
   await t.idle();
-  assert.equal(JSON.parse(posts.at(-1).init.body).length, 2);
+  assert.equal(posts.length, 3);
+  assert.ok(bodies(posts).every((b) => !Array.isArray(b)));
   assert.ok(t.history().every((h) => h.sent));
+});
+
+test("turning telemetry off drops the queue unsent", async () => {
+  const { store, t, posts } = await world({ respond: () => Promise.reject(new Error("offline")) });
+  t.event("app_start");
+  await t.idle();
+  await store.update({ telemetry: false });
+  await store.update({ telemetry: true });
+  t.flush();
+  await t.idle();
+  assert.equal(posts.length, 1);
+});
+
+test("a queue stored in the old shape is never sent", async () => {
+  const backend = memoryBackend();
+  await backend.save({ queue: [{ event: "app_start", t: 1, install: "x" }], log: [{ sent: false, e: { event: "app_start", t: 1, install: "x" } }] });
+  const { t, posts } = await world({ backend });
+  t.flush();
+  await t.idle();
+  assert.equal(posts.length, 0);
+  assert.equal(t.history().length, 0);
 });
 
 test("the history keeps the newest two hundred", async () => {

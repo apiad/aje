@@ -34,7 +34,8 @@ verified on a phone, and a report says which of the two a claim came from.
 `make release VERSION=1.0.0` publishes a signed APK from the pushed HEAD as a GitHub release;
 a version with a suffix (`1.1.0-beta.1`) is a pre-release, which only the app's beta channel
 installs. The assets are `aje-<version>-<versionCode>.apk` and its `.sha256`, the names the
-updater (`web/core/update.js`) reads. A release build carries no telemetry; the script checks.
+updater (`web/core/update.js`) reads. A release build carries the public telemetry endpoint,
+off until the person turns it on; the script checks it is there.
 
 ## Where things live
 
@@ -51,7 +52,8 @@ updater (`web/core/update.js`) reads. A release build carries no telemetry; the 
   `https://appassets.androidplatform.net`, `NativeBridge` holds the six primitives, `SecretStore` the Keystore-backed PIN store,
   `SmsQueue` keeps SMS that arrive while no page is alive.
 - `tools/smoke-web.py`: drives the frontend against the mock with Playwright.
-- `telemetry/collector.py`: the dev telemetry endpoint.
+- `telemetry/collector.py`: the public telemetry endpoint behind `https://aje.apiad.net/t`;
+  it publishes the redacted rows at `https://aje.apiad.net/data/`.
 - The design spec and plans live in the maintainer's notes, not here.
 
 ## Rules
@@ -61,10 +63,13 @@ updater (`web/core/update.js`) reads. A release build carries no telemetry; the 
   The one exception is the PIN the person asks to remember: it goes only to the shell's
   secret store (`secretSave`), encrypted under a Keystore key that needs the fingerprint
   or the screen lock on each use, and it lapses after `PIN_DAYS` in `web/core/workflow.js`.
-- Telemetry carries the text of bank USSD replies and bank SMS only through `mask`,
-  which turns every digit into `#`. No other field carries a phone or card number, an
-  amount or a balance. The allowlist is `ALLOWED` in `web/core/telemetry.js`, and a
-  test checks that `telemetry/collector.py` mirrors it.
+- Telemetry is opt-in and unlinkable: one event per request, no install id, no time (the
+  collector stamps the hour). Texts and error messages go through `redact` in
+  `web/core/redact.js` before they are queued: digits become `#`, and any word outside the
+  vocabulary in `web/core/vocab.js` becomes `‹w›`. Stacks keep only `function@file:line:col`.
+  No field carries a phone or card number, a name, an amount or a balance. The allowlist is
+  `ALLOWED` in `web/core/telemetry.js`; `telemetry/collector.py` mirrors it and redacts again.
+  The collector publishes every row, so the vocabulary never takes a name. See `docs/telemetry.md`.
 - The native shell gains no logic and no new primitive without a change to the spec.
 - Signing material and the telemetry token live in `keystore.properties`, which is
   gitignored and points outside the repo.

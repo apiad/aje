@@ -51,7 +51,7 @@ async function loadConfig() {
   } catch {
     // Served without a build: the browser during development.
   }
-  return { app: "dev", telemetryUrl: "", telemetryToken: "" };
+  return { app: "dev", commit: "", telemetryUrl: "", telemetryToken: "" };
 }
 
 function route() {
@@ -72,7 +72,7 @@ async function boot() {
   });
   const workflow = createWorkflow({ bridge, store, telemetry });
 
-  const crash = (error) => telemetry.event("crash", { stack: String(error?.stack ?? error).slice(0, 4000) });
+  const crash = (error) => telemetry.event("crash", { error: String(error?.message ?? error).slice(0, 500), stack: String(error?.stack ?? "") });
   window.addEventListener("error", (e) => crash(e.error ?? e.message));
   window.addEventListener("unhandledrejection", (e) => crash(e.reason));
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
