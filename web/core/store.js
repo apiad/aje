@@ -4,6 +4,8 @@ import { formatMoney, transferMatches } from "./sms.js";
 
 /** How long after an operation its bank SMS still verifies it. */
 export const WINDOW_MS = 20 * 60 * 1000;
+/** How long a charge's QR waits for the payment that closes it. */
+export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
 const SEEN = 50;
 
@@ -108,6 +110,22 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       if (!pending) return null;
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
       return { latencyMs: at - pending.startedAt, subId: pending.subId };
+    },
+
+    /** A charge shown as a QR, waiting for the payer's balance to arrive. `to` is this line's number. */
+    addCharge({ subId, number, amount = null, name = null }, at = now()) {
+      return store.add({ id: null, startedAt: at, state: "waiting", op: "234-charge", subId, to: number, amount, name });
+    },
+
+    /**
+     * Closes the newest charge still waiting from the last 24 hours with a "recibido" SMS, whatever
+     * its amount, since the payer may change it; null when none waits.
+     */
+    async closeCharge(sms, at = now()) {
+      const c = state.attempts.find((a) => a.op === "234-charge" && a.state === "waiting" && at - a.startedAt < CHARGE_MS && at >= a.startedAt);
+      if (!c) return null;
+      await store.patch(c.id, (a) => ({ ...a, state: "verified", verifiedAt: at, receivedAmount: sms.amount.cents / 100, from: sms.number }));
+      return state.attempts.find((a) => a.id === c.id);
     },
 
     /** Records balance another line passed to this one; `to` holds the sender's number. */

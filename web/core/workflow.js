@@ -2,6 +2,7 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
+import { chargeUri } from "./qr.js";
 import { changeKey, parseMenu, planPath, purchaseOutcome, transferBalance as transferBalanceCode } from "./lines.js";
 import { BANKISH, parseBankSms, parseLineSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
@@ -340,6 +341,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return finish("unknown", { state: "replied", reply: r.reply }, r.reply);
   }
 
+  /** A charge to line `subId`: its QR text and the pending attempt the "recibido" SMS will close. */
+  async function charge(subId, { amount = null, name = null } = {}) {
+    const number = store.state.settings.lineNumbers[subId];
+    if (!number) return { ok: false, reason: "no-number" };
+    const attempt = await store.addCharge({ subId, number, amount, name });
+    return { ok: true, uri: chargeUri({ number, amount, name }), attempt };
+  }
+
   /** Today's balance transfers from a line that did not fail; the network caps them per day. */
   function transfersToday(subId) {
     const midnight = new Date(now()).setHours(0, 0, 0, 0);
@@ -395,13 +404,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
       if (verified) await refreshBalance(verified.subId);
     } else {
-      await store.addReceived(sms, receivedAt);
+      // A charge shown as a QR becomes the record of what arrived; otherwise the SMS gets its own row.
+      if (!(await store.closeCharge(sms, receivedAt))) await store.addReceived(sms, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: true, text: body });
     }
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, planMenu, buyPlan, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, planMenu, buyPlan, charge, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */

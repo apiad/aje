@@ -372,6 +372,81 @@ def plans_when_the_network_needs_the_dialer(page):
     page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
 
 
+def charge_by_qr(page):
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=3")
+    expect(page.locator("#line-charge")).to_be_visible()
+    page.fill("#lc-number", "+53 5555 5555")
+    page.fill("#lc-amount", "150")
+    page.fill("#lc-name", "Ana")
+    charges = page.evaluate("ajeDev.store.state.attempts.filter((a) => a.op === '234-charge').length")
+    page.locator("#lc-show").dblclick()
+    expect(page.locator("#lc-qr svg")).to_be_visible()
+    # Review finding 4: a double tap creates one charge.
+    page.wait_for_timeout(300)
+    assert page.evaluate("ajeDev.store.state.attempts.filter((a) => a.op === '234-charge').length") == charges + 1
+    expect(page.locator("#lc-status")).to_contain_text("Esperando el pago")
+    expect(page.locator("#line-charge")).to_contain_text("150 CUP")
+    page.click("#mock-panel summary")
+    page.click("#mock-line-received")
+    expect(page.locator("#lc-status")).to_contain_text("Recibido 25 CUP de 56666666", timeout=10_000)
+    # Review finding 6: the charge's detail shows who paid, not this line's own number.
+    cid = page.evaluate("ajeDev.store.state.attempts.find((a) => a.op === '234-charge' && a.state === 'verified').id")
+    page.goto(page.url.split("#")[0] + f"#/history/{cid}")
+    expect(page.locator("#detail")).to_contain_text("Desde")
+    expect(page.locator("#detail")).to_contain_text("56666666")
+    expect(page.locator("#detail")).not_to_contain_text("55555555")
+    # The line's number is asked once.
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=3")
+    expect(page.locator("#lc-number")).to_have_count(0)
+    expect(page.locator("#lc-amount")).to_be_visible()
+
+
+def pay_by_qr(page):
+    dials = line_sends(page)
+    page.goto(page.url.split("#")[0] + "#/qr")
+    expect(page.locator("#qr-scan")).to_be_visible()
+    # Headless Chromium has no camera: the scanner says so and offers the number instead.
+    expect(page.locator("#qr-msg")).to_contain_text("cámara", timeout=10_000)
+    page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'https://example.com/pago' }))")
+    expect(page.locator("#qr-msg")).to_have_text("Este QR no es un cobro de Ajé")
+    page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'aje:saldo?v=9&n=56666666' }))")
+    expect(page.locator("#qr-msg")).to_have_text("Actualiza Ajé para leer este QR")
+    page.click("#mock-panel summary")
+    page.click("#mock-qr")
+    expect(page.locator("#line-transfer")).to_be_visible()
+    expect(page.locator("#lt-to")).to_have_text("Para Ana · 56666666")
+    expect(page.locator("#lt-amount")).to_have_value("150")
+    expect(page.locator("#lt-submit")).to_have_text("Pasar 150 CUP")
+    # Scanning fills the form; nothing goes out until the person taps Pasar and gives the key.
+    assert line_sends(page) == dials
+    # Review finding 7: leaving the QR tab removes its test listener, so the panel's QR does nothing elsewhere.
+    page.goto(page.url.split("#")[0] + "#/qr")
+    expect(page.locator("#qr-scan")).to_be_visible()
+    page.goto(page.url.split("#")[0] + "#/history")
+    page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'aje:saldo?v=1&n=56666666&m=150' }))")
+    page.wait_for_timeout(300)
+    assert "#/history" in page.url, page.url
+
+
+def scanner_without_reader(page):
+    # Review finding 1: a reader that does not load never opens the camera.
+    page.route("**/vendor/qr/jsQR.js", lambda r: r.abort())
+    # A fresh page: the reader is loaded once per page, so an earlier visit must not have loaded it.
+    page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
+    page.reload()
+    page.wait_for_selector("#view")
+    page.evaluate("""() => {
+        window.cameraAsked = 0;
+        const md = navigator.mediaDevices;
+        if (md) md.getUserMedia = async () => { window.cameraAsked++; throw new Error("no camera here"); };
+    }""")
+    page.goto(page.url.split("#")[0] + "#/qr")
+    expect(page.locator("#qr-msg")).to_contain_text("lector de QR", timeout=10_000)
+    assert page.evaluate("window.cameraAsked") == 0
+    page.unroute("**/vendor/qr/jsQR.js")
+    page.goto(page.url.split("#")[0] + "#/home")
+
+
 def line_transfer_by_number(page):
     open_line_transfer(page)
     page.fill("#lt-num", "+53 5555 5555")
@@ -482,7 +557,7 @@ def telemetry_history_folds(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_via_133, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
+         line_transfer_by_number, buy_plan_via_133, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer, scanner_without_reader]
 
 
 def main():
@@ -491,7 +566,9 @@ def main():
     errors = []
     with sync_playwright() as p:
         page = p.chromium.launch().new_page(viewport={"width": 390, "height": 844})
-        page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+        # scanner_without_reader blocks jsQR.js on purpose; its failed load is the one error expected.
+        page.on("console", lambda m: m.type == "error" and not (m.text.startswith("Failed to load resource") and "jsQR.js" in (m.location or {}).get("url", ""))
+                and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
         fake_github(page, [])
         base = serve()

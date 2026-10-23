@@ -118,6 +118,13 @@ export function renderLineTransfer(ctx, r) {
     resultSheet(ctx, r, `Pasar saldo · ${n} CUP`, subId, key === null);
   }
 
+  // A scanned charge (the QR tab) arrives as to, m and a: the form is filled, nothing is sent.
+  const scanned = r.query.get("to");
+  if (scanned) {
+    num.value = scanned;
+    setDest(scanned, r.query.get("a"));
+    if (r.query.get("m")) amount.value = r.query.get("m");
+  }
   update();
   return h("div", { id: "line-transfer" },
     h("div", { class: "sbar" },

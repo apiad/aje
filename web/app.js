@@ -14,6 +14,8 @@ import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./
 import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
+import { renderLineCharge } from "./ui/charge.js";
+import { renderQrScan } from "./ui/qrscan.js";
 import { autoCheck } from "./ui/updates.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
@@ -29,14 +31,15 @@ const SCREENS = {
   transfer: { render: renderTransfer },
   "line-transfer": { render: renderLineTransfer },
   plans: { render: renderPlans },
+  "line-charge": { render: renderLineCharge },
   add: { render: renderAddCard },
   history: { render: renderHistory, live: true },
   pay: { render: soon("Pagar un servicio") },
-  qr: { render: soon("Pagar y cobrar por QR") },
+  qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "add"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
 const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
@@ -100,6 +103,7 @@ async function boot() {
       if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
       if (action === "line-transfer") return ctx.go(`line-transfer?sub=${account.subId}`);
       if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);
+      if (action === "line-charge") return ctx.go(`line-charge?sub=${account.subId}`);
       if (action === "resume") return ctx.go(`add/${account.cardId}`);
       const run = { balance: balanceSheet, movements: movementsSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.

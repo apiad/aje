@@ -178,7 +178,8 @@ function panel(mock) {
     '<div style="display:flex;gap:6px;margin:6px 0"><button data-sms="balance">Saldo</button>' +
     '<button data-sms="transfer">Transferencia</button><button data-sms="auth">Autenticado</button></div>' +
     '<div style="display:flex;gap:6px;margin:6px 0"><button id="mock-line-sent">Saldo pasado</button>' +
-    '<button id="mock-line-received">Saldo recibido</button></div>' +
+    '<button id="mock-line-received">Saldo recibido</button>' +
+    '<button id="mock-qr">QR de cobro</button></div>' +
     '<button id="mock-logout">Cerrar la sesión del banco</button>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
@@ -187,6 +188,11 @@ function panel(mock) {
   for (const b of box.querySelectorAll("[data-sms]")) b.onclick = () => (text.value = SAMPLES[b.dataset.sms.toUpperCase()]);
   box.querySelector("#mock-line-sent").onclick = () => { mock.lineSent(); box.open = false; };
   box.querySelector("#mock-line-received").onclick = () => { mock.lineReceived(); box.open = false; };
+  // The QR tab under the mock reads this instead of a camera frame.
+  box.querySelector("#mock-qr").onclick = () => {
+    box.open = false;
+    dispatchEvent(new CustomEvent("aje-qr", { detail: "aje:saldo?v=1&n=56666666&m=150&a=Ana" }));
+  };
   box.querySelector("#mock-logout").onclick = () => {
     mock.endSession();
     box.open = false;

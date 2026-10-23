@@ -613,3 +613,40 @@ test("a *133 level that is neither menu nor confirm, or needs the dialer, is cou
   const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
   assert.deepEqual(menus.map((e) => [e.kind, e.menu]), [["none", undefined], ["none", undefined]]);
 });
+
+test("a charge needs the line's number, and its QR carries it", async () => {
+  const w = await world([]);
+  assert.deepEqual(await w.wf.charge(2, { amount: 150 }), { ok: false, reason: "no-number" });
+  await w.store.setLineNumber(2, "55555555");
+  const r = await w.wf.charge(2, { amount: 150, name: "Ana" });
+  assert.equal(r.uri, "aje:saldo?v=1&n=55555555&m=150&a=Ana");
+  assert.equal(r.attempt.op, "234-charge");
+  assert.equal(r.attempt.state, "waiting");
+});
+
+test("the received SMS closes the newest waiting charge with the amount that arrived", async () => {
+  const w = await world([]);
+  await w.store.setLineNumber(2, "55555555");
+  const old = (await w.wf.charge(2, { amount: 10 })).attempt;
+  w.clock.t += MIN;
+  const last = (await w.wf.charge(2, { amount: 150 })).attempt;
+  w.clock.t += MIN;
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_RECEIVED, receivedAt: w.clock.t });
+  const byId = (id) => w.store.state.attempts.find((a) => a.id === id);
+  assert.equal(byId(last.id).state, "verified");
+  assert.equal(byId(last.id).receivedAmount, 25);
+  assert.equal(byId(last.id).from, "56666666");
+  assert.equal(byId(old.id).state, "waiting");
+  // The closed charge is the record of what arrived: no second row for the same money.
+  assert.equal(w.store.state.attempts.filter((a) => a.op === "234-in").length, 0);
+});
+
+test("a charge older than 24 hours is never closed, and the SMS is still recorded", async () => {
+  const w = await world([]);
+  await w.store.setLineNumber(2, "55555555");
+  const c = (await w.wf.charge(2, {})).attempt;
+  w.clock.t += 25 * 60 * MIN;
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_RECEIVED, receivedAt: w.clock.t });
+  assert.equal(w.store.state.attempts.find((a) => a.id === c.id).state, "waiting");
+  assert.equal(w.store.state.attempts.filter((a) => a.op === "234-in").length, 1);
+});
