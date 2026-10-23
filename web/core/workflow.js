@@ -19,6 +19,8 @@ const REFUSED = /error|incorrect|no se pudo|denegad/i;
 
 /** How long after a plan purchase coming back to the app, or a plan SMS, reads the balance again. */
 const RESUME_MS = 10 * 60 * 1000;
+/** Cubacel's confirm can sit over Ajé; a purchase this fresh may not be confirmed yet, so coming back skips it. */
+const CONFIRM_MS = 20 * 1000;
 const PLAN_SMS_MS = 30 * 60 * 1000;
 /** Cubacel's SMS after a plan purchase; its real text is not known yet, so it is matched broadly. */
 const PLAN_SMS = /\b(plan|paquete|bolsa)\b/i;
@@ -322,18 +324,23 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { outcome: "dialer", attempt: current(attempt.id) };
   }
 
-  /** Plan purchases sent to the dialer in the last `ms` whose balance was not read again yet. */
-  const unreadPurchases = (ms) =>
-    store.state.attempts.filter((a) => a.op === "133" && a.state === "dialer" && !a.balanceReadAt && now() - a.startedAt < ms);
+  /**
+   * Plan purchases sent to the dialer between `min` and `max` ago that `flag` has not read yet. Coming
+   * back sets `resumeReadAt`; the plan SMS, which comes after the purchase for sure, sets both.
+   */
+  const unreadPurchases = (flag, min, max) => store.state.attempts.filter((a) =>
+    a.op === "133" && a.state === "dialer" && !a[flag] && now() - a.startedAt >= min && now() - a.startedAt < max);
 
-  async function readAfterPurchase(attempts) {
-    for (const a of attempts) await store.patch(a.id, (x) => ({ ...x, balanceReadAt: now() }));
+  async function readAfterPurchase(attempts, flags) {
+    // Marked before the first await, so a second caller in between finds nothing left to read.
+    const marks = Object.fromEntries(flags.map((f) => [f, now()]));
+    await Promise.all(attempts.map((a) => store.patch(a.id, (x) => ({ ...x, ...marks }))));
     for (const subId of new Set(attempts.map((a) => a.subId))) await refreshBalance(subId);
     return attempts.length;
   }
 
   /** The app is in front again: a plan bought in the dialer minutes ago has moved the balance. */
-  const resumed = () => readAfterPurchase(unreadPurchases(RESUME_MS));
+  const resumed = () => readAfterPurchase(unreadPurchases("resumeReadAt", CONFIRM_MS, RESUME_MS), ["resumeReadAt"]);
 
   /** A charge to line `subId`: its QR text and the pending attempt the "recibido" SMS will close. */
   async function charge(subId, { amount = null, name = null } = {}) {
@@ -354,13 +361,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const tag = senderTag(sender);
     const line = parseLineSms(body);
     if (line) return handleLineSms(line, { tag, body, sentAt, receivedAt });
-    if (PLAN_SMS.test(body) && unreadPurchases(PLAN_SMS_MS).length) {
+    const sms = parseBankSms(body);
+    if (!sms && PLAN_SMS.test(body) && unreadPurchases("smsReadAt", 0, PLAN_SMS_MS).length) {
       if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
       telemetry.event("sms", { kind: "plan", sender: tag, text: body });
-      await readAfterPurchase(unreadPurchases(PLAN_SMS_MS));
+      await readAfterPurchase(unreadPurchases("smsReadAt", 0, PLAN_SMS_MS), ["smsReadAt", "resumeReadAt"]);
       return null;
     }
-    const sms = parseBankSms(body);
     if (!sms) {
       if (BANKISH.test(body)) {
         telemetry.event("sms", { kind: "unparsed_bank", sender: tag, length: body.length, lines: body.split("\n").length, text: body });

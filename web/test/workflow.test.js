@@ -554,6 +554,9 @@ test("buyPlan reports a dialer that would not open", async () => {
 test("coming back from the dialer after a purchase reads the line's balance once", async () => {
   const w = await world([{ ok: true, reply: PREPAID_REPLY }]);
   await w.wf.buyPlan(2, PLAN_45);
+  // Review: seconds after the dial the person may still be on Cubacel's confirm.
+  w.clock.t += 5_000;
+  assert.equal(await w.wf.resumed(), 0);
   w.clock.t += 2 * MIN;
   assert.equal(await w.wf.resumed(), 1);
   assert.equal(await w.wf.resumed(), 0);
@@ -581,6 +584,35 @@ test("a plan SMS after a purchase reads the balance again and reaches telemetry"
   const sms = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "sms");
   assert.deepEqual(sms.map((e) => e.kind), ["plan"]);
   assert.ok(sms[0].text.includes("el plan de"), sms[0].text);
+});
+
+// Review: a read on coming back must not stop the plan SMS from reading the balance after the purchase.
+test("a plan SMS still reads the balance after a read on coming back", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }, { ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.buyPlan(2, PLAN_45);
+  w.clock.t += MIN;
+  assert.equal(await w.wf.resumed(), 1);
+  await w.sms(PLAN_SMS, "Cubacel");
+  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133*1*4*1#", "*222#", "*222#"]);
+});
+
+// Review: a bank SMS that happens to say "plan" is the bank's, not a plan purchase.
+test("a bank SMS that mentions a plan after a purchase still reaches the bank parser", async () => {
+  const w = await world();
+  await w.wf.buyPlan(2, PLAN_45);
+  const sms = await w.sms(SMS.BALANCE + " Plan");
+  assert.equal(sms?.kind, "balance");
+  assert.equal(w.bridge.calls.length, 1);
+});
+
+// Review: two lines bought from, two resumes at once: each line is read once.
+test("simultaneous resumes read each line once", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }, { ok: true, reply: PREPAID_REPLY }, { ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.buyPlan(2, PLAN_45);
+  await w.wf.buyPlan(3, PLAN_45);
+  w.clock.t += MIN;
+  await Promise.all([w.wf.resumed(), w.wf.resumed()]);
+  assert.equal(w.bridge.calls.filter((c) => c.args.code === "*222#").length, 2);
 });
 
 test("a plan SMS with no recent purchase reads nothing", async () => {

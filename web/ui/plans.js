@@ -1,7 +1,7 @@
 // Comprar plan: the plans of the catalog by group. Choosing one shows Cubacel's own confirm text, and
 // "Comprar en el marcador" dials the plan's shortcut; the person types 1 in the dialer to buy.
 import { BUNDLED } from "../core/plancatalog.js";
-import { fetchCatalog, planCode } from "../core/plans.js";
+import { fetchCatalog, newestCatalog, planCode } from "../core/plans.js";
 import { h } from "./dom.js";
 
 const cup = (n) => `${n.toFixed(2)} CUP`;
@@ -10,7 +10,7 @@ const day = (iso) => iso.split("-").reverse().join("-");
 
 export function renderPlans(ctx, r) {
   const subId = Number(r.query.get("sub") ?? ctx.sims[0]?.subId);
-  const catalog = () => ctx.store.state.planCatalog ?? BUNDLED;
+  const catalog = () => newestCatalog(ctx.store.state.planCatalog, BUNDLED);
   let chosen = null;
   let buying = false;
 
@@ -67,7 +67,7 @@ export function renderPlans(ctx, r) {
     if (!fresh || JSON.stringify(fresh) === JSON.stringify(catalog())) return;
     await ctx.store.setPlanCatalog(fresh);
     if (!chosen && !buying && body.isConnected) list();
-  });
+  }).catch(() => {});
 
   list();
   return h("div", { id: "plans" },

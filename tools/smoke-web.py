@@ -354,8 +354,14 @@ def buy_plan_from_catalog(page):
     dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
     assert dials.count("*133*1*4*1#") == 1, dials
     assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
-    # Back from the dialer: the line's balance is read again, once.
+    # Back from the dialer at once: Cubacel's confirm may still be up, so nothing is read.
     before = len(ussd_codes(page))
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_timeout(1500)
+    assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
+    # A minute later the line's balance is read again, once.
+    page.evaluate("""(() => { const a = ajeDev.store.state.attempts.find((x) => x.op === '133');
+        return ajeDev.store.patch(a.id, (x) => ({ ...x, startedAt: x.startedAt - 60000 })); })()""")
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').length > {before}")
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")

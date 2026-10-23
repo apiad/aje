@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BUNDLED } from "../core/plancatalog.js";
-import { PLANS_URL, fetchCatalog, findPlan, planCode, validCatalog } from "../core/plans.js";
+import { PLANS_URL, fetchCatalog, findPlan, newestCatalog, planCode, validCatalog } from "../core/plans.js";
 
 const catalog = (plans) => ({ v: 1, captured: "2026-10-23", groups: [{ label: "Datos", plans }] });
 const PLAN = { path: "1*4*1", name: "4.5GB", price: 240, ask: "¿Desea comprar el plan de 4.5GB x 240.00? Marque 1 para confirmar." };
@@ -36,6 +36,10 @@ test("validCatalog refuses anything that could dial outside *133 or show a made-
     catalog([{ ...PLAN, name: "x".repeat(81) }]),
     catalog([{ ...PLAN, ask: 5 }]),
     { v: 1, captured: "2026-10-23", groups: [{ label: "", plans: [PLAN] }] },
+    // Review: a catalog the screen cannot draw, and a path that is not text.
+    { v: 1, groups: [{ label: "Datos", plans: [PLAN] }] },
+    { v: 1, captured: 20261023, groups: [{ label: "Datos", plans: [PLAN] }] },
+    catalog([{ ...PLAN, path: 14 }]),
   ]) assert.equal(validCatalog(bad), null, JSON.stringify(bad));
   const ok = catalog([PLAN]);
   assert.equal(validCatalog(ok), ok);
@@ -51,4 +55,13 @@ test("fetchCatalog takes a valid hosted catalog and nothing else", async () => {
   assert.equal(await fetchCatalog({ fetch: answer({ ok: true, json: async () => ({ v: 1, groups: [] }) }) }), null);
   assert.equal(await fetchCatalog({ fetch: answer({ ok: true, json: async () => { throw new SyntaxError("bad"); } }) }), null);
   assert.equal(await fetchCatalog({ fetch: async () => { throw new TypeError("offline"); } }), null);
+});
+
+// Review: a newer bundled catalog wins over an older hosted copy the phone kept.
+test("newestCatalog takes the later capture", () => {
+  const old = { ...catalog([PLAN]), captured: "2026-01-01" };
+  const later = { ...catalog([PLAN]), captured: "2027-01-01" };
+  assert.equal(newestCatalog(null, BUNDLED), BUNDLED);
+  assert.equal(newestCatalog(old, BUNDLED), BUNDLED);
+  assert.equal(newestCatalog(later, BUNDLED), later);
 });
