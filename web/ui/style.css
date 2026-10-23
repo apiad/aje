@@ -199,3 +199,6 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .pair{display:flex;gap:10px}.pair .btn{flex:1}
 .consent{color:var(--bone);font-size:14.5px;line-height:1.5;margin:8px 0}
 .consent-link{color:var(--gold);font-size:14px}
+/* Settings: links in the app's gold; the telemetry history folds under its heading. */
+.set-row a{color:var(--gold)}
+#telemetry-history summary{cursor:pointer}

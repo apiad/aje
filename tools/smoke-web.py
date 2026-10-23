@@ -285,7 +285,25 @@ def consent_once(p, base, out, errors):
         expect(page.locator("#sheet")).to_have_count(0)
         page.goto(base + "/index.html#/settings")
         expect(page.get_by_role("button", name="Enviar telemetría")).to_have_attribute("aria-pressed", "true" if on else "false")
+        if on:
+            telemetry_history_folds(page)
         ctx.close()
+
+
+def telemetry_history_folds(page):
+    # What telemetry sent sits behind a fold, and the privacy link reads in the app's gold.
+    history = page.locator("#telemetry-history")
+    expect(history).to_be_visible()
+    expect(history.locator(".set-row").first).to_be_hidden()
+    history.locator("summary").click()
+    expect(history.locator(".set-row").first).to_be_visible()
+    page.evaluate("ajeDev.store.update({ channel: ajeDev.store.state.settings.channel })")  # a redraw keeps it open
+    expect(history.locator(".set-row").first).to_be_visible()
+    link = page.get_by_role("link", name="Cómo funciona")
+    gold = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()")
+    color = link.evaluate("(a) => getComputedStyle(a).color")
+    probe = page.evaluate(f"(() => {{ const d = document.createElement('div'); d.style.color = '{gold}'; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; }})()")
+    assert color == probe, (color, probe)
 
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
