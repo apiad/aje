@@ -2,7 +2,7 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
-import { changeKey, parseLineReply, transferBalance as transferBalanceCode } from "./lines.js";
+import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { BANKISH, parseBankSms, parseLineSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -238,36 +238,46 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   const forgetLineKey = (subId) => bridge.secretForget?.(lineKeyName(subId));
 
   /**
-   * `*234*1` over the USSD API: passes `amount` CUP of line `subId` to `to`. Without a key it
-   * unlocks the saved one; with none saved, or the unlock cancelled, it sends nothing and answers
-   * "needs-key". A reply that refuses the key drops the saved one.
+   * `*234*1`: passes `amount` CUP of line `subId` to `to`. The network answers with a menu that asks
+   * to confirm with 1, which the USSD API cannot follow, so it goes through the dialer; Cubacel's
+   * SMS verifies it. Without a key it unlocks the saved one; with none saved, or the unlock
+   * cancelled, it dials nothing and answers "needs-key". The dialer hides the network's answer, so a
+   * remembered key is kept once dialed, and the result sheet offers to forget it.
    */
   async function transferBalance(subId, to, amount, { key = null, remember = false } = {}) {
-    const saved = key === null;
-    const k = saved ? (bridge.secretLoad ? await bridge.secretLoad(lineKeyName(subId)).catch(() => null) : null) : key;
+    const k = key === null ? (bridge.secretLoad ? await bridge.secretLoad(lineKeyName(subId)).catch(() => null) : null) : key;
     if (!k) return { ok: false, outcome: "needs-key", attempt: null, remembered: false };
     const ussd = transferBalanceCode(to, k, amount);
-    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config), state: "sent", op: "234", subId, to, amount });
-    telemetry.event("ussd_sent", { op: "234*1", via: "api" });
-    const r = await send("234*1", subId, dial(ussd, config));
-    if (!r.ok) {
-      await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "failed", failureCode: r.failureCode }));
+    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config), state: "dialer", op: "234", subId, to, amount });
+    telemetry.event("ussd_sent", { op: "234*1", via: "dialer" });
+    try {
+      await bridge.dial(dial(ussd, config));
+    } catch (e) {
+      // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      telemetry.event("ussd_reply", { op: "234*1", ok: false, failure_code: -100, error: e.message });
       return { ok: false, outcome: "failed", attempt: current(attempt.id), remembered: false };
     }
-    const outcome = parseLineReply(r.reply);
-    // A refusal moved no balance: it is failed, not waiting for an SMS that will never come.
-    const refused = ["bad-key", "no-balance", "limit"].includes(outcome);
-    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: refused ? "failed" : "replied", reply: r.reply }));
-    if (outcome === "bad-key" && saved) await forgetLineKey(subId);
-    const remembered = outcome === "ok" && remember && bridge.secretSave
+    const remembered = key !== null && remember && bridge.secretSave
       ? await bridge.secretSave(lineKeyName(subId), k, PIN_DAYS).catch(() => false) : false;
-    return { ok: outcome === "ok", outcome, attempt: current(attempt.id), remembered };
+    return { ok: true, outcome: "dialer", attempt: current(attempt.id), remembered };
   }
 
-  /** `*234*2`: changes a line's transfer key, and the saved one with it when one is saved. */
+  /**
+   * `*234*2`: changes a line's transfer key, and the saved one with it when one is saved. When the
+   * API cannot follow the network's menu (-1), it goes to the dialer, and the saved key is dropped
+   * since Ajé cannot see whether the change went through.
+   */
   async function changeLineKey(subId, old, next) {
     telemetry.event("ussd_sent", { op: "234*2", via: "api" });
-    const r = await send("234*2", subId, dial(changeKey(old, next), config));
+    const code = dial(changeKey(old, next), config);
+    const r = await send("234*2", subId, code);
+    if (!r.ok && r.failureCode === -1) {
+      await forgetLineKey(subId);
+      telemetry.event("ussd_sent", { op: "234*2", via: "dialer" });
+      await bridge.dial(code).catch(() => null);
+      return { ok: false, dialed: true };
+    }
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
     const ok = /cambiad|satisfactori|exito|éxito/i.test(r.reply) && !/incorrect/i.test(r.reply);
     if (ok && (await savedLineKey(subId)).saved) await bridge.secretSave(lineKeyName(subId), next, PIN_DAYS).catch(() => false);

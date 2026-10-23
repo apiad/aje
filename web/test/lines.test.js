@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeNumber, transferBalance, changeKey, validKey, parseLineReply } from "../core/lines.js";
+import { normalizeNumber, transferBalance, changeKey, validKey } from "../core/lines.js";
 import { DEFAULT_CONFIG, dial, display } from "../core/ussd.js";
 
 test("normalizeNumber", () => {
@@ -25,19 +25,6 @@ test("validKey", () => {
   for (const k of ["123", "12345", "12a4", ""]) assert.ok(!validKey(k));
 });
 
-test("parseLineReply", () => {
-  assert.equal(parseLineReply("Usted ha transferido 25.00 CUP al 55555555."), "ok");
-  assert.equal(parseLineReply("Clave incorrecta."), "bad-key");
-  assert.equal(parseLineReply("Saldo insuficiente para realizar la operacion."), "no-balance");
-  assert.equal(parseLineReply("Ha excedido el limite de transferencias diarias."), "limit");
-  assert.equal(parseLineReply("Servicio no disponible"), "unknown");
-});
-
 test("normalizeNumber drops the old domestic 0", () => {
   for (const raw of ["(05) 1234567", "(05)1234567", "051234567", "0 5123 4567"]) assert.equal(normalizeNumber(raw), "51234567", raw);
-});
-
-test("a success reply that mentions the key is not a refused key", () => {
-  assert.equal(parseLineReply("Usted ha transferido 25.00 CUP al numero 55555555. Su clave ha sido utilizada."), "ok");
-  assert.equal(parseLineReply("La clave es invalida."), "bad-key");
 });

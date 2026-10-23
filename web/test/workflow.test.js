@@ -414,61 +414,57 @@ test("MiTransfer registration marks it registered and keeps neither the carné n
   assert.ok(!kept.includes("4321"));
 });
 
-test("transferBalance sends on the line and keeps the key and number out of telemetry", async () => {
-  const w = await world([{ ok: true, reply: "Usted ha transferido 25.00 CUP al numero 55555555." }]);
+test("transferBalance dials *234*1, since the network asks to confirm with 1", async () => {
+  const w = await world();
   const r = await w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
-  assert.equal(r.ok, true);
-  assert.equal(r.outcome, "ok");
-  assert.deepEqual(w.bridge.calls[0], { method: "sendUssd", args: { subId: 3, code: "*234*1*55555555*9876*25#" } });
+  assert.deepEqual([r.ok, r.outcome], [true, "dialer"]);
+  assert.deepEqual(w.bridge.calls[0], { method: "dial", args: { code: "*234*1*55555555*9876*25#" } });
+  assert.ok(!w.bridge.calls.some((c) => c.method === "sendUssd"));
   const a = w.store.state.attempts[0];
-  assert.deepEqual([a.op, a.subId, a.to, a.amount, a.state, a.code], ["234", 3, "55555555", 25, "replied", "*234*1*55555555*••••*25#"]);
+  assert.deepEqual([a.op, a.subId, a.to, a.amount, a.state, a.code], ["234", 3, "55555555", 25, "dialer", "*234*1*55555555*••••*25#"]);
   await w.telemetry.idle();
   const sent = JSON.stringify([w.telemetryBackend.saved, w.posted]);
+  assert.ok(sent.includes('"via":"dialer"'));
   assert.ok(!sent.includes("9876"));
   assert.ok(!sent.includes("55555555"));
   assert.ok(!JSON.stringify(w.store.state).includes("9876"));
 });
 
-test("remember saves the transfer key under line-key", async () => {
-  const w = await world([{ ok: true, reply: "Usted ha transferido 25.00 CUP al numero 55555555." }]);
+test("remember saves the transfer key under line-key once it is dialed", async () => {
+  const w = await world();
   const r = await w.wf.transferBalance(3, "55555555", 25, { key: "9876", remember: true });
   assert.equal(r.remembered, true);
   assert.deepEqual(w.bridge.calls.find((c) => c.method === "secretSave"), { method: "secretSave", args: { name: "line-key:3", days: PIN_DAYS } });
 });
 
 test("a saved transfer key is used when none is given", async () => {
-  const w = await world([{ ok: true, reply: "Usted ha transferido 10.00 CUP al numero 55555555." }]);
+  const w = await world();
   w.bridge.vault.set("line-key:3", { value: "4444", expiresAt: null });
   const r = await w.wf.transferBalance(3, "55555555", 10);
-  assert.equal(r.outcome, "ok");
-  assert.equal(w.bridge.calls.find((c) => c.method === "sendUssd").args.code, "*234*1*55555555*4444*10#");
+  assert.equal(r.outcome, "dialer");
+  assert.equal(w.bridge.calls.find((c) => c.method === "dial").args.code, "*234*1*55555555*4444*10#");
 });
 
-test("a cancelled unlock asks for the key and sends nothing", async () => {
+test("a cancelled unlock asks for the key and dials nothing", async () => {
   const w = await world([], memoryBackend(), { unlock: false });
   const r = await w.wf.transferBalance(3, "55555555", 10);
   assert.deepEqual([r.ok, r.outcome], [false, "needs-key"]);
-  assert.ok(!w.bridge.calls.some((c) => c.method === "sendUssd"));
+  assert.ok(!w.bridge.calls.some((c) => c.method === "dial"));
   assert.equal(w.store.state.attempts.length, 0);
 });
 
-test("a wrong saved key is forgotten", async () => {
-  const w = await world([{ ok: true, reply: "Clave incorrecta." }]);
-  w.bridge.vault.set("line-key:3", { value: "4444", expiresAt: null });
-  const r = await w.wf.transferBalance(3, "55555555", 10);
-  assert.equal(r.outcome, "bad-key");
+test("a dialer that does not open fails the transfer and keeps no key", async () => {
+  const w = await world([], memoryBackend(), { dialFails: true });
+  const r = await w.wf.transferBalance(3, "55555555", 10, { key: "9876", remember: true });
+  assert.deepEqual([r.ok, r.outcome, r.remembered], [false, "failed", false]);
+  assert.equal(w.store.state.attempts[0].state, "failed");
   assert.equal(w.bridge.vault.has("line-key:3"), false);
 });
 
-test("Cubacel's SMS before the reply keeps the transfer verified", async () => {
-  let land;
-  const w = await world([() => new Promise((r) => { land = r; })]);
-  const pending = w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
-  await tick();
+test("Cubacel's SMS verifies a dialed transfer", async () => {
+  const w = await world();
+  await w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
   await w.sms(SMS.LINE_SENT, "Cubacel");
-  assert.equal(w.store.state.attempts[0].state, "verified");
-  land({ ok: true, reply: "Usted ha transferido 25.00 CUP al numero 55555555." });
-  await pending;
   assert.equal(w.store.state.attempts[0].state, "verified");
 });
 
@@ -502,10 +498,11 @@ test("transfersToday counts today's transfers on the line that did not fail", as
   assert.equal(w.wf.transfersToday(3), 1);
 });
 
-test("a refused transfer is failed, not unverified, and does not count for today", async () => {
-  const w = await world([{ ok: true, reply: "Saldo insuficiente para realizar la operacion." }]);
-  const r = await w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
-  assert.equal(r.outcome, "no-balance");
-  assert.equal(w.store.state.attempts[0].state, "failed");
-  assert.equal(w.wf.transfersToday(3), 0);
+test("changeLineKey falls back to the dialer when the API cannot follow the network's menu", async () => {
+  const w = await world([{ ok: false, failureCode: -1, error: null }]);
+  w.bridge.vault.set("line-key:3", { value: "1234", expiresAt: null });
+  const r = await w.wf.changeLineKey(3, "1234", "4321");
+  assert.deepEqual([r.ok, r.dialed], [false, true]);
+  assert.equal(w.bridge.calls.at(-1).method === "dial" || w.bridge.calls.some((c) => c.method === "dial" && c.args.code === "*234*2*1234*4321#"), true);
+  assert.equal(w.bridge.vault.has("line-key:3"), false);
 });
