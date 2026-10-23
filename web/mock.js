@@ -1,5 +1,7 @@
 // The six native primitives, fake, for designing in a browser. Not shipped in the APK.
 // The texts follow the layout of real bank and ETECSA texts; every number in them is made up.
+import { BUNDLED } from "./core/plancatalog.js";
+import { findPlan } from "./core/plans.js";
 
 const SAMPLES = {
   BALANCE: "Banco Metropolitano:  La consulta de saldo fue completada. \n" +
@@ -16,24 +18,6 @@ const SAMPLES = {
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
 };
 const prepaid = (cup) => `Saldo: ${cup.toFixed(2)} CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.`;
-// The *133 plan menu has no captured replies yet: the categories follow the web's guides, the
-// plans and prices are made up, and the texts are guesses with the layout the parser expects.
-const PLANS = [
-  ["Datos", [["1 GB", 25], ["2.5 GB", 50], ["4 GB", 80]]],
-  ["SMS", [["20 SMS", 10], ["50 SMS", 20], ["120 SMS", 40]]],
-  ["Voz", [["5 min", 15], ["10 min", 25], ["25 min", 50]]],
-  ["Plan Amigos", [["3 numeros", 20], ["5 numeros", 30], ["10 numeros", 50]]],
-];
-
-function planReply(path, buy) {
-  if (!path.length) return `Compra de planes:\n${PLANS.map(([name], i) => `${i + 1}. ${name}`).join("\n")}`;
-  const [name, plans] = PLANS[Number(path[0]) - 1] ?? [];
-  if (!plans || path.length > 2) return null;
-  if (path.length === 1) return `${name}:\n${plans.map(([p, cup], i) => `${i + 1}-${p} por ${cup} CUP`).join("\n")}\n0-Atras`;
-  const plan = plans[Number(path[1]) - 1];
-  if (!plan) return null;
-  return buy ? plan : `Usted va a comprar ${plan[0]} por ${plan[1].toFixed(2)} CUP.\n1. Aceptar\n2. Cancelar`;
-}
 const POSTPAID = "Voz: Saldo disponible 180.00 CUP. SMS: Saldo disponible 20.00 CUP. Datos: 5000 MB. Roaming:";
 const BANK = "PAGOxMOVIL";
 
@@ -87,15 +71,6 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";
     if (code.startsWith("*234*2*")) return "Su clave ha sido cambiada satisfactoriamente.";
     if (code === "*222#") return prepaid(balance);
-    if (code.startsWith("*133")) {
-      const path = code.slice(1, -1).split("*").slice(1);
-      const buy = path.length === 3 && path[2] === "1";
-      const r = planReply(buy ? path.slice(0, 2) : path, buy);
-      if (!r) return "Opcion no valida";
-      if (!buy) return r;
-      balance -= r[1];
-      return "Su compra se ha realizado con exito.";
-    }
     if (code === "*111#") return POSTPAID;
     return "Opcion no valida";
   }
@@ -106,8 +81,6 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     async sendUssd(subId, code) {
       calls.push({ method: "sendUssd", args: { subId, code } });
       await wait();
-      // ?mock=ussd-menu: the *133 levels answer with a network menu the API cannot follow.
-      if (mode === "ussd-menu" && code.startsWith("*133")) return { ok: false, failureCode: -1 };
       return { ok: true, reply: reply(code) };
     },
     async dial(code) {
@@ -117,6 +90,9 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
         const [, , , to, , amount] = code.slice(0, -1).split("*");
         lastTransfer = { to, amount: Number(amount) };
       }
+      // A plan's shortcut lands on Cubacel's confirm; here the person always types 1.
+      const plan = code.startsWith("*133*") && findPlan(BUNDLED, code.slice(5, -1));
+      if (plan) balance -= plan.price;
     },
     listSims: async () => sims.map((s) => ({ ...s })),
     requestPermissions: async () => ({ callPhone: true, readPhoneState: true, receiveSms: true }),

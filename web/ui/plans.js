@@ -1,119 +1,78 @@
-// Comprar plan: walks the *133 menu by chained shortcuts over the USSD API and draws each level as
-// buttons. Only the confirm view's "Comprar" buys, with the path plus 1, the network's confirm option.
-import { planPath, purchaseOutcome } from "../core/lines.js";
-import { dial } from "../core/ussd.js";
+// Comprar plan: the plans of the catalog by group. Choosing one shows Cubacel's own confirm text, and
+// "Comprar en el marcador" dials the plan's shortcut; the person types 1 in the dialer to buy.
+import { BUNDLED } from "../core/plancatalog.js";
+import { fetchCatalog, newestCatalog, planCode } from "../core/plans.js";
 import { h } from "./dom.js";
 
-const RESULT = {
-  bought: "Plan comprado.",
-  refused: "Cubacel no hizo la compra.",
-  dialer: "Termina en el marcador: escribe 1 para confirmar.",
-  unknown: "Cubacel respondió algo que Ajé no reconoce. Revisa tu saldo antes de intentarlo otra vez.",
-  failed: "No se pudo enviar la compra.",
-};
-
-/** An option the screen's own Atrás replaces: "0-Atras". */
-const isBack = (o) => o.key === "0" && /^atr/i.test(o.label);
+const cup = (n) => `${n.toFixed(2)} CUP`;
+const known = (text) => (text ? Number.parseFloat(String(text).replace(",", ".")) : null);
+const day = (iso) => iso.split("-").reverse().join("-");
 
 export function renderPlans(ctx, r) {
   const subId = Number(r.query.get("sub") ?? ctx.sims[0]?.subId);
-  const path = [];
-  const labels = [];
-  let seq = 0; // a reply for a level the person already left is dropped
+  const catalog = () => newestCatalog(ctx.store.state.planCatalog, BUNDLED);
+  let chosen = null;
   let buying = false;
 
-  const crumb = h("div", { id: "plan-path", class: "hint" });
   const body = h("div", { id: "plan-body" });
-  const back = h("button", { id: "plan-back", class: "btn ghost", onclick: () => up() }, "Atrás");
+  const back = h("button", { id: "plan-back", class: "btn ghost", hidden: true, onclick: () => list() }, "Atrás");
+  const show = (...nodes) => body.replaceChildren(...nodes.filter(Boolean));
 
-  function show(...nodes) {
-    crumb.textContent = labels.join(" › ");
-    back.hidden = !path.length;
-    body.replaceChildren(...nodes.filter(Boolean));
-  }
-
-  function menu(view, busy) {
-    const opts = view.options.filter((o) => !isBack(o)).map((o) =>
-      h("button", { id: `plan-opt-${o.key}`, class: "row", disabled: busy, onclick: () => !busy && down(o) },
-        h("div", { class: "tx" }, h("b", {}, o.label)), h("span", { class: "chev" }, "›")));
-    return [view.title ? h("div", { class: "hint" }, view.title) : null, h("div", { class: `opts${busy ? " busy" : ""}` }, opts)];
-  }
-
-  function confirm(view, busy) {
-    const buy = h("button", { id: "plan-buy", class: "btn gold", disabled: busy, onclick: () => purchase(buy) },
-      view.price ? `Comprar por ${view.price}` : "Comprar");
-    return [h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Cubacel pide confirmar"),
-      h("div", { class: "m" }, view.text)),
-      view.price ? h("div", { class: "kv" }, h("span", {}, "Precio"), h("b", { id: "plan-price" }, view.price)) : null,
-      buy];
-  }
-
-  /**
-   * A reply that is neither a menu nor a confirm, or a menu the API cannot follow (-1): its text, and
-   * the same browsing shortcut in the dialer. A reply that reads as a purchase gets no dialer, which
-   * would buy again.
-   */
-  function raw(reply) {
-    return [h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Respuesta de Cubacel"),
-      h("div", { class: "m" }, reply || "Cubacel respondió con un menú que Ajé no puede leer.")),
-      reply && purchaseOutcome(reply) ? null
-        : h("button", { id: "plan-dialer", class: "btn ghost", onclick: () => ctx.bridge.dial(dial(planPath(path))).catch(() => null) },
-          "Seguir en el marcador")];
-  }
-
-  function draw(view, busy) {
-    if (!view) return show(h("div", { class: "empty" }, "Consultando a Cubacel…"));
-    show(...(view.kind === "confirm" ? confirm(view, busy) : menu(view, busy)));
-  }
-
-  async function load() {
-    const mine = ++seq;
-    const key = path.join("*");
-    draw(ctx.store.state.planMenus[key] ?? null, true);
-    const res = await ctx.workflow.planMenu(subId, [...path]);
-    if (mine !== seq) return;
-    if (!res.ok && res.failureCode === -1) return show(...raw(""));
-    if (!res.ok) {
-      return show(h("div", { class: "err" }, `No se pudo consultar la red (código ${res.failureCode}).`),
-        h("button", { id: "plan-retry", class: "btn ghost", onclick: () => load() }, "Reintentar"));
-    }
-    if (res.view) draw(res.view, false);
-    else show(...raw(res.reply));
-  }
-
-  function down(o) {
+  function list() {
     if (buying) return;
-    path.push(o.key);
-    labels.push(o.label);
-    load();
+    chosen = null;
+    back.hidden = true;
+    const c = catalog();
+    show(...c.groups.flatMap((g) => [
+      h("div", { class: "group" }, g.label),
+      ...g.plans.map((p) => h("button", { class: "row", id: `plan-${p.path.replaceAll("*", "-")}`, onclick: () => detail(p) },
+        h("div", { class: "tx" }, h("b", {}, p.name)), h("span", { class: "price" }, cup(p.price)), h("span", { class: "chev" }, "›"))),
+    ]), h("div", { class: "hint", id: "plan-captured" }, `Precios de Cubacel del ${day(c.captured)}.`));
   }
 
-  function up() {
-    if (buying) return;
-    path.pop();
-    labels.pop();
-    load();
+  function detail(plan) {
+    chosen = plan;
+    back.hidden = false;
+    const balance = known(ctx.store.state.mobileBalances[subId]);
+    const buy = h("button", { id: "plan-buy", class: "btn gold", onclick: () => purchase(plan, buy) }, "Comprar en el marcador");
+    show(
+      h("div", { class: "sheet-like" },
+        h("div", { class: "kv" }, h("span", {}, "Plan"), h("b", {}, plan.name)),
+        h("div", { class: "kv" }, h("span", {}, "Precio"), h("b", { id: "plan-price" }, cup(plan.price))),
+        balance !== null ? h("div", { class: "kv" }, h("span", {}, "Saldo de la línea"), h("b", {}, cup(balance))) : null),
+      balance !== null && balance < plan.price
+        ? h("div", { class: "err", id: "plan-short" }, "El saldo de la línea no alcanza para este plan.") : null,
+      plan.ask ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Cubacel te preguntará"),
+        h("div", { class: "m" }, plan.ask)) : null,
+      buy,
+      h("div", { class: "hint" }, `Se abre el marcador con ${planCode(plan)}. Escribe 1 y envía para comprar.`));
   }
 
-  async function purchase(button) {
+  async function purchase(plan, button) {
     if (buying) return;
     buying = true;
     button.disabled = true;
     back.hidden = true;
-    seq++;
-    const res = await ctx.workflow.buyPlan(subId, [...path]);
+    const res = await ctx.workflow.buyPlan(subId, plan);
     buying = false;
-    const balance = res.outcome === "bought" ? ctx.store.state.mobileBalances[subId] : null;
+    back.hidden = false;
     show(h("div", { class: "reply", id: "plan-result", "data-outcome": res.outcome },
-      h("div", { class: "k status" }, h("span", { class: "dot" }), RESULT[res.outcome]),
-      res.reply && res.outcome !== "bought" ? h("div", { class: "m" }, res.reply) : null,
-      balance ? h("div", { class: "m" }, `Saldo de la línea: ${balance}`) : null));
+      h("div", { class: "k status" }, h("span", { class: "dot" }),
+        res.outcome === "dialer" ? "Termina en el marcador: escribe 1 y envía." : "No se pudo abrir el marcador."),
+      res.outcome === "dialer" ? h("div", { class: "m" }, "Al volver a Ajé se lee otra vez el saldo de la línea.") : null));
   }
 
-  load();
+  // The hosted catalog replaces the stored one when it differs; the list redraws if it is showing.
+  fetchCatalog({ fetch: (url) => globalThis.fetch(url) }).then(async (fresh) => {
+    if (!fresh || JSON.stringify(fresh) === JSON.stringify(catalog())) return;
+    await ctx.store.setPlanCatalog(fresh);
+    if (!chosen && !buying && body.isConnected) list();
+  }).catch(() => {});
+
+  list();
   return h("div", { id: "plans" },
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
       h("div", {}, h("h2", {}, "Comprar plan"), h("div", { class: "sub" }, "Con el saldo de la línea"))),
-    crumb, body, back);
+    body, back);
 }

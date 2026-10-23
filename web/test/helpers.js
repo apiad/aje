@@ -19,15 +19,6 @@ export const SMS = {
   LINE_RECEIVED: "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP.",
 };
 
-// Replies of the *133 plan menu. Guesses with the layout the spec expects, until telemetry brings real ones.
-export const PLAN = {
-  MENU: "Compra de planes:\n1. Datos\n2. SMS\n3. Voz\n4. Plan Amigos",
-  SUBMENU: "Datos:\n1-1 GB por 25 CUP\n2-2.5 GB por 50 CUP\n3-4 GB por 80 CUP\n0-Atras",
-  CONFIRM: "Usted va a comprar 1 GB por 25.00 CUP.\n1. Aceptar\n2. Cancelar",
-  BOUGHT: "Su compra se ha realizado con exito.",
-  REFUSED: "Saldo insuficiente para realizar la compra.",
-};
-
 export const PREPAID_REPLY =
   "Saldo: 250.50 CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.";
 

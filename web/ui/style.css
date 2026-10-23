@@ -204,10 +204,11 @@ progress.dl{display:block;width:100%;height:6px;margin:10px 0 0;border:0;border-
 progress.dl[hidden]{display:none}
 progress.dl::-webkit-progress-bar{background:var(--raised)}
 progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
-/* Comprar plan: the *133 options as rows, dimmed while a level loads. */
+/* Comprar plan: the catalog's plans as rows, with their price. */
 #plans .row{width:100%;color:var(--bone);font:inherit;text-align:left}
 #plans .row .tx{flex:1}
-#plans .opts.busy{opacity:.5;pointer-events:none}
+#plans .row .price{font:500 12px var(--mono);color:var(--gold);white-space:nowrap}
+#plans .hint{font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5}
 /* Settings: links in the app's gold; the telemetry history folds under its heading. */
 .set-row a{color:var(--gold)}
 #telemetry-history summary{cursor:pointer}
