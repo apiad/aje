@@ -9,7 +9,7 @@ import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
-import { balanceSheet, closeSheet, mobileBalanceSheet } from "./ui/sheets.js";
+import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
 import { renderTransfer } from "./ui/transfer.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
@@ -92,7 +92,7 @@ async function boot() {
     act(action, account) {
       if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
       if (action === "resume") return ctx.go(`add/${account.cardId}`);
-      const run = { balance: balanceSheet, "mobile-balance": mobileBalanceSheet }[action];
+      const run = { balance: balanceSheet, movements: movementsSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.
       const key = `${action}:${account.id}`;
       if (!run || inFlight.has(key)) return;

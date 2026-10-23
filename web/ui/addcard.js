@@ -28,7 +28,8 @@ export function renderAddCard(ctx, r) {
   const resumed = r.param && store.state.cards.find((c) => c.id === r.param);
   if (resumed) {
     s.card = resumed;
-    s.step = store.state.banks[resumed.bank]?.registered ? "link" : "guide";
+    s.step = resumed.bank === "CLASICA" ? "associate"
+      : store.state.banks[resumed.bank]?.registered ? "link" : "guide";
   }
 
   const bank = () => s.card?.bank;
@@ -78,9 +79,10 @@ export function renderAddCard(ctx, r) {
         facts.replaceChildren(...(why ? [h("div", { class: "err" }, why)] : [
           h("div", { class: "kv" }, h("span", {}, "Banco"), h("b", {}, BANKS[c.bank].name)),
           h("div", { class: "kv" }, h("span", {}, "Moneda"), h("b", {}, c.currency)),
-          h("div", { class: "kv" }, h("span", {}, "Registro con el banco"), h("b", {},
+          // The Clásica is not registered with a bank, so it has no registration row.
+          c.bank === "CLASICA" ? null : h("div", { class: "kv" }, h("span", {}, "Registro con el banco"), h("b", {},
             { true: "Sí", false: "No" }[store.state.banks[c.bank]?.registered] ?? "Por confirmar")),
-        ]));
+        ].filter(Boolean)));
         if (!why && !s.alias) alias.placeholder = `${BANKS[c.bank].name} ${c.currency}`;
         return why ? null : c;
       };
@@ -91,6 +93,7 @@ export function renderAddCard(ctx, r) {
         if (!c || next.disabled) return;
         try {
           const card = await store.addCard({ alias: alias.value.trim() || alias.placeholder, pan: c.pan, bank: c.bank, currency: c.currency });
+          if (c.bank === "CLASICA") return go("associate", { card });
           const known = store.state.banks[c.bank]?.registered;
           go(known === true ? "link" : known === false ? "guide" : "ask", { card });
         } catch (e) {
@@ -203,6 +206,31 @@ export function renderAddCard(ctx, r) {
         bpa ? h("p", { class: "lead" }, "BPA asocia la tarjeta con su número; no pide coordenada.")
           : [h("p", { class: "lead" }, `Mira el reverso de tu ${MATRIX[bank()]} y escribe el valor de la coordenada `, h("b", { id: "add-cell" }, cell), "."), grid,
             h("div", { class: "field" }, h("label", { for: "add-coord" }, `Valor de ${cell}`), value)],
+        bankReply(), err(), send];
+    },
+
+    associate: () => {
+      const auth = h("input", { id: "add-auth", inputmode: "numeric", maxlength: "6", autocomplete: "off" });
+      const term = h("input", { id: "add-terminal", inputmode: "numeric", maxlength: "8", autocomplete: "off" });
+      const send = h("button", { id: "add-associate", class: "btn gold" }, "Asociar tarjeta");
+      send.addEventListener("click", async () => {
+        if (!/^[0-9]{6}$/.test(auth.value.trim())) return go("associate", { error: "El número de autorización tiene 6 dígitos." });
+        if (!/^[0-9]{8}$/.test(term.value.trim())) return go("associate", { error: "El identificador del terminal tiene 8 dígitos." });
+        send.disabled = true;
+        let res;
+        try {
+          res = await workflow.associateClasica(s.card.id, auth.value.trim(), term.value.trim());
+        } catch (e) {
+          return go("associate", { error: `No se pudo enviar: ${e.message}` });
+        }
+        if (res.ok) return go("done");
+        go("associate", { reply: res.reply ?? null, error: res.reply ? null : `El teléfono no lo envió (código ${res.failureCode}).` });
+      });
+      return [bar("Asociar tu Tarjeta Clásica", `${s.card.alias} · ···· ${last4(s.card.pan)}`, () => ctx.go("home")),
+        h("p", { class: "lead" }, "Haz una operación con la tarjeta en un cajero o un POS y guarda el ticket: trae el número de autorización y el identificador del terminal. No hay clave ni tarjeta de coordenadas."),
+        h("div", { class: "field" }, h("label", { for: "add-auth" }, "Número de autorización (6 dígitos)"), auth),
+        h("div", { class: "field" }, h("label", { for: "add-terminal" }, "Identificador del terminal (8 dígitos)"), term),
+        h("p", { class: "hint" }, "Ajé no guarda estos datos: van solo en el código que marca."),
         bankReply(), err(), send];
     },
 

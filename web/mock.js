@@ -25,6 +25,7 @@ const MODE = typeof location === "undefined" ? "" : new URLSearchParams(location
 
 export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   let session = false;
+  let clasica = false;
   let handler = null;
   const buffered = [];
   const calls = [];
@@ -48,11 +49,15 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       return "Usted esta siendo autenticado";
     }
     if (code.startsWith("*444*46")) {
+      // The Clásica (agency 08) carries its balance in the reply, with no session and no SMS.
+      if (clasica) return "Saldo de la cuenta MiTransfer: 1 500,00 CUP";
       if (!session) return "Debe autenticarse primero";
       later(() => emit(BANK, SAMPLES.BALANCE));
       return "Su solicitud esta siendo procesada, espere un SMS";
     }
-    // Ops 49 and 60 have no captured replies yet: these texts are guesses, made to drive the screens.
+    // Ops 49, 60, 111 and 48 have no captured replies yet: these texts are guesses, to drive the screens.
+    if (code.startsWith("*444*111*")) { clasica = true; return "Su solicitud de asociacion esta siendo procesada, espere un SMS"; }
+    if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";
     if (code === "*222#") return PREPAID;

@@ -177,6 +177,20 @@ export function transferSheet(ctx, attempt, title) {
   ]);
 }
 
+/** A Clásica's last operations: a waiting sheet that shows the service's reply as it comes. */
+export async function movementsSheet(ctx, account) {
+  let r = null;
+  const sheet = openSheet(ctx, () => [
+    h("h3", {}, `Últimas operaciones · ${account.label}`),
+    h("div", { class: `reply${r ? "" : " pending"}` }, h("div", { class: "k status" }, mark(!r),
+      !r ? "Consultando…" : r.ok ? "Respuesta del banco" : `El teléfono no la envió (código ${r.failureCode}).`),
+      r?.reply ? h("div", { class: "m" }, r.reply) : null),
+    h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar"),
+  ]);
+  r = await ctx.workflow.movements(account.cardId);
+  sheet.redraw();
+}
+
 /** The line balance: a waiting sheet that closes once the figure is on the card, or keeps ETECSA's words. */
 export async function mobileBalanceSheet(ctx, account) {
   let r = null;

@@ -9,7 +9,8 @@ export function renderTransfer(ctx, r) {
   if (!card) return h("div", { class: "empty" }, "Añade una tarjeta para transferir.");
   const { currency } = card;
   const bank = BANKS[card.bank]?.name ?? "";
-  const to = h("input", { id: "tr-to", inputmode: "numeric", autocomplete: "off", placeholder: "9200 0000 0000 0000" });
+  const clasica = card.bank === "CLASICA";
+  const to = h("input", { id: "tr-to", inputmode: "numeric", autocomplete: "off", placeholder: clasica ? "Cuenta del número de destino" : "9200 0000 0000 0000" });
   const amount = h("input", { id: "tr-amount", inputmode: "numeric", autocomplete: "off" });
   const error = h("div", { id: "tr-error", class: "err", hidden: true });
   const fail = (text) => {
@@ -19,10 +20,15 @@ export function renderTransfer(ctx, r) {
 
   async function submit() {
     let pan;
-    try {
-      pan = parsePan(to.value);
-    } catch {
-      return fail("El número de tarjeta tiene 16 dígitos.");
+    if (clasica) {
+      pan = to.value.replace(/[-\s]/g, "");
+      if (!/^[0-9]{8,16}$/.test(pan)) return fail("Escribe la cuenta del número de destino.");
+    } else {
+      try {
+        pan = parsePan(to.value);
+      } catch {
+        return fail("El número de tarjeta tiene 16 dígitos.");
+      }
     }
     const n = parseAmount(amount.value);
     if (n === null) return fail("El monto es un número entero, sin decimales.");
@@ -43,7 +49,7 @@ export function renderTransfer(ctx, r) {
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
       h("div", {}, h("h2", {}, "Transferir"), h("div", { class: "sub" }, `Desde ${card.alias} · ${bank}`))),
-    h("div", { class: "field" }, h("label", { for: "tr-to" }, "Tarjeta de destino"), to),
+    h("div", { class: "field" }, h("label", { for: "tr-to" }, clasica ? "Cuenta del número de destino" : "Tarjeta de destino"), to),
     h("div", { class: "field" }, h("label", { for: "tr-amount" }, `Monto en ${currency}`), amount,
       h("div", { class: "hint" }, "Un número entero, sin decimales.")),
     error,
