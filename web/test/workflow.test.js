@@ -464,13 +464,13 @@ test("a dialer that does not open fails the transfer and keeps no key", async ()
 test("Cubacel's SMS verifies a dialed transfer", async () => {
   const w = await world();
   await w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
-  await w.sms(SMS.LINE_SENT, "Cubacel");
+  await w.sms(SMS.LINE_SENT, "ETECSA");
   assert.equal(w.store.state.attempts[0].state, "verified");
 });
 
 test("a received transfer SMS adds a history entry and a redacted event", async () => {
   const w = await world();
-  const sms = await w.sms(SMS.LINE_RECEIVED, "Cubacel");
+  const sms = await w.sms(SMS.LINE_RECEIVED, "ETECSA");
   assert.equal(sms.kind, "line-received");
   assert.equal(w.store.state.attempts[0].op, "234-in");
   await w.telemetry.idle();
