@@ -27,6 +27,9 @@ function pinRow(ctx, bank) {
   return box;
 }
 
+// Settings redraws on every store change; the fold of the telemetry history keeps its state.
+let historyOpen = false;
+
 export function renderSettings(ctx) {
   const { store, sims, config } = ctx;
   const s = store.state.settings;
@@ -57,8 +60,8 @@ export function renderSettings(ctx) {
           h("span", {}, "Errores y mensajes tachados, sin identificador. ", h("a", { href: PRIVACY_URL }, "Cómo funciona"))),
         h("button", { class: `toggle${s.telemetry ? " on" : ""}`, "aria-pressed": s.telemetry ? "true" : "false",
           "aria-label": "Enviar telemetría", onclick: () => store.update({ telemetry: !s.telemetry }) })),
-      s.telemetry ? h("div", { id: "telemetry-history" },
-        h("div", { class: "group" }, "Lo que se ha enviado"),
+      s.telemetry ? h("details", { id: "telemetry-history", open: historyOpen, ontoggle: (e) => { historyOpen = e.target.open; } },
+        h("summary", { class: "group" }, "Lo que se ha enviado"),
         ctx.telemetry.history().slice(0, 50).map((x) => h("div", { class: "set-row" },
           h("div", { class: "tx" }, h("b", {}, `${x.event.event} · ${x.sent ? "recibido" : "pendiente"}`),
             h("pre", { class: "ev" }, JSON.stringify(x.event, null, 2)))))) : null,

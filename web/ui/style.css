@@ -208,3 +208,6 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 #plans .row{width:100%;color:var(--bone);font:inherit;text-align:left}
 #plans .row .tx{flex:1}
 #plans .opts.busy{opacity:.5;pointer-events:none}
+/* Settings: links in the app's gold; the telemetry history folds under its heading. */
+.set-row a{color:var(--gold)}
+#telemetry-history summary{cursor:pointer}
