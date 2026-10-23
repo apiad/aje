@@ -5,6 +5,7 @@ import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
 import { renderAddCard } from "./ui/addcard.js";
+import { askTelemetry } from "./ui/consent.js";
 import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
 import { h, icon, mount } from "./ui/dom.js";
@@ -128,6 +129,7 @@ async function boot() {
   telemetry.event("app_start");
   shown = draw();
   autoCheck(ctx);
+  askTelemetry(ctx);
 }
 
 boot().catch((e) => {

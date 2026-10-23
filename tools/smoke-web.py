@@ -265,6 +265,29 @@ def update_beta(page):
     page.goto(page.url.split("#")[0] + "#/home")
     expect(page.locator("#update-banner")).to_contain_text("9.9.0-beta.1")
 
+def consent_once(p, base, out, errors):
+    """With an endpoint, a fresh install asks once: "Ahora no" keeps telemetry off for good; "Activar" turns it on."""
+    for answer, on in (("#consent-no", False), ("#consent-yes", True)):
+        ctx = p.chromium.launch().new_context(viewport={"width": 390, "height": 844})
+        page = ctx.new_page()
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.route("**/config.json", lambda r: r.fulfill(status=200, content_type="application/json",
+                   body='{"app":"smoke","telemetryUrl":"https://collector.invalid/t","telemetryToken":"t"}'))
+        page.route("https://collector.invalid/**", lambda r: r.abort())
+        page.route("https://api.github.com/**", lambda r: r.fulfill(status=200, content_type="application/json", body="[]"))
+        page.goto(base + "/index.html#/home")
+        expect(page.locator("#sheet")).to_contain_text("¿Nos ayudas a encontrar fallos?")
+        page.screenshot(path=out / "consent.png")
+        page.click(answer)
+        expect(page.locator("#sheet")).to_have_count(0)
+        page.reload()
+        page.wait_for_selector("#view")
+        expect(page.locator("#sheet")).to_have_count(0)
+        page.goto(base + "/index.html#/settings")
+        expect(page.get_by_role("button", name="Enviar telemetría")).to_have_attribute("aria-pressed", "true" if on else "false")
+        ctx.close()
+
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, update_beta, refused_login]
 
@@ -285,9 +308,10 @@ def main():
             page.screenshot(path=out / f"{step.__name__}.png", full_page=True)
         width = page.evaluate("document.documentElement.scrollWidth")
         scan_reads_card(p, base, out, errors)
+        consent_once(p, base, out, errors)
     assert width <= 390, f"page is {width}px wide on a 390px phone"
     assert not errors, errors
-    print(f"{len(STEPS) + 1} steps passed, 0 errors, {width}px wide")
+    print(f"{len(STEPS) + 2} steps passed, 0 errors, {width}px wide")
 
 
 if __name__ == "__main__":

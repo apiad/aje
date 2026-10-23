@@ -1,5 +1,6 @@
 // Settings: the SIM registered with the banks, the saved bank PINs, each line's balance code,
 // and the dev build's telemetry.
+import { PRIVACY_URL } from "./consent.js";
 import { BANKS } from "../core/money.js";
 import { h } from "./dom.js";
 import { updateSettings } from "./updates.js";
@@ -53,7 +54,7 @@ export function renderSettings(ctx) {
       h("div", { class: "group" }, "Privacidad"),
       h("div", { class: "set-row" },
         h("div", { class: "tx" }, h("b", {}, "Enviar telemetría"),
-          h("span", {}, "Compilación de desarrollo. Los textos del banco salen con cada dígito cambiado por #.")),
+          h("span", {}, "Errores y mensajes tachados, sin identificador. ", h("a", { href: PRIVACY_URL }, "Cómo funciona"))),
         h("button", { class: `toggle${s.telemetry ? " on" : ""}`, "aria-pressed": s.telemetry ? "true" : "false",
           "aria-label": "Enviar telemetría", onclick: () => store.update({ telemetry: !s.telemetry }) })),
       s.telemetry ? h("div", { id: "telemetry-history" },

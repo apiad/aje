@@ -23,6 +23,15 @@ const MEMORY_IDB = `(() => {
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: { open } });
 })();`;
 
+// The preview has no build, so it gets a sample config.json with an endpoint that never answers:
+// the first-launch telemetry question shows, and nothing leaves the page.
+const PREVIEW_CONFIG = `(() => {
+  const real = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (url, init) => String(url).endsWith("config.json")
+    ? Promise.resolve(new Response(JSON.stringify({ app: "preview", commit: "", telemetryUrl: "https://collector.invalid/t", telemetryToken: "" })))
+    : real(url, init);
+})();`;
+
 // Chrome reports "ResizeObserver loop completed" as an error when the host resizes the frame;
 // it is benign, so it is kept from reaching aegis's error reporter.
 const QUIET_RESIZE = 'addEventListener("error", (e) => { if (/ResizeObserver loop/.test(e.message)) e.stopImmediatePropagation(); }, true);';
@@ -35,7 +44,7 @@ const aegis = flag === "--aegis" ? `<script>${QUIET_RESIZE}</script>\n` + '<scri
 // Escape `</script` so the bundle cannot close its own tag.
 const html = readFileSync("web/index.html", "utf8")
   .replace('<link rel="stylesheet" href="./ui/style.css">', () => `${aegis}<style>\n${css}</style>`)
-  .replace('<script type="module" src="./app.js"></script>', () => `<script>\n${js.replace(/<\/script/gi, "<\\/script")}</script>`);
+  .replace('<script type="module" src="./app.js"></script>', () => `<script>\n${PREVIEW_CONFIG}\n</script>\n<script>\n${js.replace(/<\/script/gi, "<\\/script")}</script>`);
 
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, html);

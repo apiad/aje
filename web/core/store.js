@@ -24,7 +24,7 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, plans: {}, telemetry: false, channel: "stable" },
+    settings: { subId: -1, plans: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
     cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, seenSms: [],
   };
