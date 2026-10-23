@@ -349,27 +349,19 @@ def buy_plan_from_catalog(page):
     expect(page.locator("#plan-price")).to_have_text("240.00 CUP")
     expect(page.locator("#plan-short")).to_be_visible()
     expect(page.locator("#plans .reply")).to_contain_text("Marque 1 para confirmar")
-    page.locator("#plan-buy").dblclick()
-    expect(page.locator('#plan-result[data-outcome="dialer"]')).to_be_visible()
-    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
-    assert dials.count("*133*1*4*1#") == 1, dials
-    assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
-    # Back from the dialer at once: Cubacel's confirm may still be up, so nothing is read.
-    before = len(ussd_codes(page))
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_timeout(1500)
-    assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
-    # A minute later the line's balance is read again, once.
-    page.evaluate("""(() => { const a = ajeDev.store.state.attempts.find((x) => x.op === '133');
-        return ajeDev.store.patch(a.id, (x) => ({ ...x, startedAt: x.startedAt - 60000 })); })()""")
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').length > {before}")
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_timeout(1500)
-    assert ussd_codes(page)[before:] == ["*222#"], ussd_codes(page)[before:]
     page.click("#plan-back")
     page.click("#plan-1-2")
     expect(page.locator("#plan-short")).to_have_count(0)
+    page.locator("#plan-buy").dblclick()
+    expect(page.locator('#plan-result[data-outcome="dialer"]')).to_contain_text("Esperando el SMS de Cubacel")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
+    assert dials.count("*133*1*2#") == 1, dials
+    assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
+    # Cubacel's SMS confirms the purchase and brings the balance; nothing more is sent.
+    before = len(ussd_codes(page))
+    expect(page.locator('#plan-result[data-outcome="bought"]')).to_contain_text("Plan comprado: Plan toDus", timeout=10_000)
+    expect(page.locator("#plan-result")).to_contain_text("Saldo de la línea: 160.00 CUP")
+    assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
 
 
 def charge_by_qr(page):

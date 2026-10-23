@@ -90,9 +90,14 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
         const [, , , to, , amount] = code.slice(0, -1).split("*");
         lastTransfer = { to, amount: Number(amount) };
       }
-      // A plan's shortcut lands on Cubacel's confirm; here the person always types 1.
+      // A plan's shortcut lands on Cubacel's confirm; here the person always types 1, and its SMS follows.
       const plan = code.startsWith("*133*") && findPlan(BUNDLED, code.slice(5, -1));
-      if (plan) balance -= plan.price;
+      if (plan) {
+        balance -= plan.price;
+        const left = balance;
+        later(() => emit("ETECSA", `ETECSA Plan Nacional: Se ha comprado Plan ${plan.name} valido por 30 dias, se activa con el primer uso. ` +
+          `Se debitaron ${plan.price.toFixed(2)} CUP. Saldo actual ${left.toFixed(2)} CUP`));
+      }
     },
     listSims: async () => sims.map((s) => ({ ...s })),
     requestPermissions: async () => ({ callPhone: true, readPhoneState: true, receiveSms: true }),

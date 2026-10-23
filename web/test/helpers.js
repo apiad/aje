@@ -19,6 +19,10 @@ export const SMS = {
   LINE_RECEIVED: "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP.",
 };
 
+// Cubacel's SMS after a plan purchase. Telemetry brought it redacted: its layout and figures are real,
+// the words it hid are guesses, so it is not one of the templates the vocabulary must cover.
+export const PLAN_BOUGHT = "ETECSA Plan Nacional: Se ha comprado Plan 4GB+35min+40SMS valido por 30 dias, se activa con el primer uso. Se debitaron 240.00 CUP. Saldo actual 1234.56 CUP";
+
 export const PREPAID_REPLY =
   "Saldo: 250.50 CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.";
 

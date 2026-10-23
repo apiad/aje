@@ -1,5 +1,6 @@
 // Comprar plan: the plans of the catalog by group. Choosing one shows Cubacel's own confirm text, and
-// "Comprar en el marcador" dials the plan's shortcut; the person types 1 in the dialer to buy.
+// "Comprar en el marcador" dials the plan's shortcut; the person types 1 in the dialer to buy, and
+// the screen waits for Cubacel's SMS, which confirms the purchase and brings the line's balance.
 import { BUNDLED } from "../core/plancatalog.js";
 import { fetchCatalog, newestCatalog, planCode } from "../core/plans.js";
 import { h } from "./dom.js";
@@ -13,6 +14,7 @@ export function renderPlans(ctx, r) {
   const catalog = () => newestCatalog(ctx.store.state.planCatalog, BUNDLED);
   let chosen = null;
   let buying = false;
+  let unsubscribe = null;
 
   const body = h("div", { id: "plan-body" });
   const back = h("button", { id: "plan-back", class: "btn ghost", hidden: true, onclick: () => list() }, "Atrás");
@@ -20,6 +22,7 @@ export function renderPlans(ctx, r) {
 
   function list() {
     if (buying) return;
+    unsubscribe?.();
     chosen = null;
     back.hidden = true;
     const c = catalog();
@@ -56,10 +59,31 @@ export function renderPlans(ctx, r) {
     const res = await ctx.workflow.buyPlan(subId, plan);
     buying = false;
     back.hidden = false;
-    show(h("div", { class: "reply", id: "plan-result", "data-outcome": res.outcome },
-      h("div", { class: "k status" }, h("span", { class: "dot" }),
-        res.outcome === "dialer" ? "Termina en el marcador: escribe 1 y envía." : "No se pudo abrir el marcador."),
-      res.outcome === "dialer" ? h("div", { class: "m" }, "Al volver a Ajé se lee otra vez el saldo de la línea.") : null));
+    if (res.outcome !== "dialer") {
+      return show(h("div", { class: "reply", id: "plan-result", "data-outcome": "failed" },
+        h("div", { class: "k status" }, h("span", { class: "dot" }), "No se pudo abrir el marcador.")));
+    }
+    waiting(res.attempt);
+  }
+
+  /** The purchase in the dialer, until Cubacel's SMS confirms it. */
+  function waiting(attempt) {
+    const status = h("div", { class: "reply pending", id: "plan-result", "data-outcome": "dialer" });
+    show(status);
+    const draw = () => {
+      const a = ctx.store.state.attempts.find((x) => x.id === attempt.id) ?? attempt;
+      const done = a.state === "verified";
+      const balance = ctx.store.state.mobileBalances[subId];
+      status.className = `reply${done ? "" : " pending"}`;
+      status.dataset.outcome = done ? "bought" : "dialer";
+      status.replaceChildren(
+        h("div", { class: "k status" }, h("span", { class: done ? "dot" : "spin", "aria-hidden": "true" }),
+          done ? `Plan comprado: ${a.plan.name}` : "Esperando el SMS de Cubacel"),
+        h("div", { class: "m" }, done ? (balance ? `Saldo de la línea: ${balance}` : "Cubacel confirmó la compra.")
+          : "Termina en el marcador: escribe 1 y envía. Cuando llegue el SMS de Cubacel, la compra queda confirmada aquí."));
+    };
+    draw();
+    unsubscribe = ctx.store.subscribe(() => (status.isConnected ? draw() : unsubscribe?.()));
   }
 
   // The hosted catalog replaces the stored one when it differs; the list redraws if it is showing.
