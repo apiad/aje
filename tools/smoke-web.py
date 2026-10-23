@@ -392,9 +392,25 @@ def double_tap_sends_once(page):
     page.keyboard.press("Escape")
 
 
+def no_key_double_tap_sends_once(page):
+    # Line 4 has no saved key (line_transfer_bad_key left none): Pasar stays off while the send runs.
+    open_line_transfer(page, sub=4)
+    before = line_sends(page)
+    page.fill("#lt-num", "55555555")
+    page.fill("#lt-amount", "5")
+    page.click("#lt-submit")
+    page.fill("#key-input", "1111")
+    page.click("#key-submit")
+    expect(page.locator("#lt-submit")).to_be_disabled()
+    expect(page.locator('#lt-result[data-outcome="ok"]')).to_be_visible(timeout=10_000)
+    assert line_sends(page) == before + 1, (before, line_sends(page))
+    page.keyboard.press("Escape")
+    expect(page.locator("#lt-submit")).to_be_enabled()
+
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, line_transfer_saved_key, line_transfer_bad_key, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
+         line_transfer_by_number, line_transfer_saved_key, line_transfer_bad_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
 
 
 def main():

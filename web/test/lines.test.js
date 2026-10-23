@@ -32,3 +32,12 @@ test("parseLineReply", () => {
   assert.equal(parseLineReply("Ha excedido el limite de transferencias diarias."), "limit");
   assert.equal(parseLineReply("Servicio no disponible"), "unknown");
 });
+
+test("normalizeNumber drops the old domestic 0", () => {
+  for (const raw of ["(05) 1234567", "(05)1234567", "051234567", "0 5123 4567"]) assert.equal(normalizeNumber(raw), "51234567", raw);
+});
+
+test("a success reply that mentions the key is not a refused key", () => {
+  assert.equal(parseLineReply("Usted ha transferido 25.00 CUP al numero 55555555. Su clave ha sido utilizada."), "ok");
+  assert.equal(parseLineReply("La clave es invalida."), "bad-key");
+});

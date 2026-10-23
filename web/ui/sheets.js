@@ -9,8 +9,8 @@ export function closeSheet() {
   close?.();
 }
 
-/** Opens a sheet whose body `build()` redraws on every store change until it is closed. */
-export function openSheet(ctx, build) {
+/** Opens a sheet whose body `build()` redraws on every store change until it is closed; `onClose` runs then. */
+export function openSheet(ctx, build, onClose = null) {
   close?.();
   const body = h("div", { class: "sheet-body" });
   const sheet = h("div", { class: "sheet", id: "sheet", role: "dialog", "aria-modal": "true" }, h("div", { class: "grab" }), body);
@@ -25,6 +25,7 @@ export function openSheet(ctx, build) {
     sheet.remove();
     scrim.remove();
     close = null;
+    onClose?.();
   };
   document.getElementById("app").append(scrim, sheet);
   draw();

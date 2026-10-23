@@ -11,6 +11,8 @@ export function normalizeNumber(raw) {
   let d = raw.replace(/\D/g, "");
   if (d.length === 12 && d.startsWith("0053")) d = d.slice(4);
   else if (d.length === 10 && d.startsWith("53")) d = d.slice(2);
+  // The old domestic form, 05 and 7 digits, is today's number without its leading 0.
+  else if (d.length === 9 && d.startsWith("0")) d = d.slice(1);
   return /^[56]\d{7}$/.test(d) ? d : null;
 }
 
@@ -26,7 +28,8 @@ export const changeKey = (old, next) => plain([field("234"), field("2"), field(o
 
 // Guesses until a phone captures the network's real replies; the first match wins.
 const REPLY = [
-  ["bad-key", /clave|contrase/i],
+  // A success text may mention the key, so a refusal needs the key and a refusing word together.
+  ["bad-key", /(clave|contrase[nñ]a)[^.]{0,20}(incorrect|inv[aá]lid|err[oó]ne)/i],
   ["no-balance", /saldo insuficiente|no tiene saldo/i],
   ["limit", /l[ií]mite|excedid/i],
   ["ok", /transferid|satisfactori|exito|éxito/i],

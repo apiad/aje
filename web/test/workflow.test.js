@@ -501,3 +501,11 @@ test("transfersToday counts today's transfers on the line that did not fail", as
   await w.store.add({ op: "234", subId: 4, startedAt: midnight + 3 });
   assert.equal(w.wf.transfersToday(3), 1);
 });
+
+test("a refused transfer is failed, not unverified, and does not count for today", async () => {
+  const w = await world([{ ok: true, reply: "Saldo insuficiente para realizar la operacion." }]);
+  const r = await w.wf.transferBalance(3, "55555555", 25, { key: "9876" });
+  assert.equal(r.outcome, "no-balance");
+  assert.equal(w.store.state.attempts[0].state, "failed");
+  assert.equal(w.wf.transfersToday(3), 0);
+});

@@ -105,7 +105,7 @@ export function renderLineTransfer(ctx, r) {
     button.disabled = true;
     try {
       const saved = await ctx.workflow.savedLineKey(subId);
-      if (!saved.saved) return keySheet(ctx, { subId, saved, send: (key, remember) => pay(n, key, remember) });
+      if (!saved.saved) return await keySheet(ctx, { subId, saved, send: (key, remember) => pay(n, key, remember) });
       await pay(n, null, false);
     } finally {
       button.disabled = false;
@@ -136,8 +136,14 @@ export function renderLineTransfer(ctx, r) {
   );
 }
 
-/** Asks for the line's transfer key, offers to remember it, and explains the factory key. */
+/**
+ * Asks for the line's transfer key, offers to remember it, and explains the factory key. The promise
+ * settles once the send it starts has finished, or the sheet closes unused, so Pasar stays off meanwhile.
+ */
 function keySheet(ctx, { subId, saved, refused = null, send }) {
+  let settle;
+  const settled = new Promise((r) => { settle = r; });
+  let sending = false;
   let remember = true;
   let help = false;
   let error = refused ? `Cubacel no aceptó la clave: ${refused}` : null;
@@ -151,8 +157,13 @@ function keySheet(ctx, { subId, saved, refused = null, send }) {
         error = "La clave tiene 4 dígitos.";
         return sheet.redraw();
       }
+      sending = true;
       sheet.close();
-      await send(k, saved.available && remember);
+      try {
+        await send(k, saved.available && remember);
+      } finally {
+        settle();
+      }
     };
     const keep = saved.available ? h("label", { class: "remember" },
       h("button", { id: "key-remember", class: `toggle${remember ? " on" : ""}`, "aria-pressed": String(remember), onclick: (e) => {
@@ -171,7 +182,8 @@ function keySheet(ctx, { subId, saved, refused = null, send }) {
     if (help) parts.push(changeForm(ctx, subId, (msg) => { changed = msg; sheet.redraw(); }), changed ? h("div", { id: "key-changed", class: "hint" }, changed) : null);
     queueMicrotask(() => key.focus());
     return parts;
-  });
+  }, () => sending || settle());
+  return settled;
 }
 
 /** The factory key, and a form to change the key with *234*2. */

@@ -255,7 +255,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       return { ok: false, outcome: "failed", attempt: current(attempt.id), remembered: false };
     }
     const outcome = parseLineReply(r.reply);
-    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: "replied", reply: r.reply }));
+    // A refusal moved no balance: it is failed, not waiting for an SMS that will never come.
+    const refused = ["bad-key", "no-balance", "limit"].includes(outcome);
+    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: refused ? "failed" : "replied", reply: r.reply }));
     if (outcome === "bad-key" && saved) await forgetLineKey(subId);
     const remembered = outcome === "ok" && remember && bridge.secretSave
       ? await bridge.secretSave(lineKeyName(subId), k, PIN_DAYS).catch(() => false) : false;
