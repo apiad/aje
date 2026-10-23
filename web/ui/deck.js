@@ -79,10 +79,17 @@ function cardFace(a, ctx) {
   );
 }
 
+/** The inbox's bell, with the number of pending notices; no count at zero. */
+function bell(ctx) {
+  const n = ctx.store.pendingNotices();
+  return h("button", { id: "bell", class: "bell", "aria-label": n ? `Avisos, ${n} pendientes` : "Avisos", onclick: () => ctx.go("inbox") },
+    icon("bell"), n ? h("span", { class: "count" }, String(n)) : null);
+}
+
 export function renderHome(ctx) {
   const list = accounts(ctx.store.state, ctx.sims);
   const add = h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta");
-  if (list.length === 0) return h("div", { id: "deck" }, updateBanner(ctx), h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
+  if (list.length === 0) return h("div", { id: "deck" }, updateBanner(ctx), h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas"), bell(ctx)),
     h("div", { class: "empty" }, "Aún no hay tarjetas. Añade la primera con una foto."), add);
   if (!list.some((a) => a.id === frontId)) frontId = list[0].id;
 
@@ -275,7 +282,7 @@ export function renderHome(ctx) {
   front();
   return h("div", { id: "deck" },
     updateBanner(ctx),
-    h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
+    h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas"), bell(ctx)),
     stack,
     h("div", { class: "stack-ctl" },
       h("button", { class: "sbtn", "aria-label": "Cuenta anterior", onclick: () => step(-1) }, "‹"),

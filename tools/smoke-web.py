@@ -571,8 +571,44 @@ def telemetry_history_folds(page):
     assert color == probe, (color, probe)
 
 
+def inbox_from_sms(page):
+    """A transfer to a card arrives: the bell counts it, the inbox names the contact, and opening it clears it."""
+    page.wait_for_function("globalThis.ajeDev")
+    expect(page.locator("#bell .count")).to_have_count(0)
+    page.click("#mock-panel summary")
+    page.click("#mock-card-received")
+    expect(page.locator("#bell .count")).to_have_text("1", timeout=10_000)
+    page.click("#bell")
+    pending = page.locator("#inbox-pending")
+    expect(pending).to_contain_text("Recibiste 1500.00 CUP de Mamá", timeout=10_000)
+    row_id = page.evaluate("ajeDev.store.state.inbox[0].rowId")
+    pending.locator(".notice").first.locator("button", has_text="Ver").click()
+    page.wait_for_url(f"**#/history/{row_id}")
+    expect(page.locator("#detail")).to_contain_text("Transferencia recibida")
+    expect(page.locator("#detail")).to_contain_text("····0001")
+    page.goto(page.url.split("#")[0] + "#/inbox")
+    expect(page.locator("#inbox-seen")).to_contain_text("Recibiste 1500.00 CUP de Mamá")
+    expect(page.locator("#inbox-pending .notice")).to_have_count(0)
+    page.goto(page.url.split("#")[0] + "#/home")
+    expect(page.locator("#bell .count")).to_have_count(0)
+    # A second notice is cleared by dismissing it.
+    page.click("#mock-panel summary")
+    page.click("#mock-recharge-intl")
+    expect(page.locator("#bell .count")).to_have_text("1", timeout=10_000)
+    page.click("#bell")
+    expect(page.locator("#inbox-pending")).to_contain_text("recarga internacional")
+    page.locator("#inbox-pending .notice").first.locator("button", has_text="Descartar").click()
+    expect(page.locator("#inbox-pending .notice")).to_have_count(0)
+    # A notification opens its own notice, highlighted.
+    nid = page.evaluate("ajeDev.store.state.inbox[0].id")
+    page.goto(page.url.split("#")[0] + f"#/inbox/{nid}")
+    expect(page.locator(f'.notice.hl[data-id="{nid}"]')).to_have_count(1)
+    page.goto(page.url.split("#")[0] + "#/home")
+    expect(page.locator("#bell .count")).to_have_count(0)
+
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
-         double_tap_transfers_once,
+         double_tap_transfers_once, inbox_from_sms,
          line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
 
 

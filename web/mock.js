@@ -20,6 +20,8 @@ const SAMPLES = {
 const prepaid = (cup) => `Saldo: ${cup.toFixed(2)} CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.`;
 const POSTPAID = "Voz: Saldo disponible 180.00 CUP. SMS: Saldo disponible 20.00 CUP. Datos: 5000 MB. Roaming:";
 const BANK = "PAGOxMOVIL";
+// The phone's contacts, for the inbox's names; any other number is unknown.
+const CONTACTS = { 51234567: "Mamá" };
 
 // Android reports the number of the second SIM only, as some phones do.
 const SIMS = [{ subId: 3, slot: 0, carrier: "Cubacel", number: "" }, { subId: 4, slot: 1, carrier: "Cubacel", number: "+5351234567" }];
@@ -141,7 +143,15 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       }
       return { ok: true };
     },
+    async contactNames(numbers, ask) {
+      calls.push({ method: "contactNames", args: { numbers, ask } });
+      return Object.fromEntries(numbers.filter((n) => CONTACTS[n]).map((n) => [n, CONTACTS[n]]));
+    },
     injectSms: (sender, body) => emit(sender, body),
+    // Incoming money and plans, as PAGOxMOVIL, ETECSA and Cubacel send them.
+    cardReceived: () => emit(BANK, `El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW${Date.now() % 1e9}`),
+    rechargeIntl: () => emit("ETECSA", `ETECSA: Recarga Internacional. Ud. recibio 500 CUP. Transaccion ${Date.now() % 1e9}. Sextuplica Tu Recarga y Datos ilimitados de 12am-7am(validos por 30 dias).Consulte *222#.`),
+    planGift: () => emit("Cubacel", "Ha recibido un plan de 3GB valido por 30 dias, se activara con el primer uso."),
     lineSent: () => emit("ETECSA", `Usted ha transferido ${lastTransfer.amount} CUP al numero ${lastTransfer.to}. Saldo principal 1234.56 CUP, linea activa hasta 2027-01-01, vence 2027-02-01`),
     lineReceived: () => emit("ETECSA", "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP."),
     endSession: () => { session = false; },
@@ -154,7 +164,7 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
 function panel(mock) {
   const box = document.createElement("details");
   box.id = "mock-panel";
-  box.style.cssText = "position:fixed;right:8px;top:8px;z-index:1000;max-width:calc(100vw - 16px);" +
+  box.style.cssText = "position:fixed;right:8px;bottom:84px;z-index:1000;max-width:calc(100vw - 16px);" +
     "background:#211710;color:#f1e8d8;border:1px solid #3a2a1b;border-radius:10px;padding:4px 9px;font:11px sans-serif;opacity:.85";
   box.innerHTML = '<summary style="cursor:pointer">SMS</summary>' +
     '<div style="display:flex;gap:6px;margin:6px 0"><button data-sms="balance">Saldo</button>' +
@@ -162,6 +172,8 @@ function panel(mock) {
     '<div style="display:flex;gap:6px;margin:6px 0"><button id="mock-line-sent">Saldo pasado</button>' +
     '<button id="mock-line-received">Saldo recibido</button>' +
     '<button id="mock-qr">QR de cobro</button></div>' +
+    '<div style="display:flex;gap:6px;margin:6px 0"><button id="mock-card-received">Dinero a tarjeta</button>' +
+    '<button id="mock-recharge-intl">Recarga int.</button><button id="mock-plan-gift">Plan regalado</button></div>' +
     '<button id="mock-logout">Cerrar la sesión del banco</button>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
@@ -170,6 +182,9 @@ function panel(mock) {
   for (const b of box.querySelectorAll("[data-sms]")) b.onclick = () => (text.value = SAMPLES[b.dataset.sms.toUpperCase()]);
   box.querySelector("#mock-line-sent").onclick = () => { mock.lineSent(); box.open = false; };
   box.querySelector("#mock-line-received").onclick = () => { mock.lineReceived(); box.open = false; };
+  box.querySelector("#mock-card-received").onclick = () => { mock.cardReceived(); box.open = false; };
+  box.querySelector("#mock-recharge-intl").onclick = () => { mock.rechargeIntl(); box.open = false; };
+  box.querySelector("#mock-plan-gift").onclick = () => { mock.planGift(); box.open = false; };
   // The QR tab under the mock reads this instead of a camera frame.
   box.querySelector("#mock-qr").onclick = () => {
     box.open = false;
