@@ -20,8 +20,8 @@ test("PAN with an unknown bank code is refused", () => {
   assert.match(classifyPan("9227779900000001").error, /banco/);
 });
 
-test("wallet and classic business prefixes", () => {
-  assert.equal(classifyPan("9760030000000001").bank, "MITRANSFER");
+test("Clásica and classic business prefixes", () => {
+  assert.deepEqual(classifyPan("9760 0300 0000 0001"), { pan: "9760030000000001", bank: "CLASICA", currency: "CUP" });
   assert.equal(classifyPan("9760040000000001").bank, "CLASICAEMP");
 });
 

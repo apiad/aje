@@ -6,6 +6,7 @@ export const BANKS = {
   BPA: { agency: "01", name: "BPA" },
   BANDEC: { agency: "02", name: "BANDEC" },
   METROPOLITANO: { agency: "03", name: "Banco Metropolitano" },
+  CLASICA: { agency: "08", name: "Tarjeta Clásica" },
   MITRANSFER: { agency: null, name: "MiTransfer" },
 };
 
@@ -33,7 +34,7 @@ const ACCOUNT_CURRENCIES = { 1: "CUP", 2: "CUC", 3: "USD" };
 export function classifyPan(text) {
   const pan = text.replace(/[-\s]/g, "");
   if (!/^[0-9]{16}$/.test(pan)) return { error: "El número de tarjeta tiene 16 dígitos." };
-  if (pan.startsWith("976003")) return { pan, bank: "MITRANSFER", currency: null };
+  if (pan.startsWith("976003")) return { pan, bank: "CLASICA", currency: "CUP" };
   if (pan.startsWith("976004")) return { pan, bank: "CLASICAEMP", currency: null };
   if (pan.startsWith("92")) {
     const bank = PAN_BANKS[pan.slice(4, 6)];
