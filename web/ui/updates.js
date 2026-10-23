@@ -38,21 +38,31 @@ export function pending(ctx) {
 /** "Actualizar a X": downloads, verifies and opens Android's installer; says why when it cannot. */
 export function updateButton(ctx, u, id) {
   const status = h("div", { class: "hint", id: `${id}-status` });
+  const bar = h("progress", { class: "dl", id: `${id}-bar`, max: "1", value: "0", hidden: true });
   const button = h("button", { id, class: "btn gold" }, `Actualizar a ${u.version}`);
+  const mb = (n) => (n / 1e6).toFixed(1).replace(".", ",");
+  const progress = (received, total) => {
+    total = total > 0 ? total : u.size ?? 0;
+    bar.hidden = false;
+    if (total > 0) bar.value = Math.min(received / total, 1);
+    else bar.removeAttribute("value");
+    status.textContent = total > 0 && received >= total ? "Verificando…" : `Descargando ${mb(received)}${total > 0 ? ` de ${mb(total)}` : ""} MB…`;
+  };
   button.addEventListener("click", async () => {
     if (button.disabled) return;
     button.disabled = true;
-    status.textContent = u.size ? `Descargando ${(u.size / 1e6).toFixed(1)} MB…` : "Descargando…";
+    progress(0, u.size ?? 0);
     try {
-      const r = await ctx.bridge.installUpdate(u.apkUrl, u.sha256);
+      const r = await ctx.bridge.installUpdate(u.apkUrl, u.sha256, progress);
       status.textContent = r.ok ? "Se abrió el instalador de Android." : REASONS[r.reason] ?? `No se instaló (${r.reason}).`;
     } catch (e) {
       status.textContent = `No se instaló: ${e.message}`;
     } finally {
       button.disabled = false;
+      bar.hidden = true;
     }
   });
-  return h("div", {}, button, status);
+  return h("div", {}, button, bar, status);
 }
 
 /** The banner on Inicio while an update is waiting. */

@@ -56,3 +56,11 @@ test("the mock contact picker answers a sample contact, or what the test sets", 
   assert.deepEqual(await m.pickContact(), { name: "Oficina", number: "7 800 0000" });
   assert.deepEqual(await m.pickContact(), { name: "Ben", number: "+53 5100 0001" });
 });
+
+test("the mock update download reports progress up to the total", async () => {
+  const m = createMock({ delayMs: 0 });
+  const seen = [];
+  assert.deepEqual(await m.installUpdate("https://x/a.apk", "ab", (r, t) => seen.push([r, t])), { ok: true });
+  assert.ok(seen.length >= 2);
+  assert.deepEqual(seen.at(-1), [seen.at(-1)[1], seen.at(-1)[1]]);
+});

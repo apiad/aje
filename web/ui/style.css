@@ -199,3 +199,8 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .pair{display:flex;gap:10px}.pair .btn{flex:1}
 .consent{color:var(--bone);font-size:14.5px;line-height:1.5;margin:8px 0}
 .consent-link{color:var(--gold);font-size:14px}
+/* the update download */
+progress.dl{display:block;width:100%;height:6px;margin:10px 0 0;border:0;border-radius:3px;background:var(--raised);accent-color:var(--gold);overflow:hidden}
+progress.dl[hidden]{display:none}
+progress.dl::-webkit-progress-bar{background:var(--raised)}
+progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}

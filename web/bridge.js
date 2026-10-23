@@ -2,7 +2,7 @@
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
 // JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"installUpdate", "args": {...}}
-// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
+// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
 /** How long a USSD may go unanswered; some phones never call back. */
 const USSD_TIMEOUT_MS = 60_000;
@@ -28,12 +28,14 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     }
     const p = pending.get(msg.id);
     if (!p) return;
+    // A long call (an update download) reports progress before its result.
+    if ("progress" in msg) return p.onProgress?.(msg.progress.received, msg.progress.total);
     pending.delete(msg.id);
     if ("error" in msg) p.reject(new Error(msg.error));
     else p.resolve(msg.result);
   };
 
-  const call = (method, args = {}, timeout = null) => new Promise((resolve, reject) => {
+  const call = (method, args = {}, timeout = null, onProgress = null) => new Promise((resolve, reject) => {
     const id = nextId++;
     const timer = timeout && setTimeout(() => {
       pending.delete(id);
@@ -43,7 +45,7 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
       clearTimeout(timer);
       fn(v);
     };
-    pending.set(id, { resolve: done(resolve), reject: done(reject) });
+    pending.set(id, { resolve: done(resolve), reject: done(reject), onProgress });
     native.postMessage(JSON.stringify({ id, method, args }));
   });
 
@@ -63,7 +65,8 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     secretForget: (name) => call("secretForget", { name }),
     // Downloads a release APK, checks its SHA-256 and signing certificate, and opens Android's
     // installer. A download can take minutes on a mobile line, so it has no timeout.
-    installUpdate: (url, sha256) => call("installUpdate", { url, sha256 }),
+    // Downloads, verifies and opens the installer; `onProgress(received, total)` follows the download.
+    installUpdate: (url, sha256, onProgress = null) => call("installUpdate", { url, sha256 }, null, onProgress),
     /**
      * The first handler sends `ready`, which opens the push channel and makes the shell deliver,
      * then delete, the SMS it queued while no page was alive: so only a page that can save them

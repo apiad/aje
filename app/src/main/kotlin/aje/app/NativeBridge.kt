@@ -70,9 +70,12 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                     reply(replyProxy, id, JSONObject.NULL)
                 }
                 "pickContact" -> activity.pickContact { reply(replyProxy, id, it ?: JSONObject.NULL) }
-                "installUpdate" -> Updater.install(activity, args.getString("url"), args.getString("sha256")) {
-                    reply(replyProxy, id, it)
-                }
+                "installUpdate" -> Updater.install(
+                    activity, args.getString("url"), args.getString("sha256"),
+                    progress = { received, total ->
+                        post(replyProxy, JSONObject().put("id", id).put("progress", JSONObject().put("received", received).put("total", total)))
+                    },
+                ) { reply(replyProxy, id, it) }
                 "ready" -> {
                     pushProxy = replyProxy
                     live = this

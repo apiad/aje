@@ -23,14 +23,14 @@ object Updater {
     private const val RELEASES = "https://github.com/apiad/aje/releases/download/"
     private val HEX64 = Regex("^[0-9a-f]{64}$")
 
-    fun install(activity: MainActivity, url: String, sha256: String, done: (JSONObject) -> Unit) {
+    fun install(activity: MainActivity, url: String, sha256: String, progress: (Long, Long) -> Unit, done: (JSONObject) -> Unit) {
         val answer = { ok: Boolean, reason: String? -> activity.runOnUiThread { done(JSONObject().put("ok", ok).put("reason", reason ?: JSONObject.NULL)) } }
         if (!url.startsWith(RELEASES) || !HEX64.matches(sha256)) return answer(false, "release")
         Thread {
             try {
                 val file = File(activity.cacheDir, "updates/update.apk").apply { parentFile?.mkdirs() }
                 // A download that passed before Android asked for the install permission is reused.
-                if (!file.exists() || digest(file) != sha256) download(url, file)
+                if (!file.exists() || digest(file) != sha256) download(url, file) { r, t -> activity.runOnUiThread { progress(r, t) } }
                 if (digest(file) != sha256) return@Thread answer(false, "checksum")
                 val pm = activity.packageManager
                 val flags = PackageManager.GET_SIGNATURES or if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0
@@ -55,7 +55,8 @@ object Updater {
         }.start()
     }
 
-    private fun download(url: String, file: File) {
+    /** Downloads to [file], calling [progress] with bytes received and the total (-1 if unknown) about every 1%. */
+    private fun download(url: String, file: File, progress: (Long, Long) -> Unit) {
         var target = URL(url)
         repeat(5) { // GitHub redirects release assets to its storage host.
             val c = target.openConnection() as HttpURLConnection
@@ -64,7 +65,29 @@ object Updater {
             c.readTimeout = 60_000
             when (c.responseCode) {
                 in 300..399 -> target = URL(target, c.getHeaderField("Location")).also { c.disconnect() }
-                200 -> return c.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+                200 -> {
+                    val total = c.contentLengthLong
+                    val step = if (total > 0) total / 100 else 1L shl 18
+                    var received = 0L
+                    var reported = 0L
+                    c.inputStream.use { input ->
+                        file.outputStream().use { out ->
+                            val buf = ByteArray(1 shl 16)
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                received += n
+                                if (received - reported >= step) {
+                                    reported = received
+                                    progress(received, total)
+                                }
+                            }
+                        }
+                    }
+                    progress(received, if (total > 0) total else received)
+                    return
+                }
                 else -> throw IllegalStateException("HTTP ${c.responseCode}")
             }
         }
