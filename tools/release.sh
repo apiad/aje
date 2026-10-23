@@ -13,11 +13,11 @@ CODE=$(( $(git rev-list --count HEAD) + 200 ))
 APK="aje-$VERSION-$CODE.apk"
 mkdir -p build/release
 cp app/build/outputs/apk/release/app-release.apk "build/release/$APK"
-# A public release must not carry the dev telemetry endpoint or its token.
-python3 -I -c 'import json, sys, zipfile; c = json.loads(zipfile.ZipFile(sys.argv[1]).read("assets/web/config.json")); sys.exit("telemetry in a release build" if c.get("telemetryUrl") or c.get("telemetryToken") else 0)' "build/release/$APK"
+# A release carries the public, opt-in collector, off by default; a build without it would never report.
+python3 -I -c 'import json, sys, zipfile; c = json.loads(zipfile.ZipFile(sys.argv[1]).read("assets/web/config.json")); sys.exit(0 if c.get("telemetryUrl") == "https://aje.apiad.net/t" and c.get("telemetryToken") and c.get("commit") else "the release lacks the telemetry endpoint, token or commit")' "build/release/$APK"
 (cd build/release && sha256sum "$APK" > "$APK.sha256")
 PRE=()
 [[ $VERSION == *-* ]] && PRE=(--prerelease)
 gh release create "v$VERSION" "build/release/$APK" "build/release/$APK.sha256" --target "$HEAD" \
-  --title "Ajé $VERSION" "${PRE[@]}" --notes "Ajé $VERSION (versionCode $CODE). Instala el APK o actualiza desde Ajé: Ajustes → Buscar actualización. Qué es Ajé y cómo instalarla: https://apiad.github.io/aje/"
+  --title "Ajé $VERSION" "${PRE[@]}" --notes "Ajé $VERSION (versionCode $CODE). Instala el APK o actualiza desde Ajé: Ajustes → Buscar actualización. Qué es Ajé y cómo instalarla: https://aje.apiad.net/"
 echo "released v$VERSION as $APK"

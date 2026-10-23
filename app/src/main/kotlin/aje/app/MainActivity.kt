@@ -2,7 +2,10 @@ package aje.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -49,13 +52,25 @@ class MainActivity : FragmentActivity() {
             domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
+            // Telemetry reports the maker, not the model; the page reads it from here.
+            userAgentString = "$userAgentString AjeMaker/${Build.MANUFACTURER.lowercase().replace(" ", "")}"
         }
         webView.webViewClient = object : WebViewClientCompat() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 assets.shouldInterceptRequest(request.url)
 
-            // The page never navigates away from the bundled frontend.
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
+            // The page never navigates away from the bundled frontend; an https link elsewhere
+            // (the privacy page) opens in the browser.
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url
+                if (url.scheme == "https" && url.host != DOMAIN) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, url))
+                    } catch (_: ActivityNotFoundException) {
+                    }
+                }
+                return true
+            }
         }
         // The card scanner: video capture for the bundled frontend only, and nothing else.
         webView.webChromeClient = object : WebChromeClient() {
