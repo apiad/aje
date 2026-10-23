@@ -40,8 +40,8 @@ text shows up in the data with `‹w›` where its fixed words are, add those wo
 
 A `*133` plan menu is the network's public catalog, and its option numbers and prices are what
 there is to learn. The `plan_menu` event carries it in `menu`, through `redactMenu`: the same
-rules, except that digits stay, and any run of 8 or more digits, which could be a phone number,
-still becomes `#`. The collector has `redact_menu`; both run `web/test/fixtures/menu-vectors.json`.
+rules, except that digits stay. A run of 7 or more digits, which could be a phone number, a date,
+and the figure after "saldo" still become `#`. The collector has `redact_menu`; both run `web/test/fixtures/menu-vectors.json`.
 
 ## The collector
 
