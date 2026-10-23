@@ -1,0 +1,18 @@
+[
+  {
+    "in": "Datos:\n1-1 GB por 25 CUP\n2-2.5 GB por 50 CUP\n0-Atras",
+    "out": "Datos:\n1-1 GB por 25 CUP\n2-2.5 GB por 50 CUP\n0-Atras"
+  },
+  {
+    "in": "1. Saldo 5555-5555 por 25 CUP",
+    "out": "1. Saldo ####-#### por 25 CUP"
+  },
+  {
+    "in": "2. Plan Fulano 3GB",
+    "out": "2. Plan ‹w› 3AA"
+  },
+  {
+    "in": "Voz:\n1-10\n2-20\n3-30",
+    "out": "Voz:\n1-10\n2-20\n3-30"
+  }
+]

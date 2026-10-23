@@ -25,7 +25,7 @@ from pathlib import Path
 
 BASE = {"event", "app", "commit", "android", "maker"}
 # Mirrors ALLOWED in web/core/telemetry.js; web/test/telemetry.test.js checks it.
-ALLOWED = {"op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines", "text", "error", "stack"}
+ALLOWED = {"op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines", "text", "error", "stack", "menu"}
 FIELDS = frozenset(BASE | ALLOWED)
 MAX_BODY = 16 * 1024
 MAX_FRAMES = 20
@@ -74,6 +74,24 @@ def redact(text, vocab):
     return "".join(out)
 
 
+DIGIT_RUN = re.compile(r"\d(?:[ .-]?\d){7,}")
+
+
+def redact_menu(text, vocab):
+    """The same rules as redactMenu in web/core/redact.js: digits stay, a run of 8 or more becomes #."""
+    text = DIGIT_RUN.sub(lambda m: re.sub(r"\d", "#", m.group(0)), text)
+    parts = re.split(r"(‹w›|(?:[^\W_]|[̀-ͯ])+)", text)
+    out = []
+    for i, tok in enumerate(parts):
+        if i % 2 == 0 or tok == "‹w›":
+            out.append(tok)
+        elif any(unicodedata.category(c).startswith("N") for c in tok):
+            out.append("".join("A" if unicodedata.category(c) == "Lu" else "a" if unicodedata.category(c).startswith("L") else c for c in tok))
+        else:
+            out.append(tok if fold(tok) in vocab else "‹w›")
+    return "".join(out)
+
+
 def clean(event, vocab):
     """Keep only allowlisted fields and redact again; None for anything that is not an event."""
     if not isinstance(event, dict) or not isinstance(event.get("event"), str):
@@ -84,6 +102,8 @@ def clean(event, vocab):
             continue
         if k in ("text", "error"):
             v = redact(str(v), vocab)
+        elif k == "menu":
+            v = redact_menu(str(v), vocab)
         elif k == "stack":
             v = "\n".join(line for line in str(v).split("\n") if FRAME.match(line))
             v = "\n".join(v.split("\n")[:MAX_FRAMES])

@@ -13,6 +13,7 @@ import collector
 
 ROOT = Path(__file__).resolve().parent.parent
 VECTORS = json.loads((ROOT / "web/test/fixtures/redact-vectors.json").read_text(encoding="utf-8"))
+MENU_VECTORS = json.loads((ROOT / "web/test/fixtures/menu-vectors.json").read_text(encoding="utf-8"))
 VOCAB = collector.load_vocab()
 
 
@@ -24,6 +25,11 @@ class Redact(unittest.TestCase):
     def test_vectors_match_the_app(self):
         for v in VECTORS:
             self.assertEqual(collector.redact(v["in"], VOCAB), v["out"], v["in"])
+
+    def test_menu_vectors_match_the_app(self):
+        for v in MENU_VECTORS:
+            self.assertEqual(collector.redact_menu(v["in"], VOCAB), v["out"], v["in"])
+            self.assertEqual(collector.clean({"event": "plan_menu", "menu": v["in"]}, VOCAB)["menu"], v["out"])
 
 
 class Clean(unittest.TestCase):
