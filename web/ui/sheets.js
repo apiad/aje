@@ -74,6 +74,10 @@ export async function balanceSheet(ctx, account) {
   let usedSaved = false;
   let remember = true;
   let closing = null;
+  // A Clásica logs in to MiTransfer, not to a bank of its own.
+  const session = ctx.workflow.sessionOf(account.bank);
+  const mitransfer = session === "MITRANSFER";
+  const asks = mitransfer ? "MiTransfer pide abrir sesión. Escribe tu clave de MiTransfer." : "El banco pide abrir sesión. Escribe la clave de tu tarjeta.";
   // Until this sheet's query is stored, an older verified balance is not its answer.
   const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.cardId === account.cardId && a.id >= shownId));
 
@@ -108,7 +112,7 @@ export async function balanceSheet(ctx, account) {
         loginError = null;
         usedSaved = false;
         sheet.redraw();
-        afterLogin(await ctx.workflow.login(account.bank, key, { retryCardId: account.cardId, remember: saved.available && remember }));
+        afterLogin(await ctx.workflow.login(session, key, { retryCardId: account.cardId, remember: saved.available && remember }));
       };
       const keep = saved.available ? h("label", { class: "remember" },
         h("button", { id: "pin-remember", class: `toggle${remember ? " on" : ""}`, "aria-pressed": remember ? "true" : "false", onclick: () => {
@@ -118,9 +122,7 @@ export async function balanceSheet(ctx, account) {
         } }),
         h("span", {}, h("b", {}, "Recordarla en este teléfono"), "180 días; cada uso pide tu huella o el bloqueo del teléfono.")) : null;
       parts.push(
-        h("p", { class: "lead" }, saved.available
-          ? "El banco pide abrir sesión. Escribe la clave de tu tarjeta."
-          : "El banco pide abrir sesión. Escribe la clave de tu tarjeta; Ajé no la guarda."),
+        h("p", { class: "lead" }, `${asks} ${saved.available ? "" : "Ajé no la guarda."}`.trim()),
         h("div", { class: "field" }, pin), err, keep,
         h("button", { id: "pin-submit", class: "btn gold", onclick: submit }, "Autenticarse"),
       );
@@ -128,12 +130,12 @@ export async function balanceSheet(ctx, account) {
     } else if (phase === "waiting" && (!a || a.id === shownId)) {
       // The bank's own words: a wrong key or a blocked card says so here, and no SMS will follow.
       parts.push(h("div", { class: "reply pending" },
-        h("div", { class: "k status" }, mark(true), "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
+        h("div", { class: "k status" }, mark(true), mitransfer ? "Abriendo sesión en MiTransfer…" : "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
         loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
       if (loginReply) {
         parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
           // The bank turned down the saved key: it is wrong now, so it goes.
-          if (usedSaved) ctx.workflow.forgetPin(account.bank);
+          if (usedSaved) ctx.workflow.forgetPin(session);
           usedSaved = false;
           phase = "login";
           loginReply = null;
@@ -152,11 +154,11 @@ export async function balanceSheet(ctx, account) {
   const { attempt, needsLogin } = await ctx.workflow.balance(account.cardId);
   shownId = attempt.id;
   if (!needsLogin) return sheet.redraw();
-  saved = await ctx.workflow.savedPin(account.bank);
+  saved = await ctx.workflow.savedPin(session);
   if (saved.saved) {
     phase = "unlocking";
     sheet.redraw();
-    const r = await ctx.workflow.loginWithSaved(account.bank, { retryCardId: account.cardId });
+    const r = await ctx.workflow.loginWithSaved(session, { retryCardId: account.cardId });
     if (r) {
       usedSaved = true;
       phase = "waiting";

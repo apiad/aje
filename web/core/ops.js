@@ -73,8 +73,19 @@ export function clasicaTransfer(card, toAccount, amount) {
 export function register(bank, { card, name, surname1, surname2, ci }) {
   const agency = BANKS[bank]?.agency;
   if (!agency) throw new RangeError(`${bank} has no agency code`);
+  if (bank === "MITRANSFER" || bank === "CLASICA") throw new RangeError(`${bank} does not register with a bank form`);
   const params = bank === "BANDEC" ? [agency, card, name, ci] : [agency, card, name, surname1, surname2, ci];
   return encoded("49", fieldsOf(params));
+}
+
+/**
+ * Opcode 49 for MiTransfer: registers the phone in MiTransfer with the holder's carné and the key
+ * they choose, as `04*0000*carné*key`. The key is secret: only `dial` returns it.
+ */
+export function registerMiTransfer({ ci, pin }) {
+  if (!/^[0-9]{11}$/.test(ci)) throw new RangeError("the carné has 11 digits");
+  if (!/^[0-9]{4}$/.test(pin)) throw new RangeError("the key has 4 digits");
+  return encoded("49", [field("04"), field("0000"), field(ci), field(pin, true)]);
 }
 
 /**

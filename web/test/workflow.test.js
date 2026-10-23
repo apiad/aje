@@ -366,3 +366,50 @@ test("a Clásica associates, then its balance and movements go out under agency 
   assert.equal(w.store.state.attempts[0].op, "48");
   assert.equal(w.store.state.attempts[0].reply, "Ultimas operaciones: ...");
 });
+
+test("a Clásica without a MiTransfer session is told to log in, not marked associated", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }]);
+  const card = await w.store.addCard(CLASICA_CARD);
+  const r = await w.wf.associateClasica(card.id, "044915", "00014049");
+  assert.deepEqual(r, { ok: false, needsLogin: true, reply: "No es posible realizar la operacion. Debe autenticarse." });
+  assert.equal(w.store.state.cards.find((c) => c.id === card.id).state, "pending");
+  assert.equal(w.wf.sessionOf("CLASICA"), "MITRANSFER");
+});
+
+test("a MiTransfer login opens the session on its reply and reruns a pending balance", async () => {
+  const w = await world([
+    { ok: true, reply: "Usted esta siendo autenticado" },
+    { ok: true, reply: "Saldo de la cuenta: 500.00 CUP" },
+  ]);
+  const card = await w.store.addCard(CLASICA_CARD);
+  const r = await w.wf.login("MITRANSFER", "1234", { retryCardId: card.id });
+  assert.equal(r.ok, true);
+  assert.ok(w.bridge.calls[0].args.code.startsWith("*444*40*"));
+  assert.equal(w.store.state.banks.MITRANSFER.authenticatedAt, w.clock.t);
+  assert.ok(w.bridge.calls[1].args.code.startsWith("*444*46*"));
+  assert.equal(w.store.state.retryBalance, null);
+});
+
+test("a refused MiTransfer login opens no session", async () => {
+  const w = await world([{ ok: true, reply: "Clave incorrecta" }]);
+  await w.wf.login("MITRANSFER", "1234");
+  assert.equal(w.store.state.banks.MITRANSFER?.authenticatedAt ?? null, null);
+});
+
+test("a bank login still waits for the SMS", async () => {
+  const w = await world([{ ok: true, reply: "Usted esta siendo autenticado" }]);
+  await w.wf.login("METROPOLITANO", "1234");
+  assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null);
+});
+
+test("MiTransfer registration marks it registered and keeps neither the carné nor the key", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud de registro esta siendo procesada" }]);
+  const r = await w.wf.registerMiTransfer("00000000000", "4321");
+  assert.equal(r.ok, true);
+  assert.ok(w.bridge.calls[0].args.code.startsWith("*444*49*"));
+  assert.equal(w.store.state.banks.MITRANSFER.registered, true);
+  await w.telemetry.idle();
+  const kept = JSON.stringify([w.store.state, w.stateBackend.saved, w.telemetryBackend.saved, w.posted]);
+  assert.ok(!kept.includes("00000000000"));
+  assert.ok(!kept.includes("4321"));
+});

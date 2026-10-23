@@ -4,6 +4,7 @@
 """
 
 import functools
+import json
 import subprocess
 import http.server
 import sys
@@ -197,6 +198,34 @@ def add_card_linked_bank(page):
     assert page.evaluate("ajeDev.store.state.cards.find((c) => c.alias === 'Metro dos').state") == "linked"
 
 
+def add_clasica_via_mitransfer(page):
+    """A Clásica: Ajé asks about MiTransfer, registers, logs in to MiTransfer, then associates with 111."""
+    page.goto(page.url.split("#")[0] + "#/home")
+    page.click("#add-card")
+    type_number(page)
+    page.fill("#add-pan", "9760 0300 0000 0001")
+    page.fill("#add-alias", "Mi Clásica")
+    page.click("#add-next")
+    page.click("#mt-register")
+    page.fill("#mt-ci", "00000000000")
+    page.fill("#mt-pin", "4321")
+    page.fill("#mt-pin2", "4321")
+    page.click("#mt-register-send")
+    expect(page.locator("#add-pin")).to_be_visible(timeout=10_000)
+    expect(page.locator("#add-reply")).to_contain_text("registro")
+    page.fill("#add-pin", "4321")
+    page.click("#add-pin-submit")
+    expect(page.locator("#add-auth")).to_be_visible(timeout=10_000)
+    page.fill("#add-auth", "044915")
+    page.fill("#add-terminal", "00014049")
+    page.click("#add-associate")
+    expect(page.locator("#add-done")).to_contain_text("Mi Clásica", timeout=10_000)
+    state = page.evaluate("ajeDev.store.state")
+    assert next(c for c in state["cards"] if c["alias"] == "Mi Clásica")["state"] == "associated"
+    assert state["banks"]["MITRANSFER"]["registered"] is True
+    assert "00000000000" not in json.dumps(state) and "4321" not in json.dumps(state)
+
+
 def pending_card_resumes_guide(page):
     """A first BANDEC card, saved for later, reopens the guide where it stopped."""
     page.click("#add-card")
@@ -214,7 +243,7 @@ def pending_card_resumes_guide(page):
     expect(page.locator("#add-guide li.now")).to_contain_text("Multibanca")
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
-         double_tap_transfers_once, add_card_linked_bank, pending_card_resumes_guide, refused_login]
+         double_tap_transfers_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, refused_login]
 
 
 def scan_reads_card(p, base, out, errors):

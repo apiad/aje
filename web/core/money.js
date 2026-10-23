@@ -6,8 +6,10 @@ export const BANKS = {
   BPA: { agency: "01", name: "BPA" },
   BANDEC: { agency: "02", name: "BANDEC" },
   METROPOLITANO: { agency: "03", name: "Banco Metropolitano" },
-  CLASICA: { agency: "08", name: "Tarjeta Clásica" },
-  MITRANSFER: { agency: null, name: "MiTransfer" },
+  // The Clásica has no login of its own: its operations need a MiTransfer session.
+  CLASICA: { agency: "08", name: "Tarjeta Clásica", session: "MITRANSFER" },
+  // MiTransfer confirms a login in its USSD reply; the banks confirm it later, by SMS.
+  MITRANSFER: { agency: "04", name: "MiTransfer", replyConfirmsLogin: true },
 };
 
 /** A 16-digit card number from text that may carry dashes and spaces. */

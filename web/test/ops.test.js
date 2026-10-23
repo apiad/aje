@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { associateClasica, balance, clasicaBalance, clasicaMovements, clasicaTransfer, drawCoordinate, link, login, register, transfer, needsLogin } from "../core/ops.js";
+import { associateClasica, balance, clasicaBalance, clasicaMovements, clasicaTransfer, drawCoordinate, link, login, register, registerMiTransfer, transfer, needsLogin } from "../core/ops.js";
 import { dial, display, DEFAULT_CONFIG } from "../core/ussd.js";
 
 const principal = { bank: "METROPOLITANO", currency: "CUP", pan: null };
@@ -29,7 +29,7 @@ test("login sends agency and a masked key", () => {
 
 test("login refuses a key that is not four digits and a bank with no agency", () => {
   assert.throws(() => login("METROPOLITANO", "12a4"), RangeError);
-  assert.throws(() => login("MITRANSFER", "1234"), RangeError);
+  assert.throws(() => login("CLASICAEMP", "1234"), RangeError);
 });
 
 test("transfer from the registered card", () => {
@@ -61,6 +61,22 @@ test("register: op 49 with each bank's fields", () => {
   assert.deepEqual(values(register("BPA", person)), ["01", person.card, "Ana", "Gil", "Paz", person.ci]);
   assert.deepEqual(values(register("BANDEC", person)), ["02", person.card, "Ana", person.ci]);
   assert.throws(() => register("MITRANSFER", person), RangeError);
+});
+
+test("MiTransfer: login is op 40 under agency 04, with the key secret", () => {
+  const c = login("MITRANSFER", "1234");
+  assert.equal(c.op, "40");
+  assert.deepEqual(values(c), ["04", "1234"]);
+  assert.deepEqual(c.fields.map((f) => f.secret), [false, true]);
+});
+
+test("MiTransfer: registration is op 49 as 04*0000*carné*key, with the key secret", () => {
+  const c = registerMiTransfer({ ci: "00000000000", pin: "1234" });
+  assert.equal(c.op, "49");
+  assert.deepEqual(values(c), ["04", "0000", "00000000000", "1234"]);
+  assert.deepEqual(c.fields.map((f) => f.secret), [false, false, false, true]);
+  assert.throws(() => registerMiTransfer({ ci: "123", pin: "1234" }), RangeError);
+  assert.throws(() => registerMiTransfer({ ci: "00000000000", pin: "12" }), RangeError);
 });
 
 test("link: op 60, card * coordinate * value, value secret", () => {

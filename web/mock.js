@@ -56,6 +56,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       return "Su solicitud esta siendo procesada, espere un SMS";
     }
     // Ops 49, 60, 111 and 48 have no captured replies yet: these texts are guesses, to drive the screens.
+    // Seen on a phone: 111 without a MiTransfer session.
+    if (code.startsWith("*444*111*") && !session) return "No es posible realizar la operacion. Debe autenticarse.";
     if (code.startsWith("*444*111*")) { clasica = true; return "Su solicitud de asociacion esta siendo procesada, espere un SMS"; }
     if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";

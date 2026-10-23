@@ -28,15 +28,23 @@ export function renderAddCard(ctx, r) {
   const resumed = r.param && store.state.cards.find((c) => c.id === r.param);
   if (resumed) {
     s.card = resumed;
-    s.step = resumed.bank === "CLASICA" ? "associate"
+    s.step = resumed.bank === "CLASICA" ? null
       : store.state.banks[resumed.bank]?.registered ? "link" : "guide";
   }
 
   const bank = () => s.card?.bank;
+  // The bank a login goes to: the card's own, or MiTransfer for a Clásica.
+  const loginBank = () => workflow.sessionOf(bank());
   const recentLogin = () => {
-    const at = store.state.banks[bank()]?.authenticatedAt;
+    const at = store.state.banks[loginBank()]?.authenticatedAt;
     return at !== null && at !== undefined && Date.now() - at < WINDOW_MS;
   };
+  // A Clásica associates on a MiTransfer session: log in, or register in MiTransfer first.
+  function clasicaStep() {
+    if (recentLogin()) return "associate";
+    return store.state.banks.MITRANSFER?.registered ? "login" : "mitransfer";
+  }
+  if (s.step === null) s.step = clasicaStep();
   function go(step, patch = {}) {
     Object.assign(s, { error: null, reply: null }, patch, { step });
     // Linking needs a recent login with the card's bank: op 60 goes to the session op 40 opened.
@@ -93,7 +101,7 @@ export function renderAddCard(ctx, r) {
         if (!c || next.disabled) return;
         try {
           const card = await store.addCard({ alias: alias.value.trim() || alias.placeholder, pan: c.pan, bank: c.bank, currency: c.currency });
-          if (c.bank === "CLASICA") return go("associate", { card });
+          if (c.bank === "CLASICA") return go(clasicaStep(), { card });
           const known = store.state.banks[c.bank]?.registered;
           go(known === true ? "link" : known === false ? "guide" : "ask", { card });
         } catch (e) {
@@ -165,24 +173,32 @@ export function renderAddCard(ctx, r) {
       const submit = async (savedOnly = false) => {
         s.busy = true;
         draw();
-        const res = savedOnly ? await workflow.loginWithSaved(bank()) : await workflow.login(bank(), pin.value);
+        const res = savedOnly ? await workflow.loginWithSaved(loginBank()) : await workflow.login(loginBank(), pin.value);
         s.busy = Boolean(res?.ok);
         if (!res) return go("login", { error: "No se desbloqueó la clave guardada. Escríbela." });
         if (!res.ok) return go("login", { error: `El teléfono no la envió (código ${res.failureCode}).` });
         s.reply = res.reply;
+        const after = bank() === "CLASICA" ? "associate" : "coord";
+        // MiTransfer answers the login in its reply: no session means it turned the key down.
+        if (BANKS[loginBank()].replyConfirmsLogin) {
+          s.busy = false;
+          return recentLogin() ? go(after) : go("login", { reply: res.reply });
+        }
         // The bank's "se ha autenticado" SMS records the login; the link step follows it.
         unsubscribe?.();
-        unsubscribe = store.subscribe(() => { if (recentLogin()) { unsubscribe(); s.busy = false; go("coord"); } });
+        unsubscribe = store.subscribe(() => { if (recentLogin()) { unsubscribe(); s.busy = false; go(after); } });
         draw();
       };
       if (!waiting && s.savedTried === undefined) {
         s.savedTried = true;
-        workflow.savedPin(bank()).then((st) => st.saved && submit(true));
+        workflow.savedPin(loginBank()).then((st) => st.saved && submit(true));
       }
-      return [bar(`Sesión con ${BANKS[bank()].name}`, s.card.alias, () => ctx.go("home")),
+      const mt = loginBank() === "MITRANSFER";
+      return [bar(`Sesión con ${BANKS[loginBank()].name}`, s.card.alias, () => ctx.go("home")),
         waiting ? h("div", { class: "reply pending" }, h("div", { class: "k status" }, "Esperando el SMS del banco…"), s.reply ? h("div", { class: "m" }, `Respuesta del banco: ${s.reply}`) : null)
-          : [h("p", { class: "lead" }, "Para asociar la tarjeta, Ajé abre sesión con el banco. Escribe tu clave; Ajé no la guarda."),
-            h("div", { class: "field" }, pin), err(),
+          : [h("p", { class: "lead" }, mt ? "Para asociar la Clásica, Ajé abre sesión en MiTransfer. Escribe tu clave de MiTransfer; Ajé no la guarda."
+              : "Para asociar la tarjeta, Ajé abre sesión con el banco. Escribe tu clave; Ajé no la guarda."),
+            h("div", { class: "field" }, pin), bankReply(), err(),
             h("button", { id: "add-pin-submit", class: "btn gold", onclick: () => (/^[0-9]{4}$/.test(pin.value) ? submit() : go("login", { error: "La clave tiene 4 dígitos." })) }, "Autenticarse")]];
     },
 
@@ -209,6 +225,36 @@ export function renderAddCard(ctx, r) {
         bankReply(), err(), send];
     },
 
+    mitransfer: () => [bar("Tu Tarjeta Clásica", `${s.card.alias} · ···· ${last4(s.card.pan)}`, () => ctx.go("home")),
+      h("p", { class: "lead" }, "La Clásica se opera desde MiTransfer, el monedero de Transfermóvil. Para asociarla, Ajé abre sesión en MiTransfer con tu clave."),
+      h("p", { class: "lead" }, "¿Ya tienes clave de MiTransfer?"),
+      h("button", { id: "mt-have-pin", class: "btn gold", onclick: async () => { await store.setBank("MITRANSFER", { registered: true }); go("login"); } }, "Sí, ya tengo clave"),
+      h("button", { id: "mt-register", class: "btn ghost", onclick: () => go("mtregister") }, "No, quiero registrarme")],
+
+    mtregister: () => {
+      const ci = h("input", { id: "mt-ci", inputmode: "numeric", maxlength: "11", autocomplete: "off" });
+      const pin = h("input", { id: "mt-pin", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off" });
+      const again = h("input", { id: "mt-pin2", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off" });
+      const send = h("button", { id: "mt-register-send", class: "btn gold" }, "Registrarme en MiTransfer");
+      send.addEventListener("click", async () => {
+        if (!/^[0-9]{11}$/.test(ci.value.trim())) return go("mtregister", { error: "El carné tiene 11 dígitos." });
+        if (!/^[0-9]{4}$/.test(pin.value)) return go("mtregister", { error: "La clave tiene 4 dígitos." });
+        if (pin.value !== again.value) return go("mtregister", { error: "Las dos claves no coinciden." });
+        send.disabled = true;
+        const res = await workflow.registerMiTransfer(ci.value.trim(), pin.value);
+        pin.value = again.value = "";
+        if (res.ok) return go("login", { reply: res.reply });
+        go("mtregister", { reply: res.reply ?? null, error: res.reply ? null : `El teléfono no lo envió (código ${res.failureCode}).` });
+      });
+      return [bar("Registrarte en MiTransfer", `${s.card.alias} · ···· ${last4(s.card.pan)}`, () => go("mitransfer")),
+        h("p", { class: "lead" }, "Elige una clave de 4 dígitos para MiTransfer. Con ella Ajé abrirá sesión cada vez que la Clásica lo pida."),
+        h("div", { class: "field" }, h("label", { for: "mt-ci" }, "Carné de identidad"), ci),
+        h("div", { class: "field" }, h("label", { for: "mt-pin" }, "Clave nueva (4 dígitos)"), pin),
+        h("div", { class: "field" }, h("label", { for: "mt-pin2" }, "Repite la clave"), again),
+        h("p", { class: "hint" }, "Ajé no guarda estos datos: van solo en el código que marca."),
+        bankReply(), err(), send];
+    },
+
     associate: () => {
       const auth = h("input", { id: "add-auth", inputmode: "numeric", maxlength: "6", autocomplete: "off" });
       const term = h("input", { id: "add-terminal", inputmode: "numeric", maxlength: "8", autocomplete: "off" });
@@ -224,10 +270,11 @@ export function renderAddCard(ctx, r) {
           return go("associate", { error: `No se pudo enviar: ${e.message}` });
         }
         if (res.ok) return go("done");
+        if (res.needsLogin) return go("login", { reply: res.reply });
         go("associate", { reply: res.reply ?? null, error: res.reply ? null : `El teléfono no lo envió (código ${res.failureCode}).` });
       });
       return [bar("Asociar tu Tarjeta Clásica", `${s.card.alias} · ···· ${last4(s.card.pan)}`, () => ctx.go("home")),
-        h("p", { class: "lead" }, "Haz una operación con la tarjeta en un cajero o un POS y guarda el ticket: trae el número de autorización y el identificador del terminal. No hay clave ni tarjeta de coordenadas."),
+        h("p", { class: "lead" }, "Haz una operación con la tarjeta en un cajero o un POS y guarda el ticket: trae el número de autorización y el identificador del terminal. No hay tarjeta de coordenadas."),
         h("div", { class: "field" }, h("label", { for: "add-auth" }, "Número de autorización (6 dígitos)"), auth),
         h("div", { class: "field" }, h("label", { for: "add-terminal" }, "Identificador del terminal (8 dígitos)"), term),
         h("p", { class: "hint" }, "Ajé no guarda estos datos: van solo en el código que marca."),
