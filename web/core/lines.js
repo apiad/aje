@@ -16,6 +16,9 @@ export function normalizeNumber(raw) {
   return /^[56]\d{7}$/.test(d) ? d : null;
 }
 
+/** The line's own number as Android reports it for the SIM `subId`, when it is a Cubacel mobile; null otherwise. */
+export const simNumber = (sims, subId) => normalizeNumber(sims.find((s) => s.subId === subId)?.number ?? "");
+
 /** The transfer key: 4 digits. */
 export const validKey = (k) => /^\d{4}$/.test(k);
 

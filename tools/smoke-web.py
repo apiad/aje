@@ -364,6 +364,16 @@ def buy_plan_from_catalog(page):
     assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
 
 
+def charge_with_the_sims_number(page):
+    # Android reports the mock's second SIM number: Cobrar takes it and never asks.
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=4")
+    expect(page.locator("#line-charge")).to_be_visible()
+    expect(page.locator("#lc-number")).to_have_count(0)
+    page.click("#lc-show")
+    expect(page.locator("#lc-qr svg")).to_be_visible()
+    expect(page.locator(".qrcap")).to_contain_text("51234567")
+
+
 def charge_by_qr(page):
     page.goto(page.url.split("#")[0] + "#/line-charge?sub=3")
     expect(page.locator("#line-charge")).to_be_visible()
@@ -533,7 +543,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_from_catalog, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
 
 
 def main():

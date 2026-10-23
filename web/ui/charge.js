@@ -1,6 +1,6 @@
 // Cobrar: a line shows a QR with its number and an optional amount and name; the payer scans it and
 // passes the balance, and Cubacel's "recibido" SMS turns the status into what really arrived.
-import { normalizeNumber } from "../core/lines.js";
+import { normalizeNumber, simNumber } from "../core/lines.js";
 import { qrSvg } from "../core/qrimage.js";
 import { h } from "./dom.js";
 
@@ -11,6 +11,9 @@ export function renderLineCharge(ctx, r) {
   const subId = Number(r.query.get("sub") ?? ctx.sims[0]?.subId);
   const root = h("div", { id: "line-charge" });
   let unsubscribe = null;
+  // Android knows the SIM's number on some phones: then it is kept as if typed, and never asked.
+  const fromSim = simNumber(ctx.sims, subId);
+  if (fromSim && !ctx.store.state.settings.lineNumbers[subId]) ctx.store.setLineNumber(subId, fromSim).catch(() => {});
 
   function header() {
     return h("div", { class: "sbar" },

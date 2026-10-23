@@ -21,7 +21,8 @@ const prepaid = (cup) => `Saldo: ${cup.toFixed(2)} CUP. Datos: 3.20 GB. Voz: 01:
 const POSTPAID = "Voz: Saldo disponible 180.00 CUP. SMS: Saldo disponible 20.00 CUP. Datos: 5000 MB. Roaming:";
 const BANK = "PAGOxMOVIL";
 
-const SIMS = [{ subId: 3, slot: 0, carrier: "Cubacel" }, { subId: 4, slot: 1, carrier: "Cubacel" }];
+// Android reports the number of the second SIM only, as some phones do.
+const SIMS = [{ subId: 3, slot: 0, carrier: "Cubacel", number: "" }, { subId: 4, slot: 1, carrier: "Cubacel", number: "+5351234567" }];
 
 const MODE = typeof location === "undefined" ? "" : new URLSearchParams(location.search).get("mock") ?? "";
 
