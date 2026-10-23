@@ -66,13 +66,6 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";
-    // Cubacel balance transfers; guesses until a phone captures the real replies. Key 0000 is refused.
-    if (code.startsWith("*234*1*")) {
-      const [, , , to, key, amount] = code.slice(0, -1).split("*");
-      if (key === "0000") return "Clave incorrecta.";
-      lastTransfer = { to, amount: Number(amount) };
-      return `Usted ha transferido ${amount}.00 CUP al numero ${to}.`;
-    }
     if (code.startsWith("*234*2*")) return "Su clave ha sido cambiada satisfactoriamente.";
     if (code === "*222#") return PREPAID;
     if (code === "*111#") return POSTPAID;
@@ -89,6 +82,11 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     },
     async dial(code) {
       calls.push({ method: "dial", args: { code } });
+      // A balance transfer ends in the dialer; the panel's "Saldo pasado" SMS then confirms it.
+      if (code.startsWith("*234*1*")) {
+        const [, , , to, , amount] = code.slice(0, -1).split("*");
+        lastTransfer = { to, amount: Number(amount) };
+      }
     },
     listSims: async () => sims.map((s) => ({ ...s })),
     requestPermissions: async () => ({ callPhone: true, readPhoneState: true, receiveSms: true }),

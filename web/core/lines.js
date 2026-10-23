@@ -25,17 +25,3 @@ export const transferBalance = (to, key, amount) =>
 
 /** `*234*2*clave*nueva#`: changes the transfer key. */
 export const changeKey = (old, next) => plain([field("234"), field("2"), field(old, true), field(next, true)]);
-
-// Guesses until a phone captures the network's real replies; the first match wins.
-const REPLY = [
-  // A success text may mention the key, so a refusal needs the key and a refusing word together.
-  ["bad-key", /(clave|contrase[nñ]a)[^.]{0,20}(incorrect|inv[aá]lid|err[oó]ne)/i],
-  ["no-balance", /saldo insuficiente|no tiene saldo/i],
-  ["limit", /l[ií]mite|excedid/i],
-  ["ok", /transferid|satisfactori|exito|éxito/i],
-];
-
-/** What a reply to `*234*1` says: "ok", "bad-key", "no-balance", "limit" or "unknown". */
-export function parseLineReply(reply) {
-  return REPLY.find(([, re]) => re.test(reply))?.[0] ?? "unknown";
-}

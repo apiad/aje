@@ -7,11 +7,8 @@ import { h } from "./dom.js";
 import { openSheet } from "./sheets.js";
 
 const RESULT = {
-  ok: "Listo. Cubacel te confirmará por SMS.",
-  "no-balance": "La línea no tiene saldo suficiente.",
-  limit: "Cubacel no deja pasar más saldo hoy desde esta línea.",
-  unknown: "Respuesta de Cubacel:",
-  failed: "El teléfono no pudo mandar el código.",
+  dialer: "Termina en el marcador: escribe 1 para confirmar. El SMS de Cubacel lo verificará.",
+  failed: "El teléfono no pudo abrir el marcador.",
 };
 
 /** The figure of a line's balance as Ajé last read it, or null. */
@@ -114,11 +111,11 @@ export function renderLineTransfer(ctx, r) {
 
   async function pay(n, key, remember) {
     const r = await ctx.workflow.transferBalance(subId, dest.number, n, { key, remember });
-    if (r.outcome === "needs-key" || r.outcome === "bad-key") {
+    if (r.outcome === "needs-key") {
       const saved = await ctx.workflow.savedLineKey(subId);
-      return keySheet(ctx, { subId, saved, refused: r.outcome === "bad-key" ? r.attempt?.reply : null, send: (k, rem) => pay(n, k, rem) });
+      return keySheet(ctx, { subId, saved, send: (k, rem) => pay(n, k, rem) });
     }
-    resultSheet(ctx, r, `Pasar saldo · ${n} CUP`);
+    resultSheet(ctx, r, `Pasar saldo · ${n} CUP`, subId, key === null);
   }
 
   update();
@@ -140,13 +137,13 @@ export function renderLineTransfer(ctx, r) {
  * Asks for the line's transfer key, offers to remember it, and explains the factory key. The promise
  * settles once the send it starts has finished, or the sheet closes unused, so Pasar stays off meanwhile.
  */
-function keySheet(ctx, { subId, saved, refused = null, send }) {
+function keySheet(ctx, { subId, saved, send }) {
   let settle;
   const settled = new Promise((r) => { settle = r; });
   let sending = false;
   let remember = true;
   let help = false;
-  let error = refused ? `Cubacel no aceptó la clave: ${refused}` : null;
+  let error = null;
   let changed = null;
   const sheet = openSheet(ctx, () => {
     const key = h("input", { id: "key-input", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Clave de transferencia" });
@@ -199,22 +196,33 @@ function changeForm(ctx, subId, done) {
       if (![old, next, again].every((i) => validKey(i.value))) return done("Cada clave tiene 4 dígitos.");
       if (next.value !== again.value) return done("Las dos claves nuevas no coinciden.");
       const r = await ctx.workflow.changeLineKey(subId, old.value, next.value);
-      done(r.ok ? "Clave cambiada. Escríbela arriba para pasar saldo." : r.reply ? `Respuesta de Cubacel: ${r.reply}` : "El teléfono no pudo mandar el código.");
+      done(r.ok ? "Clave cambiada. Escríbela arriba para pasar saldo."
+        : r.dialed ? "Termina en el marcador: escribe 1 para confirmar. Luego escribe la clave nueva arriba."
+        : r.reply ? `Respuesta de Cubacel: ${r.reply}` : "El teléfono no pudo mandar el código.");
     } }, "Cambiar la clave"));
 }
 
-/** What the network answered, and the SMS that verifies it once it lands. */
-function resultSheet(ctx, r, title) {
+/**
+ * The transfer went to the dialer, where the person confirms with 1; Cubacel's SMS verifies it
+ * here. The dialer hides the network's answer, so a saved key that failed there can be forgotten.
+ */
+function resultSheet(ctx, r, title, subId, usedSaved) {
   const id = r.attempt?.id;
+  let forgot = false;
   const sheet = openSheet(ctx, () => {
     const a = ctx.store.state.attempts.find((x) => x.id === id) ?? r.attempt;
     const verified = a?.state === "verified";
+    const waiting = r.ok && !verified;
     return [
       h("h3", {}, title),
-      h("div", { class: `reply${r.ok && !verified ? " pending" : ""}`, id: "lt-result", "data-outcome": r.outcome },
-        h("div", { class: "k status" }, h("span", { class: r.ok && !verified ? "spin" : "dot", "aria-hidden": "true" }),
-          verified ? "Verificada por SMS" : RESULT[r.outcome]),
-        a?.reply ? h("div", { class: "m" }, a.reply) : null),
+      h("div", { class: `reply${waiting ? " pending" : ""}`, id: "lt-result", "data-outcome": r.outcome },
+        h("div", { class: "k status" }, h("span", { class: waiting ? "spin" : "dot", "aria-hidden": "true" }),
+          verified ? "Verificada por SMS" : RESULT[r.outcome])),
+      r.ok && usedSaved && !verified ? h("button", { id: "lt-forget", class: "btn ghost", disabled: forgot, onclick: async () => {
+        await ctx.workflow.forgetLineKey(subId);
+        forgot = true;
+        sheet.redraw();
+      } }, forgot ? "Clave olvidada: la próxima vez Ajé te la pedirá" : "Cubacel no aceptó la clave guardada") : null,
       h("button", { id: "lt-close", class: "btn ghost", onclick: () => sheet.close() }, "Cerrar"),
     ];
   });
