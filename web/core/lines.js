@@ -25,3 +25,36 @@ export const transferBalance = (to, key, amount) =>
 
 /** `*234*2*clave*nueva#`: changes the transfer key. */
 export const changeKey = (old, next) => plain([field("234"), field("2"), field(old, true), field(next, true)]);
+
+/** `*133*1*2#`: the plan menu at `path`, a list of option keys; `*133#` for the root. */
+export const planPath = (path) => plain([field("133"), ...path.map((k) => field(k))]);
+
+const OPTION = /^\s*(\d{1,2})\s*[.)-]\s*(.+?)\s*$/;
+const ACCEPT = /^(aceptar|confirmar|s[ií])\b/i;
+
+/**
+ * A network reply as a menu of numbered options, a screen that asks to confirm a purchase with 1,
+ * or null for anything else. The confirm is checked first, since it is itself a numbered list.
+ */
+export function parseMenu(reply) {
+  const lines = reply.split("\n").map((l) => l.trim()).filter(Boolean);
+  const options = [];
+  let title = "";
+  for (const l of lines) {
+    const m = OPTION.exec(l);
+    if (m) options.push({ key: m[1], label: m[2] });
+    else if (!title && !options.length) title = l;
+  }
+  if (options.some((o) => o.key === "1" && ACCEPT.test(o.label))) {
+    const price = /\d+(?:[.,]\d+)?\s*CUP/i.exec(reply);
+    return { kind: "confirm", text: reply, price: price ? price[0] : null };
+  }
+  return options.length >= 2 ? { kind: "menu", title, options } : null;
+}
+
+/** Whether the reply to a purchase says it went through, was refused, or neither. */
+export function purchaseOutcome(reply) {
+  if (/insuficiente|no es posible|no se pudo|error/i.test(reply)) return "refused";
+  if (/exito|éxito|satisfactori|adquirid/i.test(reply)) return "bought";
+  return null;
+}
