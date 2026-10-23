@@ -3,7 +3,7 @@
 import { last4 } from "../core/money.js";
 import { h, icon, when } from "./dom.js";
 
-const STATE = { verified: ["✓ verificada", "ok"], failed: ["fallida", "pend"] };
+const STATE = { verified: ["✓ verificada", "ok"], failed: ["fallida", "pend"], waiting: ["○ esperando", "pend"] };
 
 function title(ctx, a) {
   const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
@@ -11,6 +11,7 @@ function title(ctx, a) {
   if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
   if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;
   if (a.op === "133") return "Compra de plan";
+  if (a.op === "234-charge") return a.state === "verified" ? `Cobro de ${a.from} · +${a.receivedAmount} CUP` : `Cobro${a.amount ? ` · ${a.amount} CUP` : ""}`;
   return `Consulta de saldo${card ? ` · ${card.alias}` : ""}`;
 }
 
@@ -19,7 +20,7 @@ export function row(ctx, a) {
   const [label, cls] = STATE[a.state] ?? ["○ sin verificar", "pend"];
   const detail = a.op === "45" ? `a ····${last4(a.to)}` : a.op.startsWith("234") || a.op === "133" ? "" : (a.available ?? a.reply ?? "");
   return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
-    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" ? "phone" : a.op === "133" ? "plan" : "card", "ic"),
+    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" || a.op === "234-charge" ? "phone" : a.op === "133" ? "plan" : "card", "ic"),
     h("div", { class: "tx" }, h("b", {}, title(ctx, a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
     h("span", { class: `st ${cls}` }, label),
     h("span", { class: "chev" }, "›"),

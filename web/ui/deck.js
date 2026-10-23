@@ -27,6 +27,7 @@ const ACTIONS = {
     ["soon", "Recargar", "bolt"],
     ["plans", "Comprar plan", "plan"],
     ["line-transfer", "Pasar saldo", "send"],
+    ["line-charge", "Cobrar", "qr"],
   ],
 };
 const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], pending: [["resume", "Continuar"]], line: [["mobile-balance", "Saldo"]] };

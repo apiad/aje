@@ -368,6 +368,25 @@ def plans_when_the_network_needs_the_dialer(page):
     page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
 
 
+def charge_by_qr(page):
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=3")
+    expect(page.locator("#line-charge")).to_be_visible()
+    page.fill("#lc-number", "+53 5555 5555")
+    page.fill("#lc-amount", "150")
+    page.fill("#lc-name", "Ana")
+    page.click("#lc-show")
+    expect(page.locator("#lc-qr svg")).to_be_visible()
+    expect(page.locator("#lc-status")).to_contain_text("Esperando el pago")
+    expect(page.locator("#line-charge")).to_contain_text("150 CUP")
+    page.click("#mock-panel summary")
+    page.click("#mock-line-received")
+    expect(page.locator("#lc-status")).to_contain_text("Recibido 25 CUP de 56666666", timeout=10_000)
+    # The line's number is asked once.
+    page.click("#lc-new")
+    expect(page.locator("#lc-number")).to_have_count(0)
+    expect(page.locator("#lc-amount")).to_be_visible()
+
+
 def line_transfer_by_number(page):
     open_line_transfer(page)
     page.fill("#lt-num", "+53 5555 5555")
@@ -462,7 +481,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_via_133, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
+         line_transfer_by_number, buy_plan_via_133, charge_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
 
 
 def main():

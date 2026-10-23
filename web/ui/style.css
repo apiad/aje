@@ -203,3 +203,8 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 #plans .row{width:100%;color:var(--bone);font:inherit;text-align:left}
 #plans .row .tx{flex:1}
 #plans .opts.busy{opacity:.5;pointer-events:none}
+/* Cobrar: the QR large on white, its number and amount under it. */
+.qrbox{background:#fff;border-radius:16px;padding:10px;margin:8px auto 0;max-width:300px}
+.qrbox svg{display:block;width:100%;height:auto}
+.qrcap{text-align:center;margin-top:10px;font-size:14px;color:var(--muted)}
+.qrcap b{color:var(--bone);font-size:16px}
