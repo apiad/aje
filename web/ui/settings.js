@@ -40,7 +40,7 @@ export function renderSettings(ctx) {
     chips([[-1, "La del sistema"], ...sims.map((sim) => [sim.subId, simLabel(sim)])],
       (v) => s.subId === v, (v) => store.update({ subId: v })),
 
-    Object.keys(BANKS).filter((b) => BANKS[b].agency).map((b) => pinRow(ctx, b)),
+    Object.keys(BANKS).filter((b) => BANKS[b].agency && !BANKS[b].session).map((b) => pinRow(ctx, b)),
 
     sims.length ? h("div", { class: "group" }, "Saldo móvil de cada línea") : null,
     sims.map((sim) => h("div", { class: "set-row", "data-line": sim.subId },

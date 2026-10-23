@@ -1,7 +1,7 @@
 // The bank operations the app runs, and what each bank SMS does to them.
 import { randomSeed } from "./encoder.js";
-import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails } from "./money.js";
-import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, transfer as transferCode } from "./ops.js";
+import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
+import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
 import { BANKISH, parseBankSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -21,6 +21,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (!c) throw new RangeError(`no card ${id}`);
     return c;
   };
+  /** The bank whose login a card's operations need: its own, or MiTransfer for a Clásica. */
+  const sessionOf = (bank) => BANKS[bank]?.session ?? bank;
   const authenticatedAt = (bank) => store.state.banks[bank]?.authenticatedAt ?? null;
   const current = (id) => store.state.attempts.find((a) => a.id === id);
 
@@ -65,7 +67,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: "replied", reply: r.reply }));
     const lost = needsLogin(r.reply);
     if (lost) {
-      const since = authenticatedAt(card.bank);
+      const since = authenticatedAt(sessionOf(card.bank));
       telemetry.event("session_lost", { op: "46", bank: card.bank, age_ms: since === null ? null : now() - since });
     }
     return { attempt: current(attempt.id), needsLogin: lost };
@@ -84,6 +86,15 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       return { ok: false, failureCode: r.failureCode };
     }
     const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(bank), pin, PIN_DAYS).catch(() => false) : false;
+    // MiTransfer sends no SMS for a login: a reply that does not refuse it opens the session.
+    if (BANKS[bank]?.replyConfirmsLogin && !REFUSED.test(r.reply) && !/debe autentic|no es posible/i.test(r.reply)) {
+      await store.authenticated(bank, now());
+      const retry = store.state.retryBalance;
+      if (retry) {
+        await store.setRetryBalance(null);
+        await balance(retry.cardId);
+      }
+    }
     return { ok: true, reply: r.reply, remembered };
   }
 
@@ -114,6 +125,19 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
     const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
     if (ok) await store.setBank(bank, { registered: true });
+    return { ok, reply: r.reply };
+  }
+
+  /**
+   * Op 49 for MiTransfer: the carné and the chosen key go into the dialed string only; the key is
+   * a secret field, and the carné is kept out of telemetry. A confirming reply marks it registered.
+   */
+  async function registerMiTransfer(ci, pin) {
+    telemetry.event("ussd_sent", { op: "49", bank: "MITRANSFER", via: "api" });
+    const r = await send("49", settings().subId, dial(registerMiTransferCode({ ci, pin }), config, seed()), [ci]);
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.setBank("MITRANSFER", { registered: true });
     return { ok, reply: r.reply };
   }
 
@@ -165,6 +189,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     telemetry.event("ussd_sent", { op: "111", bank: card.bank, via: "api" });
     const r = await send("111", settings().subId, dial(associateClasicaCode(card.pan, authorization, terminal), config, seed()));
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    // 111 runs on a MiTransfer session: without one the service answers "Debe autenticarse".
+    if (needsLogin(r.reply)) return { ok: false, needsLogin: true, reply: r.reply };
     // 111 is accepted like a registration: the service answers "procesada" and confirms by SMS.
     const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
     if (ok) await store.updateCard(cardId, { state: "associated", step: 5 });
@@ -239,7 +265,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, linkCard, associateClasica, movements, transfer, mobileBalance, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
