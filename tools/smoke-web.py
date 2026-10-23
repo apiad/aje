@@ -328,44 +328,42 @@ def ussd_codes(page):
     return page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
 
 
-def buy_plan_via_133(page):
+def fake_plan_catalog(page):
+    """aje.apiad.net serves the bundled catalog with one price changed, so the step sees the hosted copy win."""
+    catalog = json.loads((WEB.parent / "site/plans.json").read_text())
+    next(p for g in catalog["groups"] for p in g["plans"] if p["path"] == "2*1")["price"] = 16
+    page.route("https://aje.apiad.net/plans.json", lambda r: r.fulfill(
+        status=200, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body=json.dumps(catalog)))
+
+
+def buy_plan_from_catalog(page):
+    page.evaluate("ajeDev.store.setMobileBalance(3, '185.00 CUP')")
     page.goto(page.url.split("#")[0] + "#/plans?sub=3")
     expect(page.locator("#plans")).to_be_visible()
     expect(page.locator("#plan-back")).to_be_hidden()
-    page.click("#plan-opt-1")
-    expect(page.locator("#plan-opt-0")).to_have_count(0)
-    expect(page.locator("#plan-back")).to_be_visible()
-    page.click("#plan-opt-2")
-    expect(page.locator("#plan-buy")).to_contain_text("CUP")
+    expect(page.locator("#plan-captured")).to_contain_text("23-10-2026")
+    # The hosted catalog replaces the bundled one: its changed price shows.
+    expect(page.locator("#plan-2-1")).to_contain_text("16.00 CUP")
+    expect(page.locator("#plan-1-4-1")).to_contain_text("240.00 CUP")
+    page.click("#plan-1-4-1")
+    expect(page.locator("#plan-price")).to_have_text("240.00 CUP")
+    expect(page.locator("#plan-short")).to_be_visible()
+    expect(page.locator("#plans .reply")).to_contain_text("Marque 1 para confirmar")
     page.locator("#plan-buy").dblclick()
-    expect(page.locator('#plan-result[data-outcome="bought"]')).to_be_visible(timeout=10_000)
-    codes = ussd_codes(page)
-    assert codes.count("*133*1*2*1#") == 1, codes
-    page.wait_for_function("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code === '*222#'")
-    page.click("#plan-back")
-    page.click("#plan-back")
-    expect(page.locator("#plan-opt-4")).to_be_visible()
-    expect(page.locator("#plan-back")).to_be_hidden()
-    # Review finding 3: Atrás during a purchase sends nothing and does not hide the result.
-    page.click("#plan-opt-2")
-    page.click("#plan-opt-1")
-    expect(page.locator("#plan-buy")).to_be_visible()
+    expect(page.locator('#plan-result[data-outcome="dialer"]')).to_be_visible()
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
+    assert dials.count("*133*1*4*1#") == 1, dials
+    assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
+    # Back from the dialer: the line's balance is read again, once.
     before = len(ussd_codes(page))
-    page.evaluate("document.querySelector('#plan-buy').click(); document.querySelector('#plan-back').click()")
-    expect(page.locator('#plan-result[data-outcome="bought"]')).to_be_visible(timeout=10_000)
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').length > {before}")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     page.wait_for_timeout(1500)
-    expect(page.locator("#plan-result")).to_be_visible()
-    codes = ussd_codes(page)[before:]
-    assert codes == ["*133*2*1*1#", "*222#"], codes
-
-
-def plans_when_the_network_needs_the_dialer(page):
-    # Review finding 5: a -1 while browsing offers the dialer with the browsing code.
-    page.goto(page.url.split("#")[0].split("?")[0] + "?mock=ussd-menu#/plans?sub=3")
-    expect(page.locator("#plan-dialer")).to_be_visible(timeout=10_000)
-    page.click("#plan-dialer")
-    page.wait_for_function("ajeDev.bridge.calls.some((c) => c.method === 'dial' && c.args.code === '*133#')")
-    page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
+    assert ussd_codes(page)[before:] == ["*222#"], ussd_codes(page)[before:]
+    page.click("#plan-back")
+    page.click("#plan-1-2")
+    expect(page.locator("#plan-short")).to_have_count(0)
 
 
 def charge_by_qr(page):
@@ -537,7 +535,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_via_133, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
 
 
 def main():
@@ -551,6 +549,7 @@ def main():
                 and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
         fake_github(page, [])
+        fake_plan_catalog(page)
         base = serve()
         for step in STEPS:
             page.goto(base + "/index.html#/home")

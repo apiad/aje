@@ -28,7 +28,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const defaults = {
     settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planMenus: {}, retryBalance: null, seenSms: [],
+    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -37,6 +37,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   delete state.authenticatedAt;
   // Telemetry no longer carries an install id; an older build stored one.
   delete state.installId;
+  // Levels of the *133 menu read over the API, which the plan catalog replaced.
+  delete state.planMenus;
   const listeners = new Set();
 
   async function commit() {
@@ -145,9 +147,9 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** The last view read of a *133 menu level, keyed by its path joined with "*". */
-    async setPlanMenu(key, view) {
-      state.planMenus = { ...state.planMenus, [key]: view };
+    /** The newest plan catalog read from aje.apiad.net, already validated. */
+    async setPlanCatalog(catalog) {
+      state.planCatalog = catalog;
       await commit();
     },
 

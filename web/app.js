@@ -85,6 +85,10 @@ async function boot() {
   window.addEventListener("error", (e) => crash(e.error ?? e.message));
   window.addEventListener("unhandledrejection", (e) => crash(e.reason));
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
+  // Back from the dialer, where a plan purchase ends: its balance has moved.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") workflow.resumed().catch(crash);
+  });
 
   const view = h("main", { id: "view" });
   const links = NAV.map(([name, label, ic]) => h("a", { href: `#/${name}`, "data-nav": name },

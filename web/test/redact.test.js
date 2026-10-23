@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { VOCAB, fold, redact, redactMenu, reduceStack } from "../core/redact.js";
-import { SMS, PLAN, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
+import { SMS, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const VECTORS = JSON.parse(read("redact-vectors.json"));
@@ -13,7 +13,7 @@ test("each shared vector redacts to its expected text", () => {
 });
 
 test("the known templates leave no digit and no word outside the vocabulary", () => {
-  for (const text of [...Object.values(SMS), ...Object.values(PLAN), PREPAID_REPLY, POSTPAID_REPLY]) {
+  for (const text of [...Object.values(SMS), PREPAID_REPLY, POSTPAID_REPLY]) {
     const out = redact(text, VOCAB);
     assert.doesNotMatch(out, /\p{Nd}/u);
     assert.doesNotMatch(out, /‹w›/u, `a template word is missing from the vocabulary: ${out}`);

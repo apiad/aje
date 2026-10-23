@@ -3,7 +3,8 @@ import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
 import { chargeUri } from "./qr.js";
-import { changeKey, parseMenu, planPath, purchaseOutcome, transferBalance as transferBalanceCode } from "./lines.js";
+import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
+import { planCode } from "./plans.js";
 import { BANKISH, parseBankSms, parseLineSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -15,6 +16,12 @@ export const PIN_DAYS = 180;
 const REGISTERED = /proces|satisfactori|registrad/i;
 const LINKED = /asociad|vinculad|satisfactori/i;
 const REFUSED = /error|incorrect|no se pudo|denegad/i;
+
+/** How long after a plan purchase coming back to the app, or a plan SMS, reads the balance again. */
+const RESUME_MS = 10 * 60 * 1000;
+const PLAN_SMS_MS = 30 * 60 * 1000;
+/** Cubacel's SMS after a plan purchase; its real text is not known yet, so it is matched broadly. */
+const PLAN_SMS = /\b(plan|paquete|bolsa)\b/i;
 
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
@@ -294,52 +301,39 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { ok, reply: r.reply };
   }
 
-  /** One level of the `*133` plan menu: a menu, a confirm, or null when the reply is neither. */
-  async function planMenu(subId, path) {
-    telemetry.event("ussd_sent", { op: "133", via: "api" });
-    const r = await send("133", subId, dial(planPath(path), config));
-    const view = r.ok ? parseMenu(r.reply) : null;
-    // The menu is the network's public catalog; its option numbers and prices are what to learn.
-    // A level Ajé cannot read is counted too, without its text.
-    if (r.ok || r.failureCode === -1) telemetry.event("plan_menu", { op: "133", kind: view?.kind ?? "none", menu: view ? r.reply : null });
-    if (!r.ok) return { ok: false, failureCode: r.failureCode };
-    if (view) await store.setPlanMenu(path.join("*"), view);
-    return { ok: true, view, reply: r.reply };
+  /**
+   * Buys `plan` from the catalog: its shortcut goes to the dialer, which shows Cubacel's confirm, and
+   * the person types 1 there. The API cannot follow these menus (-1), so nothing tells Ajé whether
+   * the purchase went through; the balance is read again on coming back or on the plan's SMS.
+   */
+  async function buyPlan(subId, plan) {
+    const code = planCode(plan);
+    const attempt = await store.add({
+      id: null, startedAt: now(), code, state: "dialer", op: "133", subId,
+      plan: { path: plan.path, name: plan.name, price: plan.price },
+    });
+    telemetry.event("ussd_sent", { op: "133", via: "dialer" });
+    try {
+      await bridge.dial(code);
+    } catch {
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      return { outcome: "failed", attempt: current(attempt.id) };
+    }
+    return { outcome: "dialer", attempt: current(attempt.id) };
   }
 
-  /**
-   * Buys the plan at `path`: the path plus 1, the network's confirm option, over the API. When the
-   * network answers with a menu again, which the API cannot follow (-1, or a reply that reads as one),
-   * the same code goes to the dialer. A purchase that went through reads the line's balance again.
-   */
-  async function buyPlan(subId, path) {
-    const code = dial(planPath([...path, "1"]), config);
-    const attempt = await store.add({ id: null, startedAt: now(), code, state: "sent", op: "133", subId });
-    const finish = async (outcome, patch, reply = null) => {
-      await store.patch(attempt.id, (a) => ({ ...a, ...patch }));
-      return { outcome, reply, attempt: current(attempt.id) };
-    };
-    telemetry.event("ussd_sent", { op: "133", via: "api" });
-    const r = await send("133", subId, code);
-    const outcome = r.ok ? purchaseOutcome(r.reply) : null;
-    if ((!r.ok && r.failureCode === -1) || (r.ok && !outcome && parseMenu(r.reply))) {
-      telemetry.event("ussd_sent", { op: "133", via: "dialer" });
-      try {
-        await bridge.dial(code);
-      } catch {
-        return finish("failed", { state: "failed", failureCode: -100 });
-      }
-      return finish("dialer", { state: "dialer" });
-    }
-    if (!r.ok) return finish("failed", { state: "failed", failureCode: r.failureCode });
-    if (outcome === "bought") {
-      const done = await finish("bought", { state: "verified", verifiedAt: now(), reply: r.reply }, r.reply);
-      await refreshBalance(subId);
-      return done;
-    }
-    if (outcome === "refused") return finish("refused", { state: "failed", reply: r.reply }, r.reply);
-    return finish("unknown", { state: "replied", reply: r.reply }, r.reply);
+  /** Plan purchases sent to the dialer in the last `ms` whose balance was not read again yet. */
+  const unreadPurchases = (ms) =>
+    store.state.attempts.filter((a) => a.op === "133" && a.state === "dialer" && !a.balanceReadAt && now() - a.startedAt < ms);
+
+  async function readAfterPurchase(attempts) {
+    for (const a of attempts) await store.patch(a.id, (x) => ({ ...x, balanceReadAt: now() }));
+    for (const subId of new Set(attempts.map((a) => a.subId))) await refreshBalance(subId);
+    return attempts.length;
   }
+
+  /** The app is in front again: a plan bought in the dialer minutes ago has moved the balance. */
+  const resumed = () => readAfterPurchase(unreadPurchases(RESUME_MS));
 
   /** A charge to line `subId`: its QR text and the pending attempt the "recibido" SMS will close. */
   async function charge(subId, { amount = null, name = null } = {}) {
@@ -360,6 +354,12 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const tag = senderTag(sender);
     const line = parseLineSms(body);
     if (line) return handleLineSms(line, { tag, body, sentAt, receivedAt });
+    if (PLAN_SMS.test(body) && unreadPurchases(PLAN_SMS_MS).length) {
+      if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
+      telemetry.event("sms", { kind: "plan", sender: tag, text: body });
+      await readAfterPurchase(unreadPurchases(PLAN_SMS_MS));
+      return null;
+    }
     const sms = parseBankSms(body);
     if (!sms) {
       if (BANKISH.test(body)) {
@@ -411,7 +411,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, planMenu, buyPlan, charge, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, resumed, charge, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */

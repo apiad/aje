@@ -43,6 +43,11 @@ there is to learn. The `plan_menu` event carries it in `menu`, through `redactMe
 rules, except that digits stay. A run of 7 or more digits, which could be a phone number, a date,
 and the figure after "saldo" still become `#`. The collector has `redact_menu`; both run `web/test/fixtures/menu-vectors.json`.
 
+Builds since the plan catalog (`docs/ussd/133.json`) no longer send `plan_menu`, since the app no
+longer reads `*133` over the API; the collector still accepts it from older builds. Instead, an SMS
+that mentions a plan within 30 minutes of a purchase sent to the dialer goes out as an `sms` event of
+kind `plan`, with its redacted text, until the real text of Cubacel's purchase SMS is known.
+
 ## The collector
 
 `telemetry/collector.py`, standard library only, behind Caddy at `https://aje.apiad.net/t`.

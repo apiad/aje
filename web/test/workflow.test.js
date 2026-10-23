@@ -4,7 +4,7 @@ import { openStore, memoryBackend } from "../core/store.js";
 import { openTelemetry } from "../core/telemetry.js";
 import { createWorkflow, PIN_DAYS } from "../core/workflow.js";
 import { balanceFor } from "../core/accounts.js";
-import { fakeBridge, SMS, PLAN, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
+import { fakeBridge, SMS, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
 import { balance as balanceCode, link as linkCode } from "../core/ops.js";
 import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
 
@@ -531,87 +531,62 @@ test("refreshBalance swallows a failure and keeps the old figure", async () => {
   assert.equal(w.store.state.mobileBalances[2], "10.00 CUP");
 });
 
-test("planMenu walks the tree and caches each level", async () => {
-  const w = await world([{ ok: true, reply: PLAN.MENU }, { ok: true, reply: PLAN.SUBMENU }]);
-  assert.equal((await w.wf.planMenu(2, [])).view.kind, "menu");
-  const r = await w.wf.planMenu(2, ["1"]);
-  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133#", "*133*1#"]);
-  assert.equal(r.view.options.length, 4);
-  assert.equal(w.store.state.planMenus[""].kind, "menu");
-  assert.equal(w.store.state.planMenus["1"].options[0].label, "1 GB por 25 CUP");
+const PLAN_45 = { path: "1*4*1", name: "4.5GB", price: 240, ask: "¿Desea comprar el plan de 4.5GB x 240.00? Marque 1 para confirmar." };
+// The text of Cubacel's SMS after a plan purchase is not known yet; this is a guess.
+const PLAN_SMS = "Usted ha adquirido el plan de 4.5GB. Gracias por usar los servicios de Cubacel.";
+
+test("buyPlan dials the plan's shortcut and records the purchase on that line", async () => {
+  const w = await world();
+  const r = await w.wf.buyPlan(2, PLAN_45);
+  assert.equal(r.outcome, "dialer");
+  assert.deepEqual(w.bridge.calls, [{ method: "dial", args: { code: "*133*1*4*1#" } }]);
+  const a = w.store.state.attempts[0];
+  assert.deepEqual([a.op, a.subId, a.state, a.code], ["133", 2, "dialer", "*133*1*4*1#"]);
+  assert.deepEqual(a.plan, { path: "1*4*1", name: "4.5GB", price: 240 });
 });
 
-test("planMenu reports a failed USSD and caches nothing", async () => {
-  const w = await world([{ ok: false, failureCode: -2 }]);
-  assert.deepEqual(await w.wf.planMenu(2, []), { ok: false, failureCode: -2 });
-  assert.deepEqual(w.store.state.planMenus, {});
+test("buyPlan reports a dialer that would not open", async () => {
+  const w = await world([], memoryBackend(), { dialFails: true });
+  assert.equal((await w.wf.buyPlan(2, PLAN_45)).outcome, "failed");
+  assert.deepEqual([w.store.state.attempts[0].state, w.store.state.attempts[0].failureCode], ["failed", -100]);
 });
 
-test("buyPlan confirms with 1 and reads the balance after", async () => {
-  const w = await world([{ ok: true, reply: PLAN.BOUGHT }, { ok: true, reply: PREPAID_REPLY }]);
-  const r = await w.wf.buyPlan(2, ["1", "1"]);
-  assert.equal(r.outcome, "bought");
-  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133*1*1*1#", "*222#"]);
-  assert.equal(w.store.state.attempts[0].op, "133");
-  assert.equal(w.store.state.attempts[0].subId, 2);
-  assert.equal(w.store.state.attempts[0].state, "verified");
+test("coming back from the dialer after a purchase reads the line's balance once", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.buyPlan(2, PLAN_45);
+  w.clock.t += 2 * MIN;
+  assert.equal(await w.wf.resumed(), 1);
+  assert.equal(await w.wf.resumed(), 0);
+  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133*1*4*1#", "*222#"]);
+  assert.equal(w.store.state.mobileBalances[2], "250.50 CUP");
 });
 
-test("a refused purchase does not refresh", async () => {
-  const w = await world([{ ok: true, reply: PLAN.REFUSED }]);
-  const r = await w.wf.buyPlan(2, ["1", "1"]);
-  assert.equal(r.outcome, "refused");
-  assert.equal(r.reply, PLAN.REFUSED);
+test("a purchase dialed long ago is not read again on coming back", async () => {
+  const w = await world();
+  await w.wf.buyPlan(2, PLAN_45);
+  w.clock.t += 11 * MIN;
+  assert.equal(await w.wf.resumed(), 0);
   assert.equal(w.bridge.calls.length, 1);
-  assert.equal(w.store.state.attempts[0].state, "failed");
 });
 
-test("buyPlan dials when the network answers with a menu", async () => {
-  for (const reply of [{ ok: false, failureCode: -1 }, { ok: true, reply: PLAN.CONFIRM }]) {
-    const w = await world([reply]);
-    const r = await w.wf.buyPlan(2, ["1", "1"]);
-    assert.equal(r.outcome, "dialer");
-    assert.deepEqual(w.bridge.calls.at(-1), { method: "dial", args: { code: "*133*1*1*1#" } });
-    assert.equal(w.store.state.attempts[0].state, "dialer");
-  }
-});
-
-test("buyPlan reports an unknown reply and a failed USSD without dialing", async () => {
-  const a = await world([{ ok: true, reply: "Opcion no valida" }]);
-  const r = await a.wf.buyPlan(2, ["9"]);
-  assert.equal(r.outcome, "unknown");
-  assert.equal(r.reply, "Opcion no valida");
-  const b = await world([{ ok: false, failureCode: -2 }]);
-  assert.equal((await b.wf.buyPlan(2, ["9"])).outcome, "failed");
-  for (const w of [a, b]) assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
-});
-
-test("a *133 menu reaches telemetry with its digits; other replies carry no text", async () => {
-  const w = await world([{ ok: true, reply: PLAN.SUBMENU }, { ok: true, reply: "Opcion no valida" }]);
-  await w.wf.planMenu(2, ["1"]);
-  await w.wf.planMenu(2, ["9"]);
+test("a plan SMS after a purchase reads the balance again and reaches telemetry", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.buyPlan(2, PLAN_45);
+  w.clock.t += MIN;
+  await w.sms(PLAN_SMS, "Cubacel");
+  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133*1*4*1#", "*222#"]);
+  // Coming back afterwards does not read it a second time.
+  assert.equal(await w.wf.resumed(), 0);
   await w.telemetry.idle();
-  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu" && e.menu);
-  assert.equal(menus.length, 1);
-  assert.equal(menus[0].menu, PLAN.SUBMENU);
-  assert.equal(menus[0].kind, "menu");
+  const sms = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "sms");
+  assert.deepEqual(sms.map((e) => e.kind), ["plan"]);
+  assert.ok(sms[0].text.includes("el plan de"), sms[0].text);
 });
 
-// Review finding 2: a success reply that lists options is still a purchase, never a second dial.
-test("a purchase reply with options after it is bought, not dialed", async () => {
-  const w = await world([{ ok: true, reply: "Su compra se ha realizado con exito.\n1-Comprar otro\n2-Salir" }, { ok: true, reply: PREPAID_REPLY }]);
-  assert.equal((await w.wf.buyPlan(2, ["1", "1"])).outcome, "bought");
-  assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
-});
-
-// Review finding 5: a level the API cannot read still reaches telemetry, with no text.
-test("a *133 level that is neither menu nor confirm, or needs the dialer, is counted as none", async () => {
-  const w = await world([{ ok: true, reply: "Opcion no valida" }, { ok: false, failureCode: -1 }]);
-  await w.wf.planMenu(2, ["9"]);
-  await w.wf.planMenu(2, []);
-  await w.telemetry.idle();
-  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
-  assert.deepEqual(menus.map((e) => [e.kind, e.menu]), [["none", undefined], ["none", undefined]]);
+test("a plan SMS with no recent purchase reads nothing", async () => {
+  const w = await world();
+  await w.sms(PLAN_SMS, "Cubacel");
+  assert.equal(w.bridge.calls.length, 0);
 });
 
 test("a charge needs the line's number, and its QR carries it", async () => {
