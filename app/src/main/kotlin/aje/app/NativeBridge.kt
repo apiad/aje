@@ -69,6 +69,7 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                     SecretStore.forget(activity, name(args))
                     reply(replyProxy, id, JSONObject.NULL)
                 }
+                "pickContact" -> activity.pickContact { reply(replyProxy, id, it ?: JSONObject.NULL) }
                 "installUpdate" -> Updater.install(activity, args.getString("url"), args.getString("sha256")) {
                     reply(replyProxy, id, it)
                 }

@@ -30,6 +30,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   const buffered = [];
   const calls = [];
   const secrets = new Map();
+  const CONTACT = { name: "Ben", number: "+53 5100 0001" };
+  let nextContact;
 
   const emit = (sender, body) => {
     const at = Date.now();
@@ -97,6 +99,15 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     async secretForget(name) {
       secrets.delete(name);
     },
+    async pickContact() {
+      calls.push({ method: "pickContact", args: {} });
+      await wait();
+      const c = nextContact === undefined ? CONTACT : nextContact;
+      nextContact = undefined;
+      return c && { ...c };
+    },
+    /** The next contact the picker answers: one contact, or null for a person who cancels. */
+    setNextContact: (c) => { nextContact = c; },
     onSms(fn) {
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);

@@ -83,3 +83,17 @@ test("installUpdate posts the url and checksum and waits for the shell without a
   f.push({ id: f.sent[0].id, result: { ok: true } });
   assert.deepEqual(await done, { ok: true });
 });
+
+test("pickContact waits for the person and resolves with the contact or null", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native, timeoutMs: 10 });
+  const p = b.pickContact();
+  const req = f.sent.at(-1);
+  assert.deepEqual(req, { id: req.id, method: "pickContact", args: {} });
+  await new Promise((r) => setTimeout(r, 30));
+  f.push({ id: req.id, result: { name: "Ben", number: "+53 5100 0001" } });
+  assert.deepEqual(await p, { name: "Ben", number: "+53 5100 0001" });
+  const q = b.pickContact();
+  f.push({ id: f.sent.at(-1).id, result: null });
+  assert.equal(await q, null);
+});

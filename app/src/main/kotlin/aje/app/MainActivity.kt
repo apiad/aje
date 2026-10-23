@@ -6,7 +6,9 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -19,6 +21,7 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONObject
 
 /**
  * Hosts the web frontend bundled in the APK's assets. Everything Ajé does beyond the six
@@ -37,6 +40,37 @@ class MainActivity : FragmentActivity() {
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         cameraRequest?.let { if (granted) it.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) else it.deny() }
         cameraRequest = null
+    }
+
+    // A contact pick waits here while the system picker is open. The picker grants read access to
+    // the one row the person picks, so the app needs no contacts permission.
+    private var contactReply: ((JSONObject?) -> Unit)? = null
+    private val contactPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        val contact = if (result.resultCode == RESULT_OK && uri != null) readContact(uri) else null
+        contactReply?.invoke(contact)
+        contactReply = null
+    }
+
+    /** Opens the system picker over phone numbers; [reply] gets {name, number}, or null on cancel. */
+    fun pickContact(reply: (JSONObject?) -> Unit) {
+        contactReply?.invoke(null)
+        contactReply = reply
+        try {
+            contactPicker.launch(Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI))
+        } catch (_: ActivityNotFoundException) {
+            contactReply = null
+            reply(null)
+        }
+    }
+
+    private fun readContact(uri: Uri): JSONObject? = try {
+        val cols = arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER)
+        contentResolver.query(uri, cols, null, null, null)?.use { c ->
+            if (c.moveToFirst()) JSONObject().put("name", c.getString(0) ?: "").put("number", c.getString(1) ?: "") else null
+        }
+    } catch (_: SecurityException) {
+        null
     }
 
     @SuppressLint("SetJavaScriptEnabled")

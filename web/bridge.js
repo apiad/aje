@@ -1,7 +1,7 @@
 // The native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"installUpdate", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"installUpdate", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
 
 /** How long a USSD may go unanswered; some phones never call back. */
@@ -58,6 +58,8 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     secretStatus: (name) => call("secretStatus", { name }),
     secretSave: (name, value, days) => call("secretSave", { name, value, days }),
     secretLoad: (name) => call("secretLoad", { name }),
+    // The system contact picker: the one contact the person picks, {name, number}, or null; no timeout.
+    pickContact: () => call("pickContact"),
     secretForget: (name) => call("secretForget", { name }),
     // Downloads a release APK, checks its SHA-256 and signing certificate, and opens Android's
     // installer. A download can take minutes on a mobile line, so it has no timeout.
