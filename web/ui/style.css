@@ -208,3 +208,6 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .qrbox svg{display:block;width:100%;height:auto}
 .qrcap{text-align:center;margin-top:10px;font-size:14px;color:var(--muted)}
 .qrcap b{color:var(--bone);font-size:16px}
+/* The QR viewfinder. */
+.qrview{background:#000;border-radius:16px;overflow:hidden;aspect-ratio:1;margin:8px 0 12px}
+.qrcam{width:100%;height:100%;object-fit:cover;display:block}

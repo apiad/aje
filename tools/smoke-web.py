@@ -387,6 +387,26 @@ def charge_by_qr(page):
     expect(page.locator("#lc-amount")).to_be_visible()
 
 
+def pay_by_qr(page):
+    dials = line_sends(page)
+    page.goto(page.url.split("#")[0] + "#/qr")
+    expect(page.locator("#qr-scan")).to_be_visible()
+    # Headless Chromium has no camera: the scanner says so and offers the number instead.
+    expect(page.locator("#qr-msg")).to_contain_text("cámara", timeout=10_000)
+    page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'https://example.com/pago' }))")
+    expect(page.locator("#qr-msg")).to_have_text("Este QR no es un cobro de Ajé")
+    page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'aje:saldo?v=9&n=56666666' }))")
+    expect(page.locator("#qr-msg")).to_have_text("Actualiza Ajé para leer este QR")
+    page.click("#mock-panel summary")
+    page.click("#mock-qr")
+    expect(page.locator("#line-transfer")).to_be_visible()
+    expect(page.locator("#lt-to")).to_have_text("Para Ana · 56666666")
+    expect(page.locator("#lt-amount")).to_have_value("150")
+    expect(page.locator("#lt-submit")).to_have_text("Pasar 150 CUP")
+    # Scanning fills the form; nothing goes out until the person taps Pasar and gives the key.
+    assert line_sends(page) == dials
+
+
 def line_transfer_by_number(page):
     open_line_transfer(page)
     page.fill("#lt-num", "+53 5555 5555")
@@ -481,7 +501,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_via_133, charge_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
+         line_transfer_by_number, buy_plan_via_133, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, plans_when_the_network_needs_the_dialer]
 
 
 def main():

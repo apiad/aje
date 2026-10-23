@@ -15,6 +15,7 @@ import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
 import { renderLineCharge } from "./ui/charge.js";
+import { renderQrScan } from "./ui/qrscan.js";
 import { autoCheck } from "./ui/updates.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
@@ -34,7 +35,7 @@ const SCREENS = {
   add: { render: renderAddCard },
   history: { render: renderHistory, live: true },
   pay: { render: soon("Pagar un servicio") },
-  qr: { render: soon("Pagar y cobrar por QR") },
+  qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
