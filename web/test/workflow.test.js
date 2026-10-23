@@ -341,3 +341,28 @@ test("an auth SMS records its own bank", async () => {
   await w.sms(SMS.AUTH);
   assert.equal(w.store.state.banks.METROPOLITANO.authenticatedAt, w.clock.t);
 });
+
+const CLASICA_CARD = { alias: "Mi Clásica", pan: "9760030000000001", bank: "CLASICA", currency: "CUP" };
+
+test("a Clásica associates, then its balance and movements go out under agency 08", async () => {
+  const w = await world([
+    { ok: true, reply: "Su solicitud esta siendo procesada" },
+    { ok: true, reply: "Saldo de la cuenta: 500.00 CUP" },
+    { ok: true, reply: "Ultimas operaciones: ..." },
+  ]);
+  const card = await w.store.addCard(CLASICA_CARD);
+  const assoc = await w.wf.associateClasica(card.id, "044915", "00014049");
+  assert.equal(assoc.ok, true);
+  assert.equal(w.store.state.cards.find((c) => c.id === card.id).state, "associated");
+  assert.ok(w.bridge.calls[0].args.code.startsWith("*444*111*"));
+
+  await w.wf.balance(card.id);
+  assert.ok(w.bridge.calls[1].args.code.startsWith("*444*46*"));
+  assert.equal(w.store.state.attempts[0].op, "46");
+
+  const mov = await w.wf.movements(card.id);
+  assert.equal(mov.ok, true);
+  assert.ok(w.bridge.calls[2].args.code.startsWith("*444*48*"));
+  assert.equal(w.store.state.attempts[0].op, "48");
+  assert.equal(w.store.state.attempts[0].reply, "Ultimas operaciones: ...");
+});
