@@ -2,7 +2,8 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
-import { BANKISH, parseBankSms, senderTag } from "./sms.js";
+import { changeKey, parseLineReply, transferBalance as transferBalanceCode } from "./lines.js";
+import { BANKISH, parseBankSms, parseLineSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
@@ -225,9 +226,63 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { ok: true, value, reply: r.reply };
   }
 
+  /**
+   * The transfer key of a line lives in the shell's secret store like the bank PIN, one per line,
+   * behind the fingerprint or the screen lock, and lapses after PIN_DAYS.
+   */
+  const lineKeyName = (subId) => `line-key:${subId}`;
+  async function savedLineKey(subId) {
+    if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
+    return bridge.secretStatus(lineKeyName(subId)).catch(() => ({ available: false, saved: false, expiresAt: null }));
+  }
+  const forgetLineKey = (subId) => bridge.secretForget?.(lineKeyName(subId));
+
+  /**
+   * `*234*1` over the USSD API: passes `amount` CUP of line `subId` to `to`. Without a key it
+   * unlocks the saved one; with none saved, or the unlock cancelled, it sends nothing and answers
+   * "needs-key". A reply that refuses the key drops the saved one.
+   */
+  async function transferBalance(subId, to, amount, { key = null, remember = false } = {}) {
+    const saved = key === null;
+    const k = saved ? (bridge.secretLoad ? await bridge.secretLoad(lineKeyName(subId)).catch(() => null) : null) : key;
+    if (!k) return { ok: false, outcome: "needs-key", attempt: null, remembered: false };
+    const ussd = transferBalanceCode(to, k, amount);
+    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config), state: "sent", op: "234", subId, to, amount });
+    telemetry.event("ussd_sent", { op: "234*1", via: "api" });
+    const r = await send("234*1", subId, dial(ussd, config));
+    if (!r.ok) {
+      await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "failed", failureCode: r.failureCode }));
+      return { ok: false, outcome: "failed", attempt: current(attempt.id), remembered: false };
+    }
+    const outcome = parseLineReply(r.reply);
+    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: "replied", reply: r.reply }));
+    if (outcome === "bad-key" && saved) await forgetLineKey(subId);
+    const remembered = outcome === "ok" && remember && bridge.secretSave
+      ? await bridge.secretSave(lineKeyName(subId), k, PIN_DAYS).catch(() => false) : false;
+    return { ok: outcome === "ok", outcome, attempt: current(attempt.id), remembered };
+  }
+
+  /** `*234*2`: changes a line's transfer key, and the saved one with it when one is saved. */
+  async function changeLineKey(subId, old, next) {
+    telemetry.event("ussd_sent", { op: "234*2", via: "api" });
+    const r = await send("234*2", subId, dial(changeKey(old, next), config));
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const ok = /cambiad|satisfactori|exito|éxito/i.test(r.reply) && !/incorrect/i.test(r.reply);
+    if (ok && (await savedLineKey(subId)).saved) await bridge.secretSave(lineKeyName(subId), next, PIN_DAYS).catch(() => false);
+    return { ok, reply: r.reply };
+  }
+
+  /** Today's balance transfers from a line that did not fail; the network caps them per day. */
+  function transfersToday(subId) {
+    const midnight = new Date(now()).setHours(0, 0, 0, 0);
+    return store.state.attempts.filter((a) => a.op === "234" && a.subId === subId && a.state !== "failed" && a.startedAt >= midnight).length;
+  }
+
   /** One incoming SMS. Texts the parser does not know are dropped here and never stored. */
   async function handleSms({ sender, body, sentAt = null, receivedAt = now() }) {
     const tag = senderTag(sender);
+    const line = parseLineSms(body);
+    if (line) return handleLineSms(line, { tag, body, sentAt, receivedAt });
     const sms = parseBankSms(body);
     if (!sms) {
       if (BANKISH.test(body)) {
@@ -265,7 +320,19 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, handleSms };
+  async function handleLineSms(sms, { tag, body, sentAt, receivedAt }) {
+    if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return sms;
+    if (sms.kind === "line-sent") {
+      const latency = await store.verifyLineTransfer(sms, receivedAt);
+      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: latency !== null, latency_ms: latency, text: body });
+    } else {
+      await store.addReceived(sms, receivedAt);
+      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: true, text: body });
+    }
+    return sms;
+  }
+
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
