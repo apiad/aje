@@ -1,9 +1,10 @@
 # Every mechanical check and build entry point.
 .PHONY: test smoke ocr preview apk release
 
-# The logic, including the 1600 encoder vectors, in Node.
+# The logic, including the 1600 encoder vectors, in Node; and the telemetry collector.
 test:
 	cd web && node --test "test/*.test.js"
+	cd telemetry && python3 -m unittest test_collector
 
 # The frontend against the mock in a phone-sized browser.
 smoke:
