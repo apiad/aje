@@ -5,6 +5,7 @@ import { associateClasica as associateClasicaCode, balance as balanceCode, clasi
 import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
+import { fnv1a } from "./notice.js";
 import { BANKISH, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -399,14 +400,4 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   }
 
   return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms };
-}
-
-/** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
-function fnv1a(text) {
-  let h = 0x811c9dc5;
-  for (const c of text) {
-    h ^= c.codePointAt(0);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h.toString(16);
 }
