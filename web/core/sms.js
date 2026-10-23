@@ -51,6 +51,26 @@ export function transferMatches(sms, pan, cents) {
   return sms.amount.cents === cents && b.length === pan.length && [...b].every((c, i) => c === "X" || c === pan[i]);
 }
 
+/**
+ * Cubacel's SMS after a plan purchase: "Se ha … Plan <name> valido por <n> dias, … Se … <price> CUP.
+ * Saldo … <balance> CUP". Telemetry brought it with some words hidden, so those match any word.
+ */
+const W = String.raw`(?:\S+\s+){1,2}?`;
+const NUM = String.raw`([0-9][0-9.,]*)\s*CUP`;
+// The price is the sentence right after the plan's; the balance, if any, right after the price.
+const PLAN = new RegExp(String.raw`Se\s+ha\s+${W}(?:el\s+)?Plan\s+(.+?)\s+v[aá]lido\s+por\s+(\d+)\s+d[ií]as[^.]*\.\s*Se\s+${W}${NUM}` +
+  String.raw`(?:[.,;]?\s*Saldo\s+(?:\S+\s+){0,2}?${NUM})?`, "i");
+
+/** Reads a plan purchase SMS; anything else returns null. */
+export function parsePlanSms(body) {
+  const m = PLAN.exec(body.replaceAll("\u00a0", " "));
+  const cents = m && centsOf(m[3]);
+  if (!m || cents === null) return null;
+  const left = m[4] ? centsOf(m[4]) : null;
+  return { kind: "plan", name: m[1], days: Number(m[2]), price: { cents, currency: "CUP" },
+    balance: left === null ? null : formatMoney({ cents: left, currency: "CUP" }) };
+}
+
 /** Short or alphanumeric senders are services; a long number is a person and is never reported. */
 export function senderTag(sender) {
   return /\p{L}/u.test(sender) || sender.length <= 6 ? sender : "number";

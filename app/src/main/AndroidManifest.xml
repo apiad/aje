@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- List the SIMs so the person can pick the one registered with the bank. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- The SIM's own number for Cobrar, when the SIM carries it. -->
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <!-- Read the bank's confirmation SMS as it arrives. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Dev build only: opt-in telemetry. -->

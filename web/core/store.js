@@ -4,6 +4,8 @@ import { formatMoney, transferMatches } from "./sms.js";
 
 /** How long after an operation its bank SMS still verifies it. */
 export const WINDOW_MS = 20 * 60 * 1000;
+/** How long a plan bought in the dialer waits for Cubacel's SMS. */
+const PLAN_MS = 30 * 60 * 1000;
 /** How long a charge's QR waits for the payment that closes it. */
 export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
@@ -112,6 +114,20 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       if (!pending) return null;
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
       return { latencyMs: at - pending.startedAt, subId: pending.subId };
+    },
+
+    /**
+     * Confirms a plan bought in the dialer in the last 30 minutes with Cubacel's SMS, on the SIM it came
+     * in on when the shell says: the newest one of the SMS's price, else the only one waiting, since
+     * the network's price may differ from the catalog's. The balance the SMS reported goes with it.
+     */
+    async verifyPlan(sms, at = now()) {
+      const waiting = state.attempts.filter((a) => a.op === "133" && a.state === "dialer" && at - a.startedAt < PLAN_MS && at >= a.startedAt &&
+        (sms.subId === null || sms.subId === undefined || a.subId === sms.subId)).sort((x, y) => y.startedAt - x.startedAt);
+      const p = waiting.find((a) => Math.round((a.plan?.price ?? -1) * 100) === sms.price.cents) ?? (waiting.length === 1 ? waiting[0] : null);
+      if (!p) return null;
+      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance }));
+      return { latencyMs: at - p.startedAt, subId: p.subId };
     },
 
     /** A charge shown as a QR, waiting for the payer's balance to arrive. `to` is this line's number. */

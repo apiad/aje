@@ -1,6 +1,6 @@
 // Cobrar: a line shows a QR with its number and an optional amount and name; the payer scans it and
 // passes the balance, and Cubacel's "recibido" SMS turns the status into what really arrived.
-import { normalizeNumber } from "../core/lines.js";
+import { normalizeNumber, simNumber } from "../core/lines.js";
 import { qrSvg } from "../core/qrimage.js";
 import { h } from "./dom.js";
 
@@ -11,6 +11,8 @@ export function renderLineCharge(ctx, r) {
   const subId = Number(r.query.get("sub") ?? ctx.sims[0]?.subId);
   const root = h("div", { id: "line-charge" });
   let unsubscribe = null;
+  // Android knows the SIM's number on some phones, not always right: it fills the field to confirm once.
+  const fromSim = simNumber(ctx.sims, subId);
 
   function header() {
     return h("div", { class: "sbar" },
@@ -22,7 +24,7 @@ export function renderLineCharge(ctx, r) {
     unsubscribe?.();
     const saved = ctx.store.state.settings.lineNumbers[subId];
     const error = h("div", { id: "lc-error", class: "err", hidden: true });
-    const number = saved ? null : h("input", { id: "lc-number", inputmode: "tel", autocomplete: "off", placeholder: "5XXXXXXX" });
+    const number = saved ? null : h("input", { id: "lc-number", inputmode: "tel", autocomplete: "off", placeholder: "5XXXXXXX", value: fromSim ?? "" });
     const amount = h("input", { id: "lc-amount", inputmode: "numeric", autocomplete: "off" });
     const name = h("input", { id: "lc-name", autocomplete: "off", maxlength: "40" });
     const fail = (text) => { error.textContent = text; error.hidden = false; };
@@ -57,7 +59,10 @@ export function renderLineCharge(ctx, r) {
 
     root.replaceChildren(header(),
       number ? h("div", { class: "field" }, h("label", { for: "lc-number" }, "El número de esta línea"), number,
-        h("div", { class: "hint" }, "Lo pide una vez: el teléfono casi nunca sabe su propio número.")) : null,
+        h("div", { class: "hint" }, fromSim ? "Lo dice la SIM. Revísalo: se guarda y no se vuelve a pedir."
+          : "Lo pide una vez: el teléfono casi nunca sabe su propio número.")) : null,
+      saved ? h("div", { class: "kv", id: "lc-saved" }, h("span", {}, `Esta línea: ${saved}`),
+        h("button", { id: "lc-change", class: "linkbtn", onclick: async () => { await ctx.store.setLineNumber(subId, null); form(); } }, "Cambiar")) : null,
       h("div", { class: "field" }, h("label", { for: "lc-amount" }, "Monto en CUP (opcional)"), amount,
         h("div", { class: "hint" }, "Sin monto, quien paga lo escribe.")),
       h("div", { class: "field" }, h("label", { for: "lc-name" }, "Tu nombre (opcional)"), name,

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeNumber, transferBalance, changeKey, validKey, planPath } from "../core/lines.js";
+import { normalizeNumber, transferBalance, changeKey, validKey, planPath, simNumber } from "../core/lines.js";
 import { DEFAULT_CONFIG, dial, display } from "../core/ussd.js";
 
 test("normalizeNumber", () => {
@@ -27,6 +27,12 @@ test("validKey", () => {
 
 test("normalizeNumber drops the old domestic 0", () => {
   for (const raw of ["(05) 1234567", "(05)1234567", "051234567", "0 5123 4567"]) assert.equal(normalizeNumber(raw), "51234567", raw);
+});
+
+test("simNumber is the SIM's own number when Android knows it and it is a Cubacel mobile", () => {
+  const sims = [{ subId: 3, number: "" }, { subId: 4, number: "+5351234567" }, { subId: 5, number: "+5378001234" }, { subId: 6 }];
+  assert.equal(simNumber(sims, 4), "51234567");
+  for (const subId of [3, 5, 6, 9]) assert.equal(simNumber(sims, subId), null, subId);
 });
 
 test("planPath chains the shortcut", () => {

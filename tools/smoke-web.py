@@ -353,27 +353,39 @@ def buy_plan_from_catalog(page):
     expect(page.locator("#plan-price")).to_have_text("240.00 CUP")
     expect(page.locator("#plan-short")).to_be_visible()
     expect(page.locator("#plans .reply")).to_contain_text("Marque 1 para confirmar")
-    page.locator("#plan-buy").dblclick()
-    expect(page.locator('#plan-result[data-outcome="dialer"]')).to_be_visible()
-    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
-    assert dials.count("*133*1*4*1#") == 1, dials
-    assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
-    # Back from the dialer at once: Cubacel's confirm may still be up, so nothing is read.
-    before = len(ussd_codes(page))
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_timeout(1500)
-    assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
-    # A minute later the line's balance is read again, once.
-    page.evaluate("""(() => { const a = ajeDev.store.state.attempts.find((x) => x.op === '133');
-        return ajeDev.store.patch(a.id, (x) => ({ ...x, startedAt: x.startedAt - 60000 })); })()""")
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').length > {before}")
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.wait_for_timeout(1500)
-    assert ussd_codes(page)[before:] == ["*222#"], ussd_codes(page)[before:]
     page.click("#plan-back")
     page.click("#plan-1-2")
     expect(page.locator("#plan-short")).to_have_count(0)
+    page.locator("#plan-buy").dblclick()
+    expect(page.locator('#plan-result[data-outcome="dialer"]')).to_contain_text("Esperando el SMS de Cubacel")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
+    assert dials.count("*133*1*2#") == 1, dials
+    assert not [c for c in ussd_codes(page) if c.startswith("*133")], ussd_codes(page)
+    # Cubacel's SMS confirms the purchase and brings the balance; nothing more is sent.
+    before = len(ussd_codes(page))
+    expect(page.locator('#plan-result[data-outcome="bought"]')).to_contain_text("Plan comprado: Plan toDus", timeout=10_000)
+    expect(page.locator("#plan-result")).to_contain_text("Saldo de la línea: 160.00 CUP")
+    assert ussd_codes(page)[before:] == [], ussd_codes(page)[before:]
+
+
+def charge_with_the_sims_number(page):
+    # Android reports the mock's second SIM number: it fills the field, to confirm once.
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=4")
+    expect(page.locator("#line-charge")).to_be_visible()
+    expect(page.locator("#lc-number")).to_have_value("51234567")
+    page.click("#lc-show")
+    expect(page.locator("#lc-qr svg")).to_be_visible()
+    expect(page.locator(".qrcap")).to_contain_text("51234567")
+    # Saved, it is not asked again, and it can be changed.
+    page.goto(page.url.split("#")[0] + "#/home")
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=4")
+    expect(page.locator("#lc-number")).to_have_count(0)
+    expect(page.locator("#lc-saved")).to_contain_text("51234567")
+    page.click("#lc-change")
+    expect(page.locator("#lc-number")).to_have_value("51234567")
+    page.fill("#lc-number", "52222222")
+    page.click("#lc-show")
+    expect(page.locator(".qrcap")).to_contain_text("52222222")
 
 
 def charge_by_qr(page):
@@ -561,7 +573,7 @@ def telemetry_history_folds(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, buy_plan_from_catalog, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login, scanner_without_reader]
 
 
 def main():

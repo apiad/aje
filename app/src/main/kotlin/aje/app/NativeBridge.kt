@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.webkit.WebView
 import androidx.webkit.JavaScriptReplyProxy
@@ -16,6 +18,7 @@ import org.json.JSONObject
 private val PERMISSIONS = arrayOf(
     Manifest.permission.CALL_PHONE,
     Manifest.permission.READ_PHONE_STATE,
+    Manifest.permission.READ_PHONE_NUMBERS,
     Manifest.permission.RECEIVE_SMS,
 )
 
@@ -110,6 +113,7 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
             JSONObject()
                 .put("callPhone", granted(Manifest.permission.CALL_PHONE))
                 .put("readPhoneState", granted(Manifest.permission.READ_PHONE_STATE))
+                .put("readPhoneNumbers", granted(Manifest.permission.READ_PHONE_NUMBERS))
                 .put("receiveSms", granted(Manifest.permission.RECEIVE_SMS)),
         )
     }
@@ -134,12 +138,24 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
     @SuppressLint("MissingPermission")
     private fun sims(): JSONArray = try {
         JSONArray().apply {
-            activity.getSystemService(SubscriptionManager::class.java).activeSubscriptionInfoList.orEmpty().forEach {
-                put(JSONObject().put("subId", it.subscriptionId).put("slot", it.simSlotIndex).put("carrier", it.carrierName?.toString() ?: ""))
+            val sm = activity.getSystemService(SubscriptionManager::class.java)
+            sm.activeSubscriptionInfoList.orEmpty().forEach {
+                put(JSONObject().put("subId", it.subscriptionId).put("slot", it.simSlotIndex).put("carrier", it.carrierName?.toString() ?: "")
+                    .put("number", number(sm, it)))
             }
         }
     } catch (_: SecurityException) {
         JSONArray()
+    }
+
+    /** The SIM's own number, which many SIMs do not carry: "" when Android does not know it or may not tell. */
+    @SuppressLint("MissingPermission")
+    @Suppress("DEPRECATION")
+    private fun number(sm: SubscriptionManager, info: SubscriptionInfo): String = try {
+        if (Build.VERSION.SDK_INT >= 33) sm.getPhoneNumber(info.subscriptionId) else info.number.orEmpty()
+    } catch (_: Exception) {
+        // Not allowed, a SIM gone since the list was read, or no subscription service: no number.
+        ""
     }
 
     private fun reply(proxy: JavaScriptReplyProxy, id: Int, result: Any) =
