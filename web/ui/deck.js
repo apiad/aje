@@ -25,7 +25,7 @@ const ACTIONS = {
   line: [
     ["mobile-balance", "Saldo móvil", "phone"],
     ["soon", "Recargar", "bolt"],
-    ["soon", "Comprar plan", "plan"],
+    ["plans", "Comprar plan", "plan"],
     ["line-transfer", "Pasar saldo", "send"],
   ],
 };

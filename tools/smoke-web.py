@@ -324,6 +324,30 @@ def line_sends(page):
     return page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial' && c.args.code.startsWith('*234*1*')).length")
 
 
+def ussd_codes(page):
+    return page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
+
+
+def buy_plan_via_133(page):
+    page.goto(page.url.split("#")[0] + "#/plans?sub=3")
+    expect(page.locator("#plans")).to_be_visible()
+    expect(page.locator("#plan-back")).to_be_hidden()
+    page.click("#plan-opt-1")
+    expect(page.locator("#plan-opt-0")).to_have_count(0)
+    expect(page.locator("#plan-back")).to_be_visible()
+    page.click("#plan-opt-2")
+    expect(page.locator("#plan-buy")).to_contain_text("CUP")
+    page.locator("#plan-buy").dblclick()
+    expect(page.locator('#plan-result[data-outcome="bought"]')).to_be_visible(timeout=10_000)
+    codes = ussd_codes(page)
+    assert codes.count("*133*1*2*1#") == 1, codes
+    page.wait_for_function("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code === '*222#'")
+    page.click("#plan-back")
+    page.click("#plan-back")
+    expect(page.locator("#plan-opt-4")).to_be_visible()
+    expect(page.locator("#plan-back")).to_be_hidden()
+
+
 def line_transfer_by_number(page):
     open_line_transfer(page)
     page.fill("#lt-num", "+53 5555 5555")
@@ -343,6 +367,8 @@ def line_transfer_by_number(page):
     page.keyboard.press("Escape")
     assert page.evaluate("ajeDev.store.state.attempts[0].op") == "234"
     assert page.evaluate("ajeDev.store.state.attempts[0].state") == "verified"
+    # The verified transfer reads the line's balance again.
+    page.wait_for_function("ajeDev.bridge.calls.some((c) => c.method === 'sendUssd' && c.args.code === '*222#')")
     page.goto(page.url.split("#")[0] + "#/history")
     expect(page.locator(".row").first).to_contain_text("Saldo a 55555555")
 
@@ -416,7 +442,7 @@ def no_key_double_tap_sends_once(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once,
-         line_transfer_by_number, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
+         line_transfer_by_number, buy_plan_via_133, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
 
 
 def main():
