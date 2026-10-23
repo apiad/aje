@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openStore, memoryBackend } from "../core/store.js";
-import { parseBankSms } from "../core/sms.js";
+import { parseBankSms, parseLineSms } from "../core/sms.js";
 import { SMS } from "./helpers.js";
 
 const MIN = 60_000;
@@ -147,4 +147,38 @@ test("the update channel defaults to stable, and the last check is kept", async 
   assert.deepEqual(s.state.update, { checkedAt: null, available: null });
   await s.setUpdate({ checkedAt: 9, available: { version: "1.0.1" } });
   assert.equal((await openStore(backend)).state.update.available.version, "1.0.1");
+});
+
+test("verifyLineTransfer matches number and amount", async () => {
+  const s = await openStore(memoryBackend(), { now: () => 0 });
+  await s.add(attempt({ id: 1, op: "234", subId: 3, to: "56666666", amount: 10, startedAt: 1 * MIN }));
+  await s.add(attempt({ id: 2, op: "234", subId: 3, to: "55555555", amount: 25, startedAt: 2 * MIN }));
+  const latency = await s.verifyLineTransfer(parseLineSms(SMS.LINE_SENT), 3 * MIN);
+  assert.equal(latency, MIN);
+  assert.equal(s.state.attempts.find((a) => a.id === 2).state, "verified");
+  assert.equal(s.state.attempts.find((a) => a.id === 1).state, "sent");
+});
+
+test("verifyLineTransfer ignores old attempts", async () => {
+  const s = await openStore(memoryBackend(), { now: () => 0 });
+  await s.add(attempt({ id: 1, op: "234", subId: 3, to: "55555555", amount: 25, startedAt: 0 }));
+  assert.equal(await s.verifyLineTransfer(parseLineSms(SMS.LINE_SENT), 21 * MIN), null);
+  assert.equal(s.state.attempts[0].state, "sent");
+});
+
+test("addReceived records an incoming transfer", async () => {
+  const s = await openStore(memoryBackend(), { now: () => 0 });
+  await s.add(attempt({ id: 1 }));
+  await s.addReceived(parseLineSms(SMS.LINE_RECEIVED), 5 * MIN);
+  const a = s.state.attempts[0];
+  assert.deepEqual([a.op, a.state, a.to, a.amount, a.verifiedAt], ["234-in", "verified", "56666666", 25, 5 * MIN]);
+});
+
+test("lineNumbers persist", async () => {
+  const backend = memoryBackend();
+  const a = await openStore(backend);
+  assert.deepEqual(a.state.settings.lineNumbers, {});
+  await a.setLineNumber(3, "55555555");
+  const b = await openStore(backend);
+  assert.deepEqual(b.state.settings.lineNumbers, { 3: "55555555" });
 });

@@ -8,7 +8,7 @@ const HISTORY = 50;
 const SEEN = 50;
 
 const ATTEMPT = {
-  id: null, startedAt: null, code: "", state: "sent", op: "46", cardId: null, to: null, amount: null,
+  id: null, startedAt: null, code: "", state: "sent", op: "46", cardId: null, subId: null, to: null, amount: null,
   transactionId: null, reply: null, failureCode: null, accounting: null, available: null, verifiedAt: null,
 };
 
@@ -24,7 +24,7 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, plans: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
+    settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
     cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, seenSms: [],
   };
@@ -100,6 +100,25 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         available: sms.remaining ? formatMoney(sms.remaining) : null, verifiedAt: at,
       }));
       return at - pending.startedAt;
+    },
+
+    /** Verifies the pending balance transfer to this number for this amount. Returns the latency, or null. */
+    async verifyLineTransfer(sms, at = now()) {
+      const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);
+      if (!pending) return null;
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
+      return at - pending.startedAt;
+    },
+
+    /** Records balance another line passed to this one; `to` holds the sender's number. */
+    addReceived(sms, at = now()) {
+      return store.add({ startedAt: at, state: "verified", op: "234-in", to: sms.number, amount: sms.amount.cents / 100, verifiedAt: at });
+    },
+
+    /** The number of one of the phone's own lines, which the phone rarely knows. */
+    async setLineNumber(subId, number) {
+      state.settings = { ...state.settings, lineNumbers: { ...state.settings.lineNumbers, [subId]: number } };
+      await commit();
     },
 
     async setMobileBalance(subId, value, details = null) {
