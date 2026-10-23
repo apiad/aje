@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMock } from "../mock.js";
+import { parseMenu, purchaseOutcome } from "../core/lines.js";
 
 const until = async (cond) => { for (let i = 0; i < 50 && !cond(); i++) await new Promise((r) => setTimeout(r, 2)); };
 
@@ -55,4 +56,17 @@ test("the mock contact picker answers a sample contact, or what the test sets", 
   m.setNextContact({ name: "Oficina", number: "7 800 0000" });
   assert.deepEqual(await m.pickContact(), { name: "Oficina", number: "7 800 0000" });
   assert.deepEqual(await m.pickContact(), { name: "Ben", number: "+53 5100 0001" });
+});
+
+test("the mock walks a *133 plan tree, and a purchase takes the price off the balance", async () => {
+  const m = createMock({ delayMs: 0 });
+  const at = async (code) => (await m.sendUssd(3, code)).reply;
+  assert.equal(parseMenu(await at("*133#")).options.length, 4);
+  assert.equal(parseMenu(await at("*133*1#")).kind, "menu");
+  const confirm = parseMenu(await at("*133*1*2#"));
+  assert.equal(confirm.kind, "confirm");
+  assert.match(confirm.price, /CUP/);
+  assert.equal(purchaseOutcome(await at("*133*1*2*1#")), "bought");
+  assert.match(await at("*222#"), /Saldo: 135\.00 CUP/);
+  assert.equal(parseMenu(await at("*133*9#")), null);
 });
