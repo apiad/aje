@@ -749,3 +749,18 @@ test("every incoming kind of the vectors gives one item, and a row unless it is 
   assert.equal(w.store.state.inbox.length, given.length);
   assert.equal(w.store.state.attempts.length, given.filter((v) => v.out.kind !== "plan-expiry").length);
 });
+
+test("a notice reports its kind when created and when opened, never its amount or number", async () => {
+  const w = await world();
+  const v = vector("card-received");
+  await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t });
+  await w.wf.openNotice(v.id);
+  assert.equal(w.store.state.inbox[0].state, "seen");
+  // Opening it again reports nothing more.
+  await w.wf.openNotice(v.id);
+  await w.telemetry.idle();
+  const events = w.posted.map((p) => JSON.parse(p)).filter((e) => e.event === "notice");
+  assert.deepEqual(events.map((e) => [e.kind, e.ok]), [["card-received", false], ["card-received", true]]);
+  const sent = JSON.stringify(w.posted);
+  for (const secret of ["1500", "51234567", "0001", "KW123"]) assert.ok(!sent.includes(secret), secret);
+});

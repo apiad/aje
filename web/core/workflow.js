@@ -387,10 +387,20 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  /** The inbox item of a notice; `row` is the history row it opens, if any. */
-  function addNotice(notice, id, row, at) {
+  /** The inbox item of a notice; `row` is the history row it opens, if any. Telemetry gets only its kind. */
+  async function addNotice(notice, id, row, at) {
     const { kind, amount, number, account, plan } = notice;
-    return store.addNotice({ id, kind, at, amount, number, account, plan, rowId: row?.id ?? null, state: "pending" });
+    if (await store.addNotice({ id, kind, at, amount, number, account, plan, rowId: row?.id ?? null, state: "pending" })) {
+      telemetry.event("notice", { kind, ok: false });
+    }
+  }
+
+  /** The person opened a notice: it is seen, and telemetry learns a notice of its kind was opened. */
+  async function openNotice(id) {
+    const n = store.state.inbox.find((x) => x.id === id);
+    if (!n || n.state !== "pending") return;
+    await store.setNoticeState(id, "seen");
+    telemetry.event("notice", { kind: n.kind, ok: true });
   }
 
   /** The one saved card whose last four match the account a received transfer names, else null. */
@@ -426,5 +436,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
 }

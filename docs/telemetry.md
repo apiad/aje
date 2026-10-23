@@ -48,6 +48,11 @@ longer reads `*133` over the API; the collector still accepts it from older buil
 after a plan purchase goes out as an `sms` event of kind `plan`, with its redacted text, whether it
 confirmed a purchase (`ok`) and how long after the dial it came.
 
+A notice of money or balance that came in (`web/core/notice.js`) sends a `notice` event when it
+enters the inbox, with `ok: false`, and again when the person opens it, with `ok: true`. It
+carries only `kind` (`card-received`, `line-received`, `recharge-intl`, `recharge`, `plan-gift`,
+`plan-expiry`): never the amount, the number, the account or the text.
+
 ## The collector
 
 `telemetry/collector.py`, standard library only, behind Caddy at `https://aje.apiad.net/t`.

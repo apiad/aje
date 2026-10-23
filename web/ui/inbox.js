@@ -14,7 +14,7 @@ export function renderInbox(ctx, r) {
   const inbox = ctx.store.state.inbox;
 
   const open = async (n, to) => {
-    if (n.state === "pending") await ctx.store.setNoticeState(n.id, "seen");
+    await ctx.workflow.openNotice(n.id);
     ctx.go(to);
   };
   const item = (n) => {
