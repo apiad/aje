@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeNumber, transferBalance, changeKey, validKey } from "../core/lines.js";
+import { normalizeNumber, transferBalance, changeKey, validKey, planPath, parseMenu, purchaseOutcome } from "../core/lines.js";
+import { PLAN } from "./helpers.js";
 import { DEFAULT_CONFIG, dial, display } from "../core/ussd.js";
 
 test("normalizeNumber", () => {
@@ -27,4 +28,48 @@ test("validKey", () => {
 
 test("normalizeNumber drops the old domestic 0", () => {
   for (const raw of ["(05) 1234567", "(05)1234567", "051234567", "0 5123 4567"]) assert.equal(normalizeNumber(raw), "51234567", raw);
+});
+
+test("planPath chains the shortcut", () => {
+  assert.equal(dial(planPath([]), DEFAULT_CONFIG, 0), "*133#");
+  assert.equal(dial(planPath(["1", "2"]), DEFAULT_CONFIG, 0), "*133*1*2#");
+});
+
+test("parseMenu reads numbered options with ., ) or -", () => {
+  const m = parseMenu(PLAN.MENU);
+  assert.equal(m.kind, "menu");
+  assert.equal(m.title, "Compra de planes:");
+  assert.deepEqual(m.options.map((o) => o.key), ["1", "2", "3", "4"]);
+  assert.equal(m.options[3].label, "Plan Amigos");
+  assert.deepEqual(parseMenu(PLAN.SUBMENU).options.map((o) => o.key), ["1", "2", "3", "0"]);
+  assert.equal(parseMenu(PLAN.SUBMENU).options[1].label, "2.5 GB por 50 CUP");
+  assert.deepEqual(parseMenu("Elija:\n1) Uno\n2) Dos").options.map((o) => o.label), ["Uno", "Dos"]);
+});
+
+test("a confirm screen is not a menu", () => {
+  assert.deepEqual(parseMenu(PLAN.CONFIRM), { kind: "confirm", text: PLAN.CONFIRM, price: "25.00 CUP" });
+});
+
+test("parseMenu returns null for anything else", () => {
+  for (const r of [PLAN.BOUGHT, "Opcion no valida", "", "1. Solo una opcion"]) assert.equal(parseMenu(r), null, r);
+});
+
+test("purchaseOutcome", () => {
+  assert.equal(purchaseOutcome(PLAN.BOUGHT), "bought");
+  assert.equal(purchaseOutcome(PLAN.REFUSED), "refused");
+  assert.equal(purchaseOutcome("Opcion no valida"), null);
+});
+
+// Review finding 1: every confirm layout must read as a confirm, never as a menu whose option 1 buys.
+test("confirm screens in other layouts are confirms", () => {
+  for (const r of ["Desea comprar 1 GB por 25 CUP?\n1-Sí\n2-No", "1 GB por 25 CUP\n1-Confirmo\n2-Cancelar",
+    "1 GB por 25 CUP\n1-OK\n2-Cancelar", "1 GB por 25 CUP\n1-Comprar\n2-Atras", "Plan de 1 GB\n1. Si\n2. No"]) {
+    assert.equal(parseMenu(r)?.kind, "confirm", r);
+  }
+  assert.equal(parseMenu(PLAN.SUBMENU).kind, "menu");
+});
+
+// Review finding 8: the price is the plan's, not a balance mentioned before it.
+test("the confirm's price is the amount after por", () => {
+  assert.equal(parseMenu("Su saldo es 300 CUP. Va a comprar 1 GB por 25 CUP.\n1. Aceptar\n2. Cancelar").price, "25 CUP");
 });

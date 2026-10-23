@@ -153,8 +153,7 @@ test("verifyLineTransfer matches number and amount", async () => {
   const s = await openStore(memoryBackend(), { now: () => 0 });
   await s.add(attempt({ id: 1, op: "234", subId: 3, to: "56666666", amount: 10, startedAt: 1 * MIN }));
   await s.add(attempt({ id: 2, op: "234", subId: 3, to: "55555555", amount: 25, startedAt: 2 * MIN }));
-  const latency = await s.verifyLineTransfer(parseLineSms(SMS.LINE_SENT), 3 * MIN);
-  assert.equal(latency, MIN);
+  assert.deepEqual(await s.verifyLineTransfer(parseLineSms(SMS.LINE_SENT), 3 * MIN), { latencyMs: MIN, subId: 3 });
   assert.equal(s.state.attempts.find((a) => a.id === 2).state, "verified");
   assert.equal(s.state.attempts.find((a) => a.id === 1).state, "sent");
 });

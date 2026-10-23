@@ -1,0 +1,34 @@
+[
+  {
+    "in": "Datos:\n1-1 GB por 25 CUP\n2-2.5 GB por 50 CUP\n0-Atras",
+    "out": "Datos:\n1-1 GB por 25 CUP\n2-2.5 GB por 50 CUP\n0-Atras"
+  },
+  {
+    "in": "1. Saldo 5555-5555 por 25 CUP",
+    "out": "1. Saldo ####-#### por 25 CUP"
+  },
+  {
+    "in": "2. Plan Fulano 3GB",
+    "out": "2. Plan ‹w› 3AA"
+  },
+  {
+    "in": "Voz:\n1-10\n2-20\n3-30",
+    "out": "Voz:\n1-10\n2-20\n3-30"
+  },
+  {
+    "in": "Saldo: 250.50 CUP\n1. Datos\n2. Voz",
+    "out": "Saldo: ###.## CUP\n1. Datos\n2. Voz"
+  },
+  {
+    "in": "Su saldo es 300 CUP. Va a comprar 1 GB por 25 CUP.",
+    "out": "Su saldo es ### CUP. Va a comprar 1 GB por 25 CUP."
+  },
+  {
+    "in": "Plan vence 12/11/2026",
+    "out": "Plan vence ##/##/####"
+  },
+  {
+    "in": "Linea 5123456",
+    "out": "Linea #######"
+  }
+]

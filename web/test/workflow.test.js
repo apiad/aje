@@ -4,7 +4,7 @@ import { openStore, memoryBackend } from "../core/store.js";
 import { openTelemetry } from "../core/telemetry.js";
 import { createWorkflow, PIN_DAYS } from "../core/workflow.js";
 import { balanceFor } from "../core/accounts.js";
-import { fakeBridge, SMS, POSTPAID_REPLY } from "./helpers.js";
+import { fakeBridge, SMS, PLAN, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
 import { balance as balanceCode, link as linkCode } from "../core/ops.js";
 import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
 
@@ -505,4 +505,111 @@ test("changeLineKey falls back to the dialer when the API cannot follow the netw
   assert.deepEqual([r.ok, r.dialed], [false, true]);
   assert.equal(w.bridge.calls.at(-1).method === "dial" || w.bridge.calls.some((c) => c.method === "dial" && c.args.code === "*234*2*1234*4321#"), true);
   assert.equal(w.bridge.vault.has("line-key:3"), false);
+});
+
+test("a verified balance transfer reads the line's balance again", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.transferBalance(2, "55555555", 25, { key: "9876" });
+  w.clock.t += 16_000;
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_SENT, receivedAt: w.clock.t });
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "sendUssd", args: { subId: 2, code: "*222#" } });
+  assert.equal(w.store.state.mobileBalances[2], "250.50 CUP");
+});
+
+test("a transfer SMS that matches nothing reads no balance", async () => {
+  const w = await world([]);
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_SENT, receivedAt: w.clock.t });
+  assert.equal(w.bridge.calls.filter((c) => c.method === "sendUssd").length, 0);
+});
+
+test("refreshBalance swallows a failure and keeps the old figure", async () => {
+  const w = await world([() => { throw new Error("radio off"); }]);
+  await w.store.setMobileBalance(2, "10.00 CUP");
+  await w.wf.refreshBalance(2);
+  await w.store.setPlan(2, "NO-SUCH-PLAN");
+  await w.wf.refreshBalance(2);
+  assert.equal(w.store.state.mobileBalances[2], "10.00 CUP");
+});
+
+test("planMenu walks the tree and caches each level", async () => {
+  const w = await world([{ ok: true, reply: PLAN.MENU }, { ok: true, reply: PLAN.SUBMENU }]);
+  assert.equal((await w.wf.planMenu(2, [])).view.kind, "menu");
+  const r = await w.wf.planMenu(2, ["1"]);
+  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133#", "*133*1#"]);
+  assert.equal(r.view.options.length, 4);
+  assert.equal(w.store.state.planMenus[""].kind, "menu");
+  assert.equal(w.store.state.planMenus["1"].options[0].label, "1 GB por 25 CUP");
+});
+
+test("planMenu reports a failed USSD and caches nothing", async () => {
+  const w = await world([{ ok: false, failureCode: -2 }]);
+  assert.deepEqual(await w.wf.planMenu(2, []), { ok: false, failureCode: -2 });
+  assert.deepEqual(w.store.state.planMenus, {});
+});
+
+test("buyPlan confirms with 1 and reads the balance after", async () => {
+  const w = await world([{ ok: true, reply: PLAN.BOUGHT }, { ok: true, reply: PREPAID_REPLY }]);
+  const r = await w.wf.buyPlan(2, ["1", "1"]);
+  assert.equal(r.outcome, "bought");
+  assert.deepEqual(w.bridge.calls.map((c) => c.args.code), ["*133*1*1*1#", "*222#"]);
+  assert.equal(w.store.state.attempts[0].op, "133");
+  assert.equal(w.store.state.attempts[0].subId, 2);
+  assert.equal(w.store.state.attempts[0].state, "verified");
+});
+
+test("a refused purchase does not refresh", async () => {
+  const w = await world([{ ok: true, reply: PLAN.REFUSED }]);
+  const r = await w.wf.buyPlan(2, ["1", "1"]);
+  assert.equal(r.outcome, "refused");
+  assert.equal(r.reply, PLAN.REFUSED);
+  assert.equal(w.bridge.calls.length, 1);
+  assert.equal(w.store.state.attempts[0].state, "failed");
+});
+
+test("buyPlan dials when the network answers with a menu", async () => {
+  for (const reply of [{ ok: false, failureCode: -1 }, { ok: true, reply: PLAN.CONFIRM }]) {
+    const w = await world([reply]);
+    const r = await w.wf.buyPlan(2, ["1", "1"]);
+    assert.equal(r.outcome, "dialer");
+    assert.deepEqual(w.bridge.calls.at(-1), { method: "dial", args: { code: "*133*1*1*1#" } });
+    assert.equal(w.store.state.attempts[0].state, "dialer");
+  }
+});
+
+test("buyPlan reports an unknown reply and a failed USSD without dialing", async () => {
+  const a = await world([{ ok: true, reply: "Opcion no valida" }]);
+  const r = await a.wf.buyPlan(2, ["9"]);
+  assert.equal(r.outcome, "unknown");
+  assert.equal(r.reply, "Opcion no valida");
+  const b = await world([{ ok: false, failureCode: -2 }]);
+  assert.equal((await b.wf.buyPlan(2, ["9"])).outcome, "failed");
+  for (const w of [a, b]) assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
+});
+
+test("a *133 menu reaches telemetry with its digits; other replies carry no text", async () => {
+  const w = await world([{ ok: true, reply: PLAN.SUBMENU }, { ok: true, reply: "Opcion no valida" }]);
+  await w.wf.planMenu(2, ["1"]);
+  await w.wf.planMenu(2, ["9"]);
+  await w.telemetry.idle();
+  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu" && e.menu);
+  assert.equal(menus.length, 1);
+  assert.equal(menus[0].menu, PLAN.SUBMENU);
+  assert.equal(menus[0].kind, "menu");
+});
+
+// Review finding 2: a success reply that lists options is still a purchase, never a second dial.
+test("a purchase reply with options after it is bought, not dialed", async () => {
+  const w = await world([{ ok: true, reply: "Su compra se ha realizado con exito.\n1-Comprar otro\n2-Salir" }, { ok: true, reply: PREPAID_REPLY }]);
+  assert.equal((await w.wf.buyPlan(2, ["1", "1"])).outcome, "bought");
+  assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
+});
+
+// Review finding 5: a level the API cannot read still reaches telemetry, with no text.
+test("a *133 level that is neither menu nor confirm, or needs the dialer, is counted as none", async () => {
+  const w = await world([{ ok: true, reply: "Opcion no valida" }, { ok: false, failureCode: -1 }]);
+  await w.wf.planMenu(2, ["9"]);
+  await w.wf.planMenu(2, []);
+  await w.telemetry.idle();
+  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
+  assert.deepEqual(menus.map((e) => [e.kind, e.menu]), [["none", undefined], ["none", undefined]]);
 });

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMock } from "../mock.js";
+import { parseMenu, purchaseOutcome } from "../core/lines.js";
 
 const until = async (cond) => { for (let i = 0; i < 50 && !cond(); i++) await new Promise((r) => setTimeout(r, 2)); };
 
@@ -63,4 +64,23 @@ test("the mock update download reports progress up to the total", async () => {
   assert.deepEqual(await m.installUpdate("https://x/a.apk", "ab", (r, t) => seen.push([r, t])), { ok: true });
   assert.ok(seen.length >= 2);
   assert.deepEqual(seen.at(-1), [seen.at(-1)[1], seen.at(-1)[1]]);
+});
+
+test("the mock walks a *133 plan tree, and a purchase takes the price off the balance", async () => {
+  const m = createMock({ delayMs: 0 });
+  const at = async (code) => (await m.sendUssd(3, code)).reply;
+  assert.equal(parseMenu(await at("*133#")).options.length, 4);
+  assert.equal(parseMenu(await at("*133*1#")).kind, "menu");
+  const confirm = parseMenu(await at("*133*1*2#"));
+  assert.equal(confirm.kind, "confirm");
+  assert.match(confirm.price, /CUP/);
+  assert.equal(purchaseOutcome(await at("*133*1*2*1#")), "bought");
+  assert.match(await at("*222#"), /Saldo: 135\.00 CUP/);
+  assert.equal(parseMenu(await at("*133*9#")), null);
+});
+
+test("in ?mock=ussd-menu the *133 levels answer -1, as a network menu does", async () => {
+  const m = createMock({ delayMs: 0, mode: "ussd-menu" });
+  assert.deepEqual(await m.sendUssd(3, "*133#"), { ok: false, failureCode: -1 });
+  assert.equal((await m.sendUssd(3, "*222#")).ok, true);
 });

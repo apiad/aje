@@ -1,18 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { VOCAB, fold, redact, reduceStack } from "../core/redact.js";
-import { SMS, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
+import { VOCAB, fold, redact, redactMenu, reduceStack } from "../core/redact.js";
+import { SMS, PLAN, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const VECTORS = JSON.parse(read("redact-vectors.json"));
+const MENU_VECTORS = JSON.parse(read("menu-vectors.json"));
 
 test("each shared vector redacts to its expected text", () => {
   for (const { in: text, out } of VECTORS) assert.equal(redact(text, VOCAB), out);
 });
 
 test("the known templates leave no digit and no word outside the vocabulary", () => {
-  for (const text of [...Object.values(SMS), PREPAID_REPLY, POSTPAID_REPLY]) {
+  for (const text of [...Object.values(SMS), ...Object.values(PLAN), PREPAID_REPLY, POSTPAID_REPLY]) {
     const out = redact(text, VOCAB);
     assert.doesNotMatch(out, /\p{Nd}/u);
     assert.doesNotMatch(out, /‹w›/u, `a template word is missing from the vocabulary: ${out}`);
@@ -40,4 +41,9 @@ test("a stack keeps function, file, line and column, without the app's origin", 
 test("a stack is cut to 20 frames", () => {
   const stack = Array.from({ length: 30 }, (_, i) => `    at f${i} (https://appassets.androidplatform.net/assets/web/a.js:${i}:1)`).join("\n");
   assert.equal(reduceStack(stack).split("\n").length, 20);
+});
+
+test("a menu keeps its option numbers and prices but not a phone number or an unknown word", () => {
+  for (const { in: text, out } of MENU_VECTORS) assert.equal(redactMenu(text, VOCAB), out);
+  for (const { out } of MENU_VECTORS) assert.equal(redactMenu(out, VOCAB), out);
 });

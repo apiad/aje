@@ -204,3 +204,7 @@ progress.dl{display:block;width:100%;height:6px;margin:10px 0 0;border:0;border-
 progress.dl[hidden]{display:none}
 progress.dl::-webkit-progress-bar{background:var(--raised)}
 progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
+/* Comprar plan: the *133 options as rows, dimmed while a level loads. */
+#plans .row{width:100%;color:var(--bone);font:inherit;text-align:left}
+#plans .row .tx{flex:1}
+#plans .opts.busy{opacity:.5;pointer-events:none}

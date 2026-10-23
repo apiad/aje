@@ -4,12 +4,12 @@
 // through redact and stacks through reduceStack before they are queued, so the queue, the history
 // in Settings and the collector only ever see the redacted form. See docs/telemetry.md.
 
-import { redact, reduceStack } from "./redact.js";
+import { redact, redactMenu, reduceStack } from "./redact.js";
 
 /** Mirrored in telemetry/collector.py; web/test/telemetry.test.js checks the two match. */
 export const ALLOWED = new Set([
   "op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines",
-  "text", "error", "stack",
+  "text", "error", "stack", "menu",
 ]);
 
 const LOG_SIZE = 200;
@@ -27,6 +27,7 @@ function clean(fields) {
   for (const [k, v] of Object.entries(fields)) {
     if (v === null || v === undefined) continue;
     if (k === "text" || k === "error") e[k] = redact(String(v));
+    else if (k === "menu") e[k] = redactMenu(String(v));
     else if (k === "stack") e[k] = reduceStack(v);
     else if (k === "latency_ms" || k === "age_ms") e[k] = round100(v);
     else e[k] = v;
