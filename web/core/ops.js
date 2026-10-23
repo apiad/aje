@@ -35,6 +35,37 @@ export function transfer(from, toPan, amount) {
   ]));
 }
 
+// The Tarjeta Clásica (agency 08). Its operations share three leading fields: a type, the card
+// number, and the index of the bag selected. With one CUP bag, both are 1.
+const CLASICA_TYPE = "1";
+const CLASICA_BAG = "1";
+
+/**
+ * Opcode 111: associates a Clásica with the authorization number and terminal id printed on an
+ * ATM or POS receipt of an operation made with the card. No key or coordinates card is involved.
+ */
+export function associateClasica(pan, authorization, terminal) {
+  if (!/^976003[0-9]{10}$/.test(pan)) throw new RangeError("a Clásica number starts with 976003");
+  if (!/^[0-9]{6}$/.test(authorization)) throw new RangeError("the authorization number has 6 digits");
+  if (!/^[0-9]{8}$/.test(terminal)) throw new RangeError("the terminal id has 8 digits");
+  return encoded("111", fieldsOf(["08", pan, authorization, terminal]));
+}
+
+/** Opcode 46 for a Clásica: its balance, as `type*account*bag`. */
+export const clasicaBalance = (card) => encoded("46", fieldsOf([CLASICA_TYPE, card.pan, CLASICA_BAG]));
+
+/** Opcode 48 for a Clásica: its last operations, with the same shape as the balance. */
+export const clasicaMovements = (card) => encoded("48", fieldsOf([CLASICA_TYPE, card.pan, CLASICA_BAG]));
+
+/**
+ * Opcode 45 for a Clásica: transfers whole CUP to a phone's account, with no key. The fields are
+ * `type*account*destination*amount*toMyPhone*confirmPhone*balanceBySms*bag`, the flags left off.
+ */
+export function clasicaTransfer(card, toAccount, amount) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new RangeError("the amount is a positive whole number");
+  return encoded("45", fieldsOf([CLASICA_TYPE, card.pan, toAccount, String(amount), "0", "0", "0", CLASICA_BAG]));
+}
+
 /**
  * Opcode 49: registers the phone with a bank, once per bank, with the number of the bank's
  * coordinates card (Telebanca, Multibanca) and the holder's data, in each bank's form order.
