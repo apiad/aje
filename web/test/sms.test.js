@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBankSms, formatMoney, transferMatches, senderTag, BANKISH } from "../core/sms.js";
+import { parseBankSms, parseLineSms, formatMoney, transferMatches, senderTag, BANKISH } from "../core/sms.js";
 import { SMS } from "./helpers.js";
 
 test("balance report", () => {
@@ -61,4 +61,12 @@ test("a long number is a person and is never reported", () => {
   assert.equal(senderTag("55555555"), "number");
   assert.ok(BANKISH.test("Banco Metropolitano: un aviso"));
   assert.ok(!BANKISH.test("Hola, nos vemos mañana"));
+});
+
+test("Cubacel balance transfer texts", () => {
+  assert.deepEqual(parseLineSms(SMS.LINE_SENT), { kind: "line-sent", number: "55555555", amount: { cents: 2500, currency: "CUP" } });
+  assert.deepEqual(parseLineSms(SMS.LINE_RECEIVED), { kind: "line-received", number: "56666666", amount: { cents: 2500, currency: "CUP" } });
+  for (const k of ["BALANCE", "TRANSFER", "AUTH"]) assert.equal(parseLineSms(SMS[k]), null, k);
+  assert.equal(parseBankSms(SMS.LINE_SENT), null);
+  assert.ok(BANKISH.test("Usted ha recibido 10.00 CUP"));
 });

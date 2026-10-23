@@ -4,7 +4,7 @@
 const MONEY = String.raw`(CR|DB)?\s*([0-9][0-9.,]*)\s*(CUP|CUC|USD|MLC|EUR)`;
 
 /** Words that mark a text as probably from a bank, for reporting texts the parser does not know. */
-export const BANKISH = /banco|bpa|bandec|metropolitano|transferm|saldo|autentic|pagos? m[oó]vil/i;
+export const BANKISH = /banco|bpa|bandec|metropolitano|transferm|saldo|autentic|pagos? m[oó]vil|cubacel|etecsa|transferid|recibid/i;
 
 export function parseBankSms(body) {
   const text = body.replaceAll(" ", " ");
@@ -25,6 +25,18 @@ export function parseBankSms(body) {
   }
   if (/se ha autenticado en la plataforma de pagos m[oó]viles/i.test(text)) return { kind: "auth", bank };
   return null;
+}
+
+/** The line of a Cubacel balance transfer text: what was sent or received, from or to which number. */
+const LINE = new RegExp(String.raw`(transferido|recibido)\s+([0-9][0-9.,]*)\s*CUP\s+(?:al|del)\s+(?:n[uú]mero\s+)?(?:\+?53)?([56]\d{7})`, "i");
+
+/** Reads a Cubacel balance transfer SMS; anything else returns null. */
+export function parseLineSms(body) {
+  const m = LINE.exec(body.replaceAll("\u00a0", " "));
+  if (!m) return null;
+  const cents = centsOf(m[2]);
+  if (cents === null) return null;
+  return { kind: /^t/i.test(m[1]) ? "line-sent" : "line-received", number: m[3], amount: { cents, currency: "CUP" } };
 }
 
 /** `{cents: -500, currency: "CUP"}` as `-5.00 CUP`. */

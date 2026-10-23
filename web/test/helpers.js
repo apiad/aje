@@ -13,6 +13,9 @@ export const SMS = {
     " Saldo restante: CR 1134.56 CUP ",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
+  // Cubacel balance transfers. The wording is a guess until a phone captures the real texts.
+  LINE_SENT: "Usted ha transferido 25.00 CUP al numero 55555555. Su saldo es 120.50 CUP.",
+  LINE_RECEIVED: "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP.",
 };
 
 export const PREPAID_REPLY =
