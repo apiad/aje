@@ -62,10 +62,10 @@ def _shape(token):
 
 def redact(text, vocab):
     """The same rules as web/core/redact.js: shapes for words with digits, ‹w› outside the vocabulary."""
-    parts = re.split(r"((?:[^\W_]|[̀-ͯ])+)", text)
+    parts = re.split(r"(‹w›|(?:[^\W_]|[̀-ͯ])+)", text)
     out = []
     for i, tok in enumerate(parts):
-        if i % 2 == 0:
+        if i % 2 == 0 or tok == "‹w›":
             out.append(tok)
         elif any(unicodedata.category(c).startswith("N") for c in tok):
             out.append(_shape(tok))
