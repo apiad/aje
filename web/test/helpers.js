@@ -13,6 +13,10 @@ export const SMS = {
     " Saldo restante: CR 1134.56 CUP ",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
+  // MiTransfer's login SMS, from PAGOxMOVIL; telemetry brought it with the wallet's name hidden, and
+  // its length (160) fits "Mi Transfer".
+  MITRANSFER_AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Monedero Mi Transfer. " +
+    "Puede comenzar a utilizar nuestros servicios de pagos a traves del movil.",
   // Cubacel balance transfers, from sender ETECSA. LINE_SENT follows a text seen on a phone;
   // LINE_RECEIVED is still a guess.
   LINE_SENT: "Usted ha transferido 25 CUP al numero 55555555. Saldo principal 1234.56 CUP, linea activa hasta 2027-01-01, vence 2027-02-01",

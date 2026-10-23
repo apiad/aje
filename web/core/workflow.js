@@ -90,8 +90,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       return { ok: false, failureCode: r.failureCode };
     }
     const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(bank), pin, PIN_DAYS).catch(() => false) : false;
-    // MiTransfer sends no SMS for a login: a reply that does not refuse it opens the session.
-    if (BANKS[bank]?.replyConfirmsLogin && !REFUSED.test(r.reply) && !/debe autentic|no es posible/i.test(r.reply)) {
+    // A MiTransfer reply that does not refuse the login opens the session, unless it says to wait for
+    // the SMS, as phones have seen it do: then that SMS opens it and reruns the balance (handleSms).
+    if (BANKS[bank]?.replyConfirmsLogin && !REFUSED.test(r.reply) && !/debe autentic|no es posible|espere un sms/i.test(r.reply)) {
       await store.authenticated(bank, now());
       const retry = store.state.retryBalance;
       if (retry) {

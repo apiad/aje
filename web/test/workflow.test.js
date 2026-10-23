@@ -764,3 +764,32 @@ test("a notice reports its kind when created and when opened, never its amount o
   const sent = JSON.stringify(w.posted);
   for (const secret of ["1500", "51234567", "0001", "KW123"]) assert.ok(!sent.includes(secret), secret);
 });
+
+// Seen on a phone: MiTransfer answers op 40 with "espere un sms", and its SMS opens the session.
+const MITRANSFER_WAIT = "Su solicitud esta siendo procesada, espere un sms con los datos de usuario y fecha de la transaccion realizada.";
+
+test("a MiTransfer login that says to wait for the SMS opens the session only when the SMS comes", async () => {
+  const w = await world([
+    { ok: true, reply: MITRANSFER_WAIT },
+    { ok: true, reply: "Saldo de la cuenta MiTransfer: 1 500,00 CUP" },
+  ]);
+  const card = await w.store.addCard(CLASICA_CARD);
+  const r = await w.wf.login("MITRANSFER", "1234", { retryCardId: card.id });
+  assert.equal(r.ok, true);
+  assert.equal(w.store.state.banks.MITRANSFER?.authenticatedAt ?? null, null);
+  assert.equal(w.bridge.calls.filter((c) => c.method === "sendUssd").length, 1);
+  w.clock.t += MIN;
+  assert.deepEqual(await w.sms(SMS.MITRANSFER_AUTH), { kind: "auth", bank: "MITRANSFER" });
+  assert.equal(w.store.state.banks.MITRANSFER.authenticatedAt, w.clock.t);
+  const sent = w.bridge.calls.filter((c) => c.method === "sendUssd");
+  assert.equal(sent.length, 2);
+  assert.ok(sent[1].args.code.startsWith("*444*46*"));
+  assert.equal(w.store.state.retryBalance, null);
+});
+
+test("MiTransfer's login SMS is not reported as an unknown bank text", async () => {
+  const w = await world();
+  await w.sms(SMS.MITRANSFER_AUTH);
+  await w.telemetry.idle();
+  assert.ok(!JSON.stringify(w.posted).includes("unparsed_bank"));
+});
