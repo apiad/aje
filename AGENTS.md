@@ -72,5 +72,8 @@ off until the person turns it on; the script checks it is there.
   `ALLOWED` in `web/core/telemetry.js`; `telemetry/collector.py` mirrors it and redacts again.
   The collector publishes every row, so the vocabulary never takes a name. See `docs/telemetry.md`.
 - The native shell gains no logic and no new primitive without a change to the spec.
+- The shell reads incoming-money SMS with `SmsNotice.kt`, a port of `web/core/notice.js`; both are held
+  to `web/test/fixtures/notice-vectors.json`, so a change to one reader changes the other and passes
+  `./gradlew :app:testDebugUnitTest` too.
 - Signing material and the telemetry token live in `keystore.properties`, which is
   gitignored and points outside the repo.

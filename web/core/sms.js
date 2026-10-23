@@ -61,9 +61,16 @@ const NUM = String.raw`([0-9][0-9.,]*)\s*CUP`;
 const PLAN = new RegExp(String.raw`Se\s+ha\s+${W}(?:el\s+)?Plan\s+(.+?)\s+v[aá]lido\s+por\s+(\d+)\s+d[ií]as[^.]*\.\s*Se\s+${W}${NUM}` +
   String.raw`(?:[.,;]?\s*Saldo\s+(?:\S+\s+){0,2}?${NUM})?`, "i");
 
+// Cubacel's 2025 format, which an old line may still send: "Ha comprado [un plan de] <name> valido por
+// <n> dias, … Se desconto <price> [CUP] [de su cuenta principal]. Saldo actual <balance> [CUP]".
+const FIGURE = String.raw`(\d+(?:[.,]\d+)*)`;
+const PLAN_2025 = new RegExp(String.raw`Ha\s+comprado\s+(?:un\s+plan\s+de\s+)?(.+?)\s+v[aá]lido\s+por\s+(\d+)\s+d[ií]as[^.]*\.\s*` +
+  String.raw`Se\s+descont[oó]\s+${FIGURE}(?:\s*CUP)?(?:\s+de\s+su\s+cuenta\s+principal)?(?:[.,;]?\s*Saldo\s+actual\s+${FIGURE})?`, "i");
+
 /** Reads a plan purchase SMS; anything else returns null. */
 export function parsePlanSms(body) {
-  const m = PLAN.exec(body.replaceAll("\u00a0", " "));
+  const text = body.replaceAll("\u00a0", " ");
+  const m = PLAN.exec(text) ?? PLAN_2025.exec(text);
   const cents = m && centsOf(m[3]);
   if (!m || cents === null) return null;
   const left = m[4] ? centsOf(m[4]) : null;
@@ -94,11 +101,15 @@ function money(text, label) {
   return { cents: sign?.toUpperCase() === "DB" ? -cents : cents, currency: currency.toUpperCase() };
 }
 
-/** `25904.29` or `25,904.29` to cents. A lone comma with two digits after it is a decimal comma. */
-function centsOf(number) {
+/**
+ * `25904.29` or `25,904.29` to cents. A lone comma with two digits after it is a decimal comma.
+ * A whole part over 12 digits is no amount anyone holds, and is refused (SmsNotice.kt does the same).
+ */
+export function centsOf(number) {
   const n = /^\d+,\d{2}$/.test(number) ? number.replace(",", ".") : number.replaceAll(",", "");
   const parts = n.split(".");
   const int = (s) => (/^\d+$/.test(s) ? Number(s) : null);
+  if (parts[0].length > 12) return null;
   if (parts.length === 1) return int(parts[0]) === null ? null : int(parts[0]) * 100;
   if (parts.length === 2) {
     const whole = int(parts[0]);

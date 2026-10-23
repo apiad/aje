@@ -8,6 +8,7 @@ import { renderAddCard } from "./ui/addcard.js";
 import { askTelemetry } from "./ui/consent.js";
 import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
+import { renderInbox } from "./ui/inbox.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
@@ -34,12 +35,13 @@ const SCREENS = {
   "line-charge": { render: renderLineCharge },
   add: { render: renderAddCard },
   history: { render: renderHistory, live: true },
+  inbox: { render: renderInbox, live: true },
   pay: { render: soon("Pagar un servicio") },
   qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "inbox"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
 const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
@@ -84,6 +86,8 @@ async function boot() {
   const crash = (error) => telemetry.event("crash", { error: String(error?.message ?? error).slice(0, 500), stack: String(error?.stack ?? "") });
   window.addEventListener("error", (e) => crash(e.error ?? e.message));
   window.addEventListener("unhandledrejection", (e) => crash(e.reason));
+  // A tapped notification names its notice; registered before onSms, whose ready makes the shell push it.
+  bridge.onOpen((r) => { location.hash = `#/${r}`; });
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
 
   const view = h("main", { id: "view" });

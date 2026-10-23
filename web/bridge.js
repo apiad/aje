@@ -1,8 +1,9 @@
 // The native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"installUpdate", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"installUpdate", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
+//   | {"event": "open", "route": "inbox/<id>"}, when a tapped notification opens the app
 
 /** How long a USSD may go unanswered; some phones never call back. */
 const USSD_TIMEOUT_MS = 60_000;
@@ -17,9 +18,16 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
   const pending = new Map();
   const buffered = [];
   let handler = null;
+  const opens = [];
+  let openHandler = null;
 
   native.onmessage = (event) => {
     const msg = JSON.parse(event.data);
+    if (msg.event === "open") {
+      if (openHandler) openHandler(msg.route);
+      else opens.push(msg.route);
+      return;
+    }
     if (msg.event === "sms") {
       const sms = { sender: msg.sender, body: msg.body, sentAt: msg.sentAt ?? null, receivedAt: msg.receivedAt, subId: msg.subId ?? null };
       if (handler) handler(sms);
@@ -63,6 +71,9 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     // The system contact picker: the one contact the person picks, {name, number}, or null; no timeout.
     pickContact: () => call("pickContact"),
     secretForget: (name) => call("secretForget", { name }),
+    // The contact names of these numbers, `{number: name}` for those in the contacts. With `ask`, the
+    // shell first asks for the contacts permission, so it waits on the person: no timeout.
+    contactNames: (numbers, ask) => call("contactNames", { numbers, ask }),
     // Downloads a release APK, checks its SHA-256 and signing certificate, and opens Android's
     // installer. A download can take minutes on a mobile line, so it has no timeout.
     // Downloads, verifies and opens the installer; `onProgress(received, total)` follows the download.
@@ -77,6 +88,11 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
       if (first) call("ready").catch(() => {});
+    },
+    /** The route a tapped notification opens; one pushed before a handler is delivered to it. */
+    onOpen(fn) {
+      openHandler = fn;
+      for (const route of opens.splice(0)) fn(route);
     },
   };
 }

@@ -35,6 +35,20 @@ class MainActivity : FragmentActivity() {
         bridge.onPermissionsResult()
     }
 
+    // A contact lookup that asked for the contacts permission waits here for the person's answer.
+    private var contactsAsk: (() -> Unit)? = null
+    private val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        contactsAsk?.invoke()
+        contactsAsk = null
+    }
+
+    /** Asks for the contacts permission, then calls [then] whatever the answer. */
+    fun askContacts(then: () -> Unit) {
+        contactsAsk?.invoke()
+        contactsAsk = then
+        contactsPermission.launch(Manifest.permission.READ_CONTACTS)
+    }
+
     // The page's camera request waits here while Android asks the person for the camera.
     private var cameraRequest: PermissionRequest? = null
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -137,6 +151,32 @@ class MainActivity : FragmentActivity() {
         })
         setContentView(webView)
         webView.loadUrl("$ORIGIN/assets/web/index.html")
+        // A recreated activity, or one reopened from Recents, gets the old intent back: its notice was already opened.
+        val replayed = savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (!replayed) openRoute(intent)
+    }
+
+    // A tapped notification while Ajé is open (launchMode singleTask) lands here instead of onCreate.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openRoute(intent)
+    }
+
+    /** Hands the page the notice a tapped notification names; only an inbox route is taken. */
+    private fun openRoute(intent: Intent?) {
+        val route = intent?.getStringExtra(ROUTE) ?: return
+        intent.removeExtra(ROUTE)
+        if (INBOX_ROUTE.matches(route)) bridge.open(route)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        foreground = true
+    }
+
+    override fun onPause() {
+        foreground = false
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -148,5 +188,11 @@ class MainActivity : FragmentActivity() {
     companion object {
         const val DOMAIN = "appassets.androidplatform.net"
         const val ORIGIN = "https://$DOMAIN"
+        const val ROUTE = "route"
+        private val INBOX_ROUTE = Regex("""^inbox/\d+:[0-9a-f]+$""")
+
+        /** Whether the page is in front; the SMS receiver then leaves the notice to the page. */
+        @Volatile
+        var foreground = false
     }
 }

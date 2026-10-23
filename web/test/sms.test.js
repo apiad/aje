@@ -96,3 +96,16 @@ test("parsePlanSms ignores other texts", () => {
     assert.equal(parsePlanSms(body), null, body);
   }
 });
+
+test("parsePlanSms reads Cubacel's 2025 format", () => {
+  const body = "Ha comprado un plan de 3GB +15MIN +20SMS valido por 30 dias, se activara con el primer uso. Se desconto 120.00 CUP. Saldo actual 880.00 CUP";
+  assert.deepEqual(parsePlanSms(body), { kind: "plan", name: "3GB +15MIN +20SMS", days: 30, price: { cents: 12000, currency: "CUP" }, balance: "880.00 CUP" });
+  // As a phone received it: no currency, "de su cuenta principal", two spaces before the balance.
+  const seen = "Ha comprado un plan de 1.5GB valido por 7 dias, se activara con el primer uso. Se desconto 125.00 de su cuenta principal. Saldo actual  880.00";
+  assert.deepEqual(parsePlanSms(seen), { kind: "plan", name: "1.5GB", days: 7, price: { cents: 12500, currency: "CUP" }, balance: "880.00 CUP" });
+  const older = "Ha comprado 2.5GB +3.5GB LTE +25MIN +40SMS valido por 30 dias, se activara con el primer uso. Se desconto 360.00 de su cuenta principal. Saldo actual  12.00";
+  assert.equal(parsePlanSms(older).name, "2.5GB +3.5GB LTE +25MIN +40SMS");
+  // Without the price there is nothing to confirm a purchase by.
+  assert.equal(parsePlanSms("Ha comprado un plan de 3GB +15MIN +20SMS valido por 30 dias, se activara con el primer uso."), null);
+  assert.equal(parsePlanSms("Ha recibido un plan de 3GB valido por 30 dias, se activara con el primer uso."), null);
+});

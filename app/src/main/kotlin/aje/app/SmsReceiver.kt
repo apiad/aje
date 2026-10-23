@@ -7,7 +7,10 @@ import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import org.json.JSONObject
 
-/** Hands each incoming SMS, raw, to the page, or queues it when no page is alive. */
+/**
+ * Hands each incoming SMS, raw, to the page, or queues it when no page is alive. Money or balance
+ * that came in is also notified, unless the page is in front and shows it itself.
+ */
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
@@ -22,6 +25,10 @@ class SmsReceiver : BroadcastReceiver() {
                 .put("receivedAt", now)
             if (subId >= 0) sms.put("subId", subId)
             if (NativeBridge.live?.push(sms) != true) SmsQueue.append(context.applicationContext, sms)
+            if (!MainActivity.foreground) {
+                val body = sms.getString("body")
+                SmsNotice.of(sender, body)?.let { Notices.post(context.applicationContext, it, SmsNotice.id(sms.getLong("sentAt"), body)) }
+            }
         }
     }
 }

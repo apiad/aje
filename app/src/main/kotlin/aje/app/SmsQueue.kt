@@ -10,7 +10,8 @@ import java.io.File
  * and draining deletes the file.
  */
 object SmsQueue {
-    private const val MAX = 20
+    // A week without opening the app keeps its notices.
+    private const val MAX = 200
 
     private fun file(context: Context) = File(context.noBackupFilesDir, "pending-sms.jsonl")
 

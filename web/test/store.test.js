@@ -168,7 +168,8 @@ test("verifyLineTransfer ignores old attempts", async () => {
 test("addReceived records an incoming transfer", async () => {
   const s = await openStore(memoryBackend(), { now: () => 0 });
   await s.add(attempt({ id: 1 }));
-  await s.addReceived(parseLineSms(SMS.LINE_RECEIVED), 5 * MIN);
+  const line = parseLineSms(SMS.LINE_RECEIVED);
+  await s.addReceived({ kind: "line-received", amount: "25.00 CUP", number: line.number, account: null, plan: null }, 5 * MIN);
   const a = s.state.attempts[0];
   assert.deepEqual([a.op, a.state, a.to, a.amount, a.verifiedAt], ["234-in", "verified", "56666666", 25, 5 * MIN]);
 });
@@ -180,4 +181,41 @@ test("lineNumbers persist", async () => {
   await a.setLineNumber(3, "55555555");
   const b = await openStore(backend);
   assert.deepEqual(b.state.settings.lineNumbers, { 3: "55555555" });
+});
+
+const item = (id, over = {}) => ({ id, kind: "card-received", at: 0, amount: "1500.00 CUP", number: "51234567", account: null, plan: null, rowId: null, state: "pending", ...over });
+
+test("the inbox keeps the newest 200 notices and refuses an id it has", async () => {
+  const s = await openStore(memoryBackend());
+  assert.deepEqual(s.state.inbox, []);
+  for (let i = 0; i < 201; i++) assert.equal(await s.addNotice(item(`n${i}`)), true);
+  assert.equal(s.state.inbox.length, 200);
+  assert.equal(s.state.inbox[0].id, "n200");
+  assert.ok(!s.state.inbox.some((n) => n.id === "n0"));
+  assert.equal(await s.addNotice(item("n200")), false);
+  assert.equal(s.state.inbox.length, 200);
+});
+
+test("pendingNotices counts only pending ones", async () => {
+  const s = await openStore(memoryBackend());
+  await s.addNotice(item("a"));
+  await s.addNotice(item("b"));
+  await s.addNotice(item("c"));
+  await s.setNoticeState("a", "seen");
+  await s.setNoticeState("b", "dismissed");
+  assert.equal(s.pendingNotices(), 1);
+  assert.equal(s.state.inbox.find((n) => n.id === "a").state, "seen");
+});
+
+test("addReceived gives each incoming kind its own row", async () => {
+  const s = await openStore(memoryBackend(), { now: () => 0 });
+  const n = (kind, over) => ({ kind, amount: null, number: null, account: null, plan: null, ...over });
+  const card = await s.addReceived(n("card-received", { amount: "1500.00 CUP", number: "51234567", account: "9200XXXXXXXX0001" }), 1, { cardId: "c1" });
+  assert.deepEqual([card.op, card.state, card.to, card.amount, card.currency, card.account, card.cardId], ["in-card", "verified", "51234567", 1500, "CUP", "9200XXXXXXXX0001", "c1"]);
+  assert.deepEqual([(await s.addReceived(n("card-received", { amount: "25.00 USD", number: "51234567", account: "x" }), 1)).currency], ["USD"]);
+  assert.equal((await s.addReceived(n("recharge-intl", { amount: "500.00 CUP" }), 1)).op, "in-recharge");
+  assert.equal((await s.addReceived(n("recharge", { amount: "500.00 CUP" }), 1)).op, "in-recharge");
+  const plan = await s.addReceived(n("plan-gift", { plan: "3GB" }), 1);
+  assert.deepEqual([plan.op, plan.plan, plan.amount], ["in-plan", "3GB", null]);
+  assert.deepEqual([(await s.addReceived(n("recharge-intl", { plan: "10GB" }), 1)).op], ["in-recharge"]);
 });
