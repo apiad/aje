@@ -117,15 +117,16 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     },
 
     /**
-     * Confirms a plan bought in the dialer in the last 30 minutes with Cubacel's SMS: the newest one of
-     * the SMS's price, else the newest of any price, since the network's may differ from the catalog's.
+     * Confirms a plan bought in the dialer in the last 30 minutes with Cubacel's SMS, on the SIM it came
+     * in on when the shell says: the newest one of the SMS's price, else the only one waiting, since
+     * the network's price may differ from the catalog's. The balance the SMS reported goes with it.
      */
     async verifyPlan(sms, at = now()) {
-      const waiting = state.attempts.filter((a) => a.op === "133" && a.state === "dialer" && at - a.startedAt < PLAN_MS && at >= a.startedAt)
-        .sort((x, y) => y.startedAt - x.startedAt);
-      const p = waiting.find((a) => Math.round(a.plan.price * 100) === sms.price.cents) ?? waiting[0];
+      const waiting = state.attempts.filter((a) => a.op === "133" && a.state === "dialer" && at - a.startedAt < PLAN_MS && at >= a.startedAt &&
+        (sms.subId === null || sms.subId === undefined || a.subId === sms.subId)).sort((x, y) => y.startedAt - x.startedAt);
+      const p = waiting.find((a) => Math.round((a.plan?.price ?? -1) * 100) === sms.price.cents) ?? (waiting.length === 1 ? waiting[0] : null);
       if (!p) return null;
-      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
+      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance }));
       return { latencyMs: at - p.startedAt, subId: p.subId };
     },
 

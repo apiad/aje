@@ -580,9 +580,52 @@ test("the plan SMS matches the purchase by its price, and only within 30 minutes
   assert.equal(late.store.state.mobileBalances[2], undefined);
 });
 
-test("a plan SMS whose price differs still confirms the one purchase waiting", async () => {
+test("a plan SMS whose price differs confirms only the one purchase waiting on its line", async () => {
   const w = await world();
   await w.wf.buyPlan(2, { ...PLAN_45, price: 200 });
+  await w.sms(PLAN_BOUGHT, "ETECSA");
+  assert.equal(w.store.state.attempts[0].state, "verified");
+  const two = await world();
+  await two.wf.buyPlan(2, { ...PLAN_45, price: 200 });
+  await two.wf.buyPlan(2, { ...PLAN_45, price: 100 });
+  await two.sms(PLAN_BOUGHT, "ETECSA");
+  assert.deepEqual(two.store.state.attempts.map((a) => a.state), ["dialer", "dialer"]);
+});
+
+// Review: the SMS says which SIM it came in on; a purchase on the other line is not its own.
+test("a plan SMS confirms only a purchase on the SIM it arrived on", async () => {
+  const w = await world();
+  await w.wf.buyPlan(3, PLAN_45);
+  await w.wf.buyPlan(2, PLAN_45);
+  await w.wf.handleSms({ sender: "ETECSA", body: PLAN_BOUGHT, subId: 3, receivedAt: w.clock.t });
+  assert.deepEqual(w.store.state.attempts.map((a) => [a.subId, a.state]).sort(), [[2, "dialer"], [3, "verified"]]);
+  assert.equal(w.store.state.mobileBalances[3], "1234.56 CUP");
+  assert.equal(w.store.state.mobileBalances[2], undefined);
+});
+
+// Review: a person's number cannot confirm a purchase.
+test("a plan text from a phone number confirms nothing", async () => {
+  const w = await world();
+  await w.wf.buyPlan(2, PLAN_45);
+  await w.sms(PLAN_BOUGHT, "+5355555555");
+  assert.equal(w.store.state.attempts[0].state, "dialer");
+});
+
+// Review: the confirmation carries the balance from the SMS, so the screen never shows the old one beside it.
+test("the confirmed purchase keeps the balance its SMS reported", async () => {
+  const w = await world();
+  await w.store.setMobileBalance(2, "1474.56 CUP");
+  await w.wf.buyPlan(2, PLAN_45);
+  const seen = [];
+  w.store.subscribe((st) => { const a = st.attempts[0]; if (a.state === "verified") seen.push(a.balance); });
+  await w.sms(PLAN_BOUGHT, "ETECSA");
+  assert.deepEqual([...new Set(seen)], ["1234.56 CUP"]);
+});
+
+// Review: an attempt from the build that walked *133 has no plan.
+test("a plan SMS tolerates an older purchase without a plan", async () => {
+  const w = await world();
+  await w.store.add({ id: null, startedAt: w.clock.t, code: "*133*1*1*1#", state: "dialer", op: "133", subId: 2 });
   await w.sms(PLAN_BOUGHT, "ETECSA");
   assert.equal(w.store.state.attempts[0].state, "verified");
 });

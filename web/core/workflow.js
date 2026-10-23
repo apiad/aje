@@ -331,12 +331,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   }
 
   /** One incoming SMS. Texts the parser does not know are dropped here and never stored. */
-  async function handleSms({ sender, body, sentAt = null, receivedAt = now() }) {
+  async function handleSms({ sender, body, sentAt = null, receivedAt = now(), subId = null }) {
     const tag = senderTag(sender);
     const line = parseLineSms(body);
     if (line) return handleLineSms(line, { tag, body, sentAt, receivedAt });
     const plan = parsePlanSms(body);
-    if (plan) return handlePlanSms(plan, { tag, body, sentAt, receivedAt });
+    // A person's number can write the same text; only Cubacel's sender confirms a purchase.
+    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
     const sms = parseBankSms(body);
     if (!sms) {
       if (BANKISH.test(body)) {

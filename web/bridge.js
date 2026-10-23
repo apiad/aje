@@ -2,7 +2,7 @@
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
 // JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"installUpdate", "args": {...}}
-// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt"}
+// Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
 
 /** How long a USSD may go unanswered; some phones never call back. */
 const USSD_TIMEOUT_MS = 60_000;
@@ -21,7 +21,7 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
   native.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.event === "sms") {
-      const sms = { sender: msg.sender, body: msg.body, sentAt: msg.sentAt ?? null, receivedAt: msg.receivedAt };
+      const sms = { sender: msg.sender, body: msg.body, sentAt: msg.sentAt ?? null, receivedAt: msg.receivedAt, subId: msg.subId ?? null };
       if (handler) handler(sms);
       else buffered.push(sms);
       return;

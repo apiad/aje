@@ -73,14 +73,14 @@ export function renderPlans(ctx, r) {
     const draw = () => {
       const a = ctx.store.state.attempts.find((x) => x.id === attempt.id) ?? attempt;
       const done = a.state === "verified";
-      const balance = ctx.store.state.mobileBalances[subId];
       status.className = `reply${done ? "" : " pending"}`;
       status.dataset.outcome = done ? "bought" : "dialer";
       status.replaceChildren(
         h("div", { class: "k status" }, h("span", { class: done ? "dot" : "spin", "aria-hidden": "true" }),
           done ? `Plan comprado: ${a.plan.name}` : "Esperando el SMS de Cubacel"),
-        h("div", { class: "m" }, done ? (balance ? `Saldo de la línea: ${balance}` : "Cubacel confirmó la compra.")
+        h("div", { class: "m" }, done ? (a.balance ? `Saldo de la línea: ${a.balance}` : "Cubacel confirmó la compra.")
           : "Termina en el marcador: escribe 1 y envía. Cuando llegue el SMS de Cubacel, la compra queda confirmada aquí."));
+      if (done) unsubscribe?.();
     };
     draw();
     unsubscribe = ctx.store.subscribe(() => (status.isConnected ? draw() : unsubscribe?.()));

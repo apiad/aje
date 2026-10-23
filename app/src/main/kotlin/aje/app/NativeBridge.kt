@@ -110,6 +110,7 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
             JSONObject()
                 .put("callPhone", granted(Manifest.permission.CALL_PHONE))
                 .put("readPhoneState", granted(Manifest.permission.READ_PHONE_STATE))
+                .put("readPhoneNumbers", granted(Manifest.permission.READ_PHONE_NUMBERS))
                 .put("receiveSms", granted(Manifest.permission.RECEIVE_SMS)),
         )
     }
@@ -149,7 +150,8 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
     @Suppress("DEPRECATION")
     private fun number(sm: SubscriptionManager, info: SubscriptionInfo): String = try {
         if (Build.VERSION.SDK_INT >= 33) sm.getPhoneNumber(info.subscriptionId) else info.number.orEmpty()
-    } catch (_: SecurityException) {
+    } catch (_: Exception) {
+        // Not allowed, a SIM gone since the list was read, or no subscription service: no number.
         ""
     }
 

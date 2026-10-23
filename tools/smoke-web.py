@@ -365,13 +365,23 @@ def buy_plan_from_catalog(page):
 
 
 def charge_with_the_sims_number(page):
-    # Android reports the mock's second SIM number: Cobrar takes it and never asks.
+    # Android reports the mock's second SIM number: it fills the field, to confirm once.
     page.goto(page.url.split("#")[0] + "#/line-charge?sub=4")
     expect(page.locator("#line-charge")).to_be_visible()
-    expect(page.locator("#lc-number")).to_have_count(0)
+    expect(page.locator("#lc-number")).to_have_value("51234567")
     page.click("#lc-show")
     expect(page.locator("#lc-qr svg")).to_be_visible()
     expect(page.locator(".qrcap")).to_contain_text("51234567")
+    # Saved, it is not asked again, and it can be changed.
+    page.goto(page.url.split("#")[0] + "#/home")
+    page.goto(page.url.split("#")[0] + "#/line-charge?sub=4")
+    expect(page.locator("#lc-number")).to_have_count(0)
+    expect(page.locator("#lc-saved")).to_contain_text("51234567")
+    page.click("#lc-change")
+    expect(page.locator("#lc-number")).to_have_value("51234567")
+    page.fill("#lc-number", "52222222")
+    page.click("#lc-show")
+    expect(page.locator(".qrcap")).to_contain_text("52222222")
 
 
 def charge_by_qr(page):
