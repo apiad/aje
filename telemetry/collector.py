@@ -74,7 +74,7 @@ def redact(text, vocab):
     return "".join(out)
 
 
-DIGIT_RUN = re.compile(r"\d(?:[\s.-]?\d){7,}")
+DIGIT_RUN = re.compile(r"\d(?:[ .-]?\d){7,}")
 
 
 def redact_menu(text, vocab):
