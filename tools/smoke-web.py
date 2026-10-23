@@ -261,7 +261,9 @@ def update_beta(page):
     page.click("#update-check")
     expect(page.locator("#update-result")).to_contain_text("9.9.0-beta.1")
     page.click("#update-settings")
-    expect(page.locator("#update-settings-status")).to_contain_text("instalador")
+    expect(page.locator("#update-settings-bar")).to_be_visible()
+    expect(page.locator("#update-settings-status")).to_contain_text("MB")
+    expect(page.locator("#update-settings-status")).to_contain_text("instalador", timeout=10_000)
     page.goto(page.url.split("#")[0] + "#/home")
     expect(page.locator("#update-banner")).to_contain_text("9.9.0-beta.1")
 

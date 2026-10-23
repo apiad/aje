@@ -83,3 +83,17 @@ test("installUpdate posts the url and checksum and waits for the shell without a
   f.push({ id: f.sent[0].id, result: { ok: true } });
   assert.deepEqual(await done, { ok: true });
 });
+
+test("installUpdate reports download progress before it resolves", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native });
+  const seen = [];
+  const p = b.installUpdate("https://x/a.apk", "ab", (received, total) => seen.push([received, total]));
+  const req = f.sent.at(-1);
+  assert.deepEqual(req.args, { url: "https://x/a.apk", sha256: "ab" });
+  f.push({ id: req.id, progress: { received: 1000, total: 4000 } });
+  f.push({ id: req.id, progress: { received: 4000, total: 4000 } });
+  f.push({ id: req.id, result: { ok: true } });
+  assert.deepEqual(await p, { ok: true });
+  assert.deepEqual(seen, [[1000, 4000], [4000, 4000]]);
+});

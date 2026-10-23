@@ -196,3 +196,8 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .matrix span{background:var(--surface);min-height:20px}
 .matrix span.hit{background:var(--gold);color:var(--on-gold);font-weight:700}
 #addcard .addchip,#deck #add-card{margin-top:12px}
+/* the update download */
+progress.dl{display:block;width:100%;height:6px;margin:10px 0 0;border:0;border-radius:3px;background:var(--raised);accent-color:var(--gold);overflow:hidden}
+progress.dl[hidden]{display:none}
+progress.dl::-webkit-progress-bar{background:var(--raised)}
+progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}

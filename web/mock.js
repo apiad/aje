@@ -94,9 +94,13 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
     },
-    async installUpdate(url, sha256) {
+    async installUpdate(url, sha256, onProgress = null) {
       calls.push({ method: "installUpdate", args: { url, sha256 } });
-      await wait();
+      const total = 7_500_000;
+      for (let step = 1; step <= 5; step++) {
+        await wait();
+        onProgress?.((total * step) / 5, total);
+      }
       return { ok: true };
     },
     injectSms: (sender, body) => emit(sender, body),

@@ -46,3 +46,11 @@ test("the mock pretends to install an update", async () => {
   const m = createMock({ delayMs: 0 });
   assert.deepEqual(await m.installUpdate("https://example.test/aje.apk", "ab".repeat(32)), { ok: true });
 });
+
+test("the mock update download reports progress up to the total", async () => {
+  const m = createMock({ delayMs: 0 });
+  const seen = [];
+  assert.deepEqual(await m.installUpdate("https://x/a.apk", "ab", (r, t) => seen.push([r, t])), { ok: true });
+  assert.ok(seen.length >= 2);
+  assert.deepEqual(seen.at(-1), [seen.at(-1)[1], seen.at(-1)[1]]);
+});
