@@ -133,6 +133,8 @@ async function boot() {
   telemetry.event("app_start");
   shown = draw();
   autoCheck(ctx);
+  // Android keeps the WebView alive in the background, so a return to the app checks again too.
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && autoCheck(ctx));
   askTelemetry(ctx);
 }
 
