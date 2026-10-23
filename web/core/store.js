@@ -10,6 +10,9 @@ const PLAN_MS = 30 * 60 * 1000;
 export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
 const SEEN = 50;
+const INBOX = 200;
+/** The history row each incoming kind leaves; an expiring plan leaves none. */
+const RECEIVED_OPS = { "line-received": "234-in", "card-received": "in-card", "recharge-intl": "in-recharge", recharge: "in-recharge", "plan-gift": "in-plan" };
 
 const ATTEMPT = {
   id: null, startedAt: null, code: "", state: "sent", op: "46", cardId: null, subId: null, to: null, amount: null,
@@ -30,7 +33,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const defaults = {
     settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [],
+    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -146,10 +149,31 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       return state.attempts.find((a) => a.id === c.id);
     },
 
-    /** Records balance another line passed to this one; `to` holds the sender's number. */
-    addReceived(sms, at = now()) {
-      return store.add({ startedAt: at, state: "verified", op: "234-in", to: sms.number, amount: sms.amount.cents / 100, verifiedAt: at });
+    /**
+     * Records what a notice says came in (noticeOf): `to` holds the sender's number, `amount` and
+     * `currency` the money, `account` the account a transfer named and `cardId` the card it matched.
+     */
+    addReceived(notice, at = now(), { cardId = null } = {}) {
+      const [figure, currency] = notice.amount?.split(" ") ?? [null, null];
+      return store.add({ startedAt: at, state: "verified", op: RECEIVED_OPS[notice.kind], to: notice.number, cardId,
+        amount: figure === null ? null : Number(figure), currency, account: notice.account, plan: notice.plan, verifiedAt: at });
     },
+
+    /** Adds a notice at the top of the inbox, which keeps the newest 200; false when its id is there. */
+    async addNotice(item) {
+      if (state.inbox.some((n) => n.id === item.id)) return false;
+      state.inbox = [item, ...state.inbox].slice(0, INBOX);
+      await commit();
+      return true;
+    },
+
+    /** Moves a notice to "pending", "seen" or "dismissed". */
+    async setNoticeState(id, value) {
+      state.inbox = state.inbox.map((n) => (n.id === id ? { ...n, state: value } : n));
+      await commit();
+    },
+
+    pendingNotices: () => state.inbox.filter((n) => n.state === "pending").length,
 
     /** The number of one of the phone's own lines, which the phone rarely knows. */
     async setLineNumber(subId, number) {

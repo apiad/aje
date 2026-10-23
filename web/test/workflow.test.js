@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { openStore, memoryBackend } from "../core/store.js";
 import { openTelemetry } from "../core/telemetry.js";
 import { createWorkflow, PIN_DAYS } from "../core/workflow.js";
@@ -674,4 +675,77 @@ test("a charge older than 24 hours is never closed, and the SMS is still recorde
   await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_RECEIVED, receivedAt: w.clock.t });
   assert.equal(w.store.state.attempts.find((a) => a.id === c.id).state, "waiting");
   assert.equal(w.store.state.attempts.filter((a) => a.op === "234-in").length, 1);
+});
+
+// Notices of incoming money: a history row and an inbox item, once per SMS.
+const VECTORS = JSON.parse(readFileSync(new URL("./fixtures/notice-vectors.json", import.meta.url), "utf8"));
+const vector = (kind, pred = () => true) => VECTORS.find((v) => v.out?.kind === kind && pred(v));
+
+test("a card-received SMS adds one in-card row and one pending notice that points at it", async () => {
+  const w = await world();
+  const v = vector("card-received");
+  await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t });
+  const rows = w.store.state.attempts.filter((a) => a.op === "in-card");
+  assert.equal(rows.length, 1);
+  assert.equal(w.store.state.inbox.length, 1);
+  const n = w.store.state.inbox[0];
+  assert.deepEqual([n.id, n.kind, n.state, n.rowId, n.amount, n.number], [v.id, "card-received", "pending", rows[0].id, "1500.00 CUP", "51234567"]);
+  // Delivered again, live and from the queue, with the same send time: nothing new.
+  await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t + 5 });
+  assert.equal(w.store.state.attempts.filter((a) => a.op === "in-card").length, 1);
+  assert.equal(w.store.state.inbox.length, 1);
+});
+
+test("a line-received SMS still closes a waiting charge and also adds a notice for it", async () => {
+  const w = await world([]);
+  await w.store.setLineNumber(2, "55555555");
+  const c = (await w.wf.charge(2, { amount: 150 })).attempt;
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_RECEIVED, sentAt: 9, receivedAt: w.clock.t });
+  assert.equal(w.store.state.attempts.find((a) => a.id === c.id).state, "verified");
+  assert.deepEqual(w.store.state.inbox.map((n) => [n.kind, n.rowId, n.amount]), [["line-received", c.id, "25.00 CUP"]]);
+});
+
+test("a line-received SMS with no charge gets a row and a notice; from a person's number, no notice", async () => {
+  const w = await world([]);
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_RECEIVED, sentAt: 9, receivedAt: w.clock.t });
+  const row = w.store.state.attempts.find((a) => a.op === "234-in");
+  assert.equal(w.store.state.inbox[0].rowId, row.id);
+  await w.wf.handleSms({ sender: "55555555", body: SMS.LINE_RECEIVED, sentAt: 10, receivedAt: w.clock.t });
+  assert.equal(w.store.state.inbox.length, 1);
+});
+
+test("the received account links the one saved card with its last four, never two or none", async () => {
+  const v = vector("card-received");
+  const run = async (pans) => {
+    const w = await world();
+    await w.store.removeCard(w.card.id);
+    for (const [i, pan] of pans.entries()) await w.store.addCard({ alias: `c${i}`, pan, bank: "METROPOLITANO", currency: "CUP" });
+    await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t });
+    const row = w.store.state.attempts.find((a) => a.op === "in-card");
+    return { w, row };
+  };
+  const one = await run(["9227959900000001", "9227959900000002"]);
+  assert.equal(one.row.cardId, one.w.store.state.cards[0].id);
+  assert.equal((await run(["9227959900000001", "9205129900000001"])).row.cardId, null);
+  assert.equal((await run(["9227959900000002"])).row.cardId, null);
+});
+
+test("a plan-expiry notice adds an item and no row; a promotion adds nothing", async () => {
+  const w = await world();
+  const v = vector("plan-expiry");
+  await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t });
+  assert.deepEqual(w.store.state.inbox.map((n) => [n.kind, n.rowId]), [["plan-expiry", null]]);
+  assert.equal(w.store.state.attempts.length, 0);
+  const promo = VECTORS.find((x) => x.out === null && /Bono Promocional/.test(x.body));
+  await w.wf.handleSms({ sender: promo.sender, body: promo.body, sentAt: promo.sentAt, receivedAt: w.clock.t });
+  assert.equal(w.store.state.inbox.length, 1);
+  assert.equal(w.store.state.attempts.length, 0);
+});
+
+test("every incoming kind of the vectors gives one item, and a row unless it is an expiry", async () => {
+  const w = await world();
+  const given = VECTORS.filter((v) => v.out);
+  for (const v of given) await w.wf.handleSms({ sender: v.sender, body: v.body, sentAt: v.sentAt, receivedAt: w.clock.t });
+  assert.equal(w.store.state.inbox.length, given.length);
+  assert.equal(w.store.state.attempts.length, given.filter((v) => v.out.kind !== "plan-expiry").length);
 });

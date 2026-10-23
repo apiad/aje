@@ -1,12 +1,12 @@
 // The bank operations the app runs, and what each bank SMS does to them.
 import { randomSeed } from "./encoder.js";
-import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
+import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS, last4 } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
 import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
-import { fnv1a } from "./notice.js";
-import { BANKISH, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
+import { fnv1a, noticeOf } from "./notice.js";
+import { BANKISH, formatMoney, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
@@ -335,12 +335,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   async function handleSms({ sender, body, sentAt = null, receivedAt = now(), subId = null }) {
     const tag = senderTag(sender);
     const line = parseLineSms(body);
-    if (line) return handleLineSms(line, { tag, body, sentAt, receivedAt });
+    if (line) return handleLineSms(line, { sender, tag, body, sentAt, receivedAt });
     const plan = parsePlanSms(body);
     // A person's number can write the same text; only Cubacel's sender confirms a purchase.
     if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
     const sms = parseBankSms(body);
     if (!sms) {
+      const notice = noticeOf(sender, body);
+      if (notice) return handleNotice(notice, { body, sentAt, receivedAt });
       if (BANKISH.test(body)) {
         telemetry.event("sms", { kind: "unparsed_bank", sender: tag, length: body.length, lines: body.split("\n").length, text: body });
       }
@@ -385,15 +387,40 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  async function handleLineSms(sms, { tag, body, sentAt, receivedAt }) {
-    if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return sms;
+  /** The inbox item of a notice; `row` is the history row it opens, if any. */
+  function addNotice(notice, id, row, at) {
+    const { kind, amount, number, account, plan } = notice;
+    return store.addNotice({ id, kind, at, amount, number, account, plan, rowId: row?.id ?? null, state: "pending" });
+  }
+
+  /** The one saved card whose last four match the account a received transfer names, else null. */
+  function cardOfAccount(account) {
+    const cards = account ? store.state.cards.filter((c) => last4(c.pan) === last4(account)) : [];
+    return cards.length === 1 ? cards[0].id : null;
+  }
+
+  /** Money or balance that came in: a history row, unless a plan only expires, and an inbox item. */
+  async function handleNotice(notice, { body, sentAt, receivedAt }) {
+    const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+    if (store.state.inbox.some((n) => n.id === id) || (await store.seen(id))) return notice;
+    const row = notice.kind === "plan-expiry" ? null : await store.addReceived(notice, receivedAt, { cardId: cardOfAccount(notice.account) });
+    await addNotice(notice, id, row, receivedAt);
+    return notice;
+  }
+
+  async function handleLineSms(sms, { sender, tag, body, sentAt, receivedAt }) {
+    const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+    if (await store.seen(id)) return sms;
     if (sms.kind === "line-sent") {
       const verified = await store.verifyLineTransfer(sms, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
       if (verified) await refreshBalance(verified.subId);
     } else {
       // A charge shown as a QR becomes the record of what arrived; otherwise the SMS gets its own row.
-      if (!(await store.closeCharge(sms, receivedAt))) await store.addReceived(sms, receivedAt);
+      const received = { kind: "line-received", amount: formatMoney(sms.amount), number: sms.number, account: null, plan: null };
+      const row = (await store.closeCharge(sms, receivedAt)) ?? (await store.addReceived(received, receivedAt));
+      // Only a service's sender gives a notice; a person's number can write the same text.
+      if (noticeOf(sender, body)) await addNotice(received, id, row, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: true, text: body });
     }
     return sms;
