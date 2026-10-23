@@ -226,6 +226,15 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { ok: true, value, reply: r.reply };
   }
 
+  /** Reads a line's balance again after an operation that moved it; a failure keeps the old figure. */
+  async function refreshBalance(subId) {
+    try {
+      await mobileBalance(subId);
+    } catch {
+      // The figure on the card stays as it was.
+    }
+  }
+
   /**
    * The transfer key of a line lives in the shell's secret store like the bank PIN, one per line,
    * behind the fingerprint or the screen lock, and lapses after PIN_DAYS.
@@ -335,8 +344,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   async function handleLineSms(sms, { tag, body, sentAt, receivedAt }) {
     if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return sms;
     if (sms.kind === "line-sent") {
-      const latency = await store.verifyLineTransfer(sms, receivedAt);
-      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: latency !== null, latency_ms: latency, text: body });
+      const verified = await store.verifyLineTransfer(sms, receivedAt);
+      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
+      if (verified) await refreshBalance(verified.subId);
     } else {
       await store.addReceived(sms, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: true, text: body });
@@ -344,7 +354,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */

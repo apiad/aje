@@ -107,7 +107,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);
       if (!pending) return null;
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
-      return at - pending.startedAt;
+      return { latencyMs: at - pending.startedAt, subId: pending.subId };
     },
 
     /** Records balance another line passed to this one; `to` holds the sender's number. */

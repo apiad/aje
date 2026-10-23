@@ -4,7 +4,7 @@ import { openStore, memoryBackend } from "../core/store.js";
 import { openTelemetry } from "../core/telemetry.js";
 import { createWorkflow, PIN_DAYS } from "../core/workflow.js";
 import { balanceFor } from "../core/accounts.js";
-import { fakeBridge, SMS, POSTPAID_REPLY } from "./helpers.js";
+import { fakeBridge, SMS, PLAN, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
 import { balance as balanceCode, link as linkCode } from "../core/ops.js";
 import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
 
@@ -505,4 +505,28 @@ test("changeLineKey falls back to the dialer when the API cannot follow the netw
   assert.deepEqual([r.ok, r.dialed], [false, true]);
   assert.equal(w.bridge.calls.at(-1).method === "dial" || w.bridge.calls.some((c) => c.method === "dial" && c.args.code === "*234*2*1234*4321#"), true);
   assert.equal(w.bridge.vault.has("line-key:3"), false);
+});
+
+test("a verified balance transfer reads the line's balance again", async () => {
+  const w = await world([{ ok: true, reply: PREPAID_REPLY }]);
+  await w.wf.transferBalance(2, "55555555", 25, { key: "9876" });
+  w.clock.t += 16_000;
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_SENT, receivedAt: w.clock.t });
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "sendUssd", args: { subId: 2, code: "*222#" } });
+  assert.equal(w.store.state.mobileBalances[2], "250.50 CUP");
+});
+
+test("a transfer SMS that matches nothing reads no balance", async () => {
+  const w = await world([]);
+  await w.wf.handleSms({ sender: "ETECSA", body: SMS.LINE_SENT, receivedAt: w.clock.t });
+  assert.equal(w.bridge.calls.filter((c) => c.method === "sendUssd").length, 0);
+});
+
+test("refreshBalance swallows a failure and keeps the old figure", async () => {
+  const w = await world([() => { throw new Error("radio off"); }]);
+  await w.store.setMobileBalance(2, "10.00 CUP");
+  await w.wf.refreshBalance(2);
+  await w.store.setPlan(2, "NO-SUCH-PLAN");
+  await w.wf.refreshBalance(2);
+  assert.equal(w.store.state.mobileBalances[2], "10.00 CUP");
 });
