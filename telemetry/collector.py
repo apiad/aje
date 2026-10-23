@@ -74,12 +74,18 @@ def redact(text, vocab):
     return "".join(out)
 
 
-DIGIT_RUN = re.compile(r"\d(?:[ .-]?\d){7,}")
+DIGIT_RUN = re.compile(r"\d(?:[ .-]?\d){6,}")
+DATE = re.compile(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}")
+BALANCE = re.compile(r"(saldo[^\d#]{0,15})([\d.,]+)", re.IGNORECASE)
 
 
 def redact_menu(text, vocab):
-    """The same rules as redactMenu in web/core/redact.js: digits stay, a run of 8 or more becomes #."""
-    text = DIGIT_RUN.sub(lambda m: re.sub(r"\d", "#", m.group(0)), text)
+    """The same rules as redactMenu in web/core/redact.js: digits stay, but not a run of 7 or more, a date or a balance."""
+    def hide(run):
+        return re.sub(r"\d", "#", run)
+    text = DIGIT_RUN.sub(lambda m: hide(m.group(0)), text)
+    text = DATE.sub(lambda m: hide(m.group(0)), text)
+    text = BALANCE.sub(lambda m: m.group(1) + hide(m.group(2)), text)
     parts = re.split(r"(‹w›|(?:[^\W_]|[̀-ͯ])+)", text)
     out = []
     for i, tok in enumerate(parts):
