@@ -16,6 +16,12 @@ const ACTIONS = {
     ["soon", "Pagar servicio", "bolt"],
     ["soon", "Cobrar o pagar con QR", "qr"],
   ],
+  clasica: [
+    ["balance", "Ver saldo", "card"],
+    ["movements", "Últimas operaciones", "history"],
+    ["transfer", "Transferir", "send"],
+    ["soon", "Pagar servicio", "bolt"],
+  ],
   line: [
     ["mobile-balance", "Saldo móvil", "phone"],
     ["soon", "Recargar", "bolt"],
@@ -119,7 +125,8 @@ export function renderHome(ctx) {
     [...dots.children].forEach((b, k) => b.classList.toggle("on", k === i));
     const a = list[i];
     qaLabel.textContent = `Operaciones · ${a.label}`;
-    qa.replaceChildren(...ACTIONS[a.kind].map(([action, label, ic]) =>
+    const actions = a.kind === "card" && a.bank === "CLASICA" ? ACTIONS.clasica : ACTIONS[a.kind];
+    qa.replaceChildren(...actions.map(([action, label, ic]) =>
       h("button", { class: action === "soon" ? "soon" : null, "data-qa": action, onclick: () => action !== "soon" && ctx.act(action, a) },
         icon(ic), h("span", {}, label))));
     const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.cardId === a.cardId).slice(0, 3) : [];

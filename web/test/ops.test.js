@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { balance, drawCoordinate, link, login, register, transfer, needsLogin } from "../core/ops.js";
+import { associateClasica, balance, clasicaBalance, clasicaMovements, clasicaTransfer, drawCoordinate, link, login, register, transfer, needsLogin } from "../core/ops.js";
 import { dial, display, DEFAULT_CONFIG } from "../core/ussd.js";
 
 const principal = { bank: "METROPOLITANO", currency: "CUP", pan: null };
@@ -75,6 +75,35 @@ test("link: op 60, card * coordinate * value, value secret", () => {
 test("link: BPA sends the card only; other banks need the coordinate", () => {
   assert.deepEqual(values(link("BPA", "9227129900000002")), ["9227129900000002"]);
   assert.throws(() => link("BANDEC", "9227069900000002"), RangeError);
+});
+
+const clasica = { bank: "CLASICA", currency: "CUP", pan: "9760030000000001" };
+
+test("associateClasica: op 111, agency * account * authorization * terminal", () => {
+  const c = associateClasica(clasica.pan, "044915", "00014049");
+  assert.equal(c.op, "111");
+  assert.deepEqual(values(c), ["08", "9760030000000001", "044915", "00014049"]);
+});
+
+test("associateClasica refuses a wrong number, authorization or terminal", () => {
+  assert.throws(() => associateClasica("9200950000000001", "044915", "00014049"), RangeError);
+  assert.throws(() => associateClasica(clasica.pan, "4491", "00014049"), RangeError);
+  assert.throws(() => associateClasica(clasica.pan, "044915", "140"), RangeError);
+});
+
+test("Clásica balance and movements are type * account * bag", () => {
+  assert.equal(clasicaBalance(clasica).op, "46");
+  assert.deepEqual(values(clasicaBalance(clasica)), ["1", "9760030000000001", "1"]);
+  assert.equal(clasicaMovements(clasica).op, "48");
+  assert.deepEqual(values(clasicaMovements(clasica)), ["1", "9760030000000001", "1"]);
+});
+
+test("Clásica transfer: op 45, eight fields, no key", () => {
+  const c = clasicaTransfer(clasica, "53000000", 500);
+  assert.equal(c.op, "45");
+  assert.deepEqual(values(c), ["1", "9760030000000001", "53000000", "500", "0", "0", "0", "1"]);
+  assert.ok(c.fields.every((f) => !f.secret));
+  assert.throws(() => clasicaTransfer(clasica, "53000000", 0), RangeError);
 });
 
 test("drawCoordinate covers A-J by 1-10", () => {

@@ -9,7 +9,9 @@ import { dirname } from "node:path";
 const [out, flag] = process.argv.slice(2);
 if (!out) throw new Error("usage: node tools/build-preview.mjs <out.html> [--aegis]");
 
-const js = execFileSync("npx", ["-y", "esbuild@0.24.0", "web/app.js", "--bundle", "--format=iife", "--log-level=warning"],
+// ESM, not IIFE, so `import.meta.url` resolves (scanner.js reads it at load); the page embeds
+// the bundle as a module script, as the app itself loads app.js.
+const js = execFileSync("npx", ["-y", "esbuild@0.24.0", "web/app.js", "--bundle", "--format=esm", "--log-level=warning"],
   { encoding: "utf8", maxBuffer: 1 << 26 });
 const css = readFileSync("web/ui/style.css", "utf8");
 // An aegis artifact runs in a sandboxed frame with no IndexedDB, so the page gets an
@@ -44,7 +46,11 @@ const aegis = flag === "--aegis" ? `<script>${QUIET_RESIZE}</script>\n` + '<scri
 // Escape `</script` so the bundle cannot close its own tag.
 const html = readFileSync("web/index.html", "utf8")
   .replace('<link rel="stylesheet" href="./ui/style.css">', () => `${aegis}<style>\n${css}</style>`)
-  .replace('<script type="module" src="./app.js"></script>', () => `<script>\n${PREVIEW_CONFIG}\n</script>\n<script>\n${js.replace(/<\/script/gi, "<\\/script")}</script>`);
+  .replace('<script type="module" src="./app.js"></script>', () => `<script>
+${PREVIEW_CONFIG}
+</script>
+<script type="module">
+${js.replace(/<\/script/gi, "<\/script")}</script>`);
 
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, html);

@@ -1,7 +1,7 @@
 // The bank operations the app runs, and what each bank SMS does to them.
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails } from "./money.js";
-import { balance as balanceCode, link as linkCode, login as loginCode, needsLogin, register as registerCode, transfer as transferCode } from "./ops.js";
+import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, transfer as transferCode } from "./ops.js";
 import { BANKISH, parseBankSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -46,7 +46,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
 
   async function balance(cardId, { viaDialer = false } = {}) {
     const card = cardOf(cardId);
-    const ussd = balanceCode(card);
+    const ussd = card.bank === "CLASICA" ? clasicaBalance(card) : balanceCode(card);
     const s = seed();
     const attempt = await store.add({
       id: null, startedAt: now(), code: display(ussd, config, s), state: viaDialer ? "dialer" : "sent", op: "46", cardId,
@@ -140,7 +140,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    */
   async function transfer(cardId, toPan, amount) {
     const card = cardOf(cardId);
-    const ussd = transferCode(card, toPan, amount);
+    const ussd = card.bank === "CLASICA" ? clasicaTransfer(card, toPan, amount) : transferCode(card, toPan, amount);
     const s = seed();
     const attempt = await store.add({
       id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op: "45", cardId, to: toPan, amount,
@@ -154,6 +154,37 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       telemetry.event("ussd_reply", { op: "45", ok: false, failure_code: -100, error: e.message });
     }
     return current(attempt.id);
+  }
+
+  /**
+   * Op 111: associates a Clásica with the authorization number and terminal id from an ATM/POS
+   * receipt. Both are dialed only; nothing here keeps them. A confirming reply marks it associated.
+   */
+  async function associateClasica(cardId, authorization, terminal) {
+    const card = cardOf(cardId);
+    telemetry.event("ussd_sent", { op: "111", bank: card.bank, via: "api" });
+    const r = await send("111", settings().subId, dial(associateClasicaCode(card.pan, authorization, terminal), config, seed()));
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    // 111 is accepted like a registration: the service answers "procesada" and confirms by SMS.
+    const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.updateCard(cardId, { state: "associated", step: 5 });
+    return { ok, reply: r.reply };
+  }
+
+  /** Op 48: a Clásica's last operations. The reply is shown as it comes; no SMS verifies it. */
+  async function movements(cardId) {
+    const card = cardOf(cardId);
+    const ussd = clasicaMovements(card);
+    const s = seed();
+    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op: "48", cardId });
+    telemetry.event("ussd_sent", { op: "48", bank: card.bank, via: "api" });
+    const r = await send("48", settings().subId, dial(ussd, config, s));
+    if (!r.ok) {
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: r.failureCode }));
+      return { ok: false, failureCode: r.failureCode };
+    }
+    await store.patch(attempt.id, (a) => ({ ...a, state: "replied", reply: r.reply }));
+    return { ok: true, reply: r.reply };
   }
 
   /** Asks a line for its balance with its plan's code, and keeps the figure for its card. */
@@ -208,7 +239,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, linkCard, transfer, mobileBalance, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, linkCard, associateClasica, movements, transfer, mobileBalance, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
