@@ -55,3 +55,16 @@ test("qrSvg draws a QR that jsQR reads back", async () => {
   }
   assert.equal(jsQR(px, size, size)?.data, text);
 });
+
+// Review finding 2: a name cannot use bidi or control characters to look like another number.
+test("a name loses format and control characters", () => {
+  const r = parseCharge("aje:saldo?v=1&n=55555555&a=%E2%80%AEAna%E2%80%AC%00");
+  assert.equal(r.name, "Ana");
+});
+
+// Review finding 3: an amount no transfer could carry is refused.
+test("an absurd amount is refused", () => {
+  assert.deepEqual(parseCharge("aje:saldo?v=1&n=55555555&m=99999999999999999999"), { ok: false, reason: "bad" });
+  assert.deepEqual(parseCharge("aje:saldo?v=1&n=55555555&m=1000000"), { ok: false, reason: "bad" });
+  assert.equal(parseCharge("aje:saldo?v=1&n=55555555&m=999999").amount, 999999);
+});

@@ -26,9 +26,12 @@ export function parseCharge(text) {
   if (!number || number !== q.get("n")) return { ok: false, reason: "bad" };
   let amount = null;
   if (q.has("m")) {
-    if (!/^\d+$/.test(q.get("m")) || Number(q.get("m")) <= 0) return { ok: false, reason: "bad" };
+    // Whole CUP, at most six digits: more than any balance transfer carries.
+    if (!/^\d{1,6}$/.test(q.get("m")) || Number(q.get("m")) <= 0) return { ok: false, reason: "bad" };
     amount = Number(q.get("m"));
   }
-  const name = q.get("a") ? [...q.get("a").trim()].slice(0, NAME_MAX).join("") : null;
+  // Format and control characters go, so a name cannot reorder itself to look like another number.
+  const clean = (q.get("a") ?? "").replace(/[\p{Cf}\p{Cc}]/gu, "").trim();
+  const name = clean ? [...clean].slice(0, NAME_MAX).join("") : null;
   return { ok: true, number, amount, name };
 }

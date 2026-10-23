@@ -33,7 +33,10 @@ export function renderQrScan(ctx) {
     done = true;
     stream?.getTracks().forEach((t) => t.stop());
     removeEventListener("aje-qr", onTest);
+    removeEventListener("hashchange", stop);
   };
+  // Leaving the tab by any route (back, the nav, a scan) closes the camera and the listeners.
+  addEventListener("hashchange", stop);
 
   function handle(text) {
     if (done) return;
@@ -54,6 +57,13 @@ export function renderQrScan(ctx) {
   if (ctx.bridge.kind === "mock") addEventListener("aje-qr", onTest);
 
   async function scan() {
+    // The reader first: without it the camera is never opened.
+    const jsQR = await loadReader().catch(() => null);
+    if (done) return;
+    if (!jsQR) {
+      msg.textContent = "Ajé no pudo cargar el lector de QR.";
+      return;
+    }
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
     } catch {
@@ -63,11 +73,6 @@ export function renderQrScan(ctx) {
     if (done) return stop();
     video.srcObject = stream;
     await video.play().catch(() => null);
-    const jsQR = await loadReader().catch(() => null);
-    if (!jsQR) {
-      msg.textContent = "Ajé no pudo cargar el lector de QR.";
-      return;
-    }
     const canvas = document.createElement("canvas");
     const g = canvas.getContext("2d", { willReadFrequently: true });
     const tick = () => {

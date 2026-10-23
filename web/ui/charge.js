@@ -26,8 +26,22 @@ export function renderLineCharge(ctx, r) {
     const amount = h("input", { id: "lc-amount", inputmode: "numeric", autocomplete: "off" });
     const name = h("input", { id: "lc-name", autocomplete: "off", maxlength: "40" });
     const fail = (text) => { error.textContent = text; error.hidden = false; };
+    const button = h("button", { id: "lc-show", class: "btn gold", onclick: () => show() }, "Mostrar QR");
 
+    let busy = false;
     async function show() {
+      if (busy) return;
+      busy = true;
+      button.disabled = true;
+      try {
+        await make();
+      } finally {
+        busy = false;
+        if (button.isConnected) button.disabled = false;
+      }
+    }
+
+    async function make() {
       if (number) {
         const n = normalizeNumber(number.value);
         if (!n) return fail("Ese número no es un móvil Cubacel.");
@@ -49,7 +63,7 @@ export function renderLineCharge(ctx, r) {
       h("div", { class: "field" }, h("label", { for: "lc-name" }, "Tu nombre (opcional)"), name,
         h("div", { class: "hint" }, "Para que quien paga vea a quién paga.")),
       error,
-      h("button", { id: "lc-show", class: "btn gold", onclick: show }, "Mostrar QR"));
+      button);
   }
 
   function shown({ uri, attempt }) {

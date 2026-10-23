@@ -5,7 +5,7 @@ import { formatMoney, transferMatches } from "./sms.js";
 /** How long after an operation its bank SMS still verifies it. */
 export const WINDOW_MS = 20 * 60 * 1000;
 /** How long a charge's QR waits for the payment that closes it. */
-const CHARGE_MS = 24 * 60 * 60 * 1000;
+export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
 const SEEN = 50;
 
