@@ -208,6 +208,7 @@ def main():
         "screens": [],
     }
     queue = deque([[]])
+    texts = {}
     dials = 0
     last_dial = 0.0
 
@@ -242,7 +243,10 @@ def main():
         save()
         summary = text.replace("\n", " | ")[:110] if text else "(no dialog)"
         print(f"[{dials:2d}/{args.max_dials}] {code:<16} {kind:<7} {summary}", flush=True)
-        if kind == "menu" and len(path) < MAX_DEPTH:
+        texts[tuple(path)] = text
+        # The network ignores a key it has no menu for and repeats the parent screen.
+        repeats = bool(path) and texts.get(tuple(path[:-1])) == text
+        if kind == "menu" and len(path) < MAX_DEPTH and not repeats:
             for option in options:
                 if expandable(option):
                     queue.append([*path, option["key"]])
