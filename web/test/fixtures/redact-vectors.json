@@ -1,0 +1,13 @@
+[
+  {"in": "Monto: 100.00 CUP", "out": "Monto: ###.## CUP"},
+  {"in": "Nro. Transaccion: AB0000XYZ0001", "out": "Nro. Transaccion: AA####AAA####"},
+  {"in": "Beneficiario: 9200XXXXXXXX0001", "out": "Beneficiario: ####AAAAAAAA####"},
+  {"in": "Ordenante: ANA BEN CARA", "out": "Ordenante: ‹w› ‹w› ‹w›"},
+  {"in": "Saldo:\n  CR 12,5", "out": "Saldo:\n  CR ##,#"},
+  {"in": "Transacción ١٢ №3", "out": "Transacción ## №#"},
+  {"in": "Señora Pérez, su TRANSFERENCIA fue rechazada", "out": "‹w› ‹w›, su TRANSFERENCIA fue rechazada"},
+  {"in": "Saldo Contable:\r\nCR 5", "out": "Saldo Contable:\r\nCR #"},
+  {"in": "", "out": ""},
+  {"in": "Banco Metropolitano:  La Transferencia fue completada. \n Fecha: 1/2/2026 \n Beneficiario: 9200XXXXXXXX0001 \n Ordenante: CUP \n Monto: 100.00 CUP \n Nro. Transaccion: AB0000XYZ0001 \n Saldo restante: CR 1134.56 CUP ",
+   "out": "Banco Metropolitano:  La Transferencia fue completada. \n Fecha: #/#/#### \n Beneficiario: ####AAAAAAAA#### \n Ordenante: CUP \n Monto: ###.## CUP \n Nro. Transaccion: AA####AAA#### \n Saldo restante: CR ####.## CUP "}
+]
