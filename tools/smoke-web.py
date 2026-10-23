@@ -315,8 +315,86 @@ def consent_once(p, base, out, errors):
         ctx.close()
 
 
+def open_line_transfer(page, sub=3):
+    page.goto(page.url.split("#")[0] + f"#/line-transfer?sub={sub}")
+    expect(page.locator("#line-transfer")).to_be_visible()
+
+
+def line_sends(page):
+    return page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd' && c.args.code.startsWith('*234*1*')).length")
+
+
+def line_transfer_by_number(page):
+    open_line_transfer(page)
+    page.fill("#lt-num", "+53 5555 5555")
+    expect(page.locator("#lt-to")).to_contain_text("55555555")
+    page.fill("#lt-amount", "25")
+    expect(page.locator("#lt-submit")).to_have_text("Pasar 25 CUP")
+    expect(page.locator("#lt-total")).to_have_text("30 CUP")
+    page.click("#lt-submit")
+    expect(page.locator("#key-input")).to_be_visible()
+    expect(page.locator("#key-remember")).to_have_attribute("aria-pressed", "true")
+    page.fill("#key-input", "9876")
+    page.click("#key-submit")
+    expect(page.locator('#lt-result[data-outcome="ok"]')).to_be_visible(timeout=10_000)
+    page.click("#mock-panel summary")
+    page.click("#mock-line-sent")
+    expect(page.locator("#lt-result")).to_contain_text("Verificada", timeout=10_000)
+    page.keyboard.press("Escape")
+    assert page.evaluate("ajeDev.store.state.attempts[0].op") == "234"
+    assert page.evaluate("ajeDev.store.state.attempts[0].state") == "verified"
+    page.goto(page.url.split("#")[0] + "#/history")
+    expect(page.locator(".row").first).to_contain_text("Saldo a 55555555")
+
+
+def line_transfer_saved_key(page):
+    open_line_transfer(page)
+    expect(page.locator("#lt-recent button")).to_have_count(1)
+    page.click("#lt-recent button")
+    page.fill("#lt-amount", "10")
+    page.click("#lt-submit")
+    expect(page.locator('#lt-result[data-outcome="ok"]')).to_be_visible(timeout=10_000)
+    expect(page.locator("#key-input")).to_have_count(0)
+    page.keyboard.press("Escape")
+
+
+def line_transfer_bad_key(page):
+    open_line_transfer(page, sub=4)
+    page.fill("#lt-num", "55555555")
+    page.fill("#lt-amount", "10")
+    page.click("#lt-submit")
+    page.fill("#key-input", "0000")
+    page.click("#key-submit")
+    expect(page.locator("#sheet")).to_contain_text("no aceptó", timeout=10_000)
+    expect(page.locator("#key-input")).to_be_visible()
+    page.keyboard.press("Escape")
+
+
+def contact_with_landline(page):
+    open_line_transfer(page)
+    page.click("#lt-tab-con")
+    page.evaluate("ajeDev.bridge.setNextContact({ name: 'Oficina', number: '7 800 0000' })")
+    page.click("#lt-pick")
+    expect(page.locator("#lt-error")).to_have_text("Ese número no es un móvil Cubacel.")
+    page.click("#lt-pick")
+    expect(page.locator("#lt-to")).to_have_text("Para Ben · 51000001")
+    expect(page.locator("#lt-error")).to_be_hidden()
+
+
+def double_tap_sends_once(page):
+    open_line_transfer(page)
+    before = line_sends(page)
+    page.fill("#lt-num", "55555555")
+    page.fill("#lt-amount", "5")
+    page.evaluate("() => { const b = document.getElementById('lt-submit'); b.click(); b.click(); }")
+    expect(page.locator('#lt-result[data-outcome="ok"]')).to_be_visible(timeout=10_000)
+    assert line_sends(page) == before + 1, (before, line_sends(page))
+    page.keyboard.press("Escape")
+
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
-         double_tap_transfers_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
+         double_tap_transfers_once,
+         line_transfer_by_number, line_transfer_saved_key, line_transfer_bad_key, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, update_beta, refused_login]
 
 
 def main():

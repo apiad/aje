@@ -8,15 +8,17 @@ const STATE = { verified: ["✓ verificada", "ok"], failed: ["fallida", "pend"] 
 function title(ctx, a) {
   const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
   if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
+  if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
+  if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;
   return `Consulta de saldo${card ? ` · ${card.alias}` : ""}`;
 }
 
 /** One history row; the home screen's recent activity uses it too. */
 export function row(ctx, a) {
   const [label, cls] = STATE[a.state] ?? ["○ sin verificar", "pend"];
-  const detail = a.op === "45" ? `a ····${last4(a.to)}` : (a.available ?? a.reply ?? "");
+  const detail = a.op === "45" ? `a ····${last4(a.to)}` : a.op.startsWith("234") ? "" : (a.available ?? a.reply ?? "");
   return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
-    icon(a.op === "45" ? "send" : "card", "ic"),
+    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" ? "phone" : "card", "ic"),
     h("div", { class: "tx" }, h("b", {}, title(ctx, a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
     h("span", { class: `st ${cls}` }, label),
     h("span", { class: "chev" }, "›"),
@@ -34,11 +36,11 @@ function detail(ctx, a) {
       kv("Verificada por SMS", a.verifiedAt ? when(a.verifiedAt) : null),
       kv("Estado", (STATE[a.state] ?? ["sin verificar"])[0]),
       kv("Fallo", a.failureCode !== null ? `código ${a.failureCode}` : null),
-      kv("Destino", a.to ? `····${last4(a.to)}` : null),
+      kv(a.op === "234-in" ? "Desde" : "Destino", a.to ? (a.op.startsWith("234") ? a.to : `····${last4(a.to)}`) : null),
       kv("Transacción", a.transactionId),
       kv("Saldo contable", a.accounting),
       kv("Saldo disponible", a.available)),
-    a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
+    a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
     a.code ? h("details", { class: "codefold" }, h("summary", {}, "Ver el código que marcó Ajé"), h("div", { class: "cc" }, a.code)) : null,
   );
 }
