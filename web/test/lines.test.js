@@ -59,3 +59,17 @@ test("purchaseOutcome", () => {
   assert.equal(purchaseOutcome(PLAN.REFUSED), "refused");
   assert.equal(purchaseOutcome("Opcion no valida"), null);
 });
+
+// Review finding 1: every confirm layout must read as a confirm, never as a menu whose option 1 buys.
+test("confirm screens in other layouts are confirms", () => {
+  for (const r of ["Desea comprar 1 GB por 25 CUP?\n1-Sí\n2-No", "1 GB por 25 CUP\n1-Confirmo\n2-Cancelar",
+    "1 GB por 25 CUP\n1-OK\n2-Cancelar", "1 GB por 25 CUP\n1-Comprar\n2-Atras", "Plan de 1 GB\n1. Si\n2. No"]) {
+    assert.equal(parseMenu(r)?.kind, "confirm", r);
+  }
+  assert.equal(parseMenu(PLAN.SUBMENU).kind, "menu");
+});
+
+// Review finding 8: the price is the plan's, not a balance mentioned before it.
+test("the confirm's price is the amount after por", () => {
+  assert.equal(parseMenu("Su saldo es 300 CUP. Va a comprar 1 GB por 25 CUP.\n1. Aceptar\n2. Cancelar").price, "25 CUP");
+});

@@ -596,3 +596,10 @@ test("a *133 menu reaches telemetry with its digits; other replies do not", asyn
   assert.equal(menus[0].menu, PLAN.SUBMENU);
   assert.equal(menus[0].kind, "menu");
 });
+
+// Review finding 2: a success reply that lists options is still a purchase, never a second dial.
+test("a purchase reply with options after it is bought, not dialed", async () => {
+  const w = await world([{ ok: true, reply: "Su compra se ha realizado con exito.\n1-Comprar otro\n2-Salir" }, { ok: true, reply: PREPAID_REPLY }]);
+  assert.equal((await w.wf.buyPlan(2, ["1", "1"])).outcome, "bought");
+  assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
+});

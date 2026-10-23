@@ -30,7 +30,11 @@ export const changeKey = (old, next) => plain([field("234"), field("2"), field(o
 export const planPath = (path) => plain([field("133"), ...path.map((k) => field(k))]);
 
 const OPTION = /^\s*(\d{1,2})\s*[.)-]\s*(.+?)\s*$/;
-const ACCEPT = /^(aceptar|confirmar|s[ií])\b/i;
+// When in doubt a reply reads as a confirm: a confirm only shows a button, while a menu option
+// that is really "accept" would buy on a tap.
+const ACCEPT = /^(aceptar|confirm(ar|o)|s[ií]|ok|comprar)(?!\p{L})/iu;
+const DECLINE = /^(cancelar|no)(?!\p{L})/iu;
+const ASKS = /va a comprar|confirm|desea (comprar|adquirir)/i;
 
 /**
  * A network reply as a menu of numbered options, a screen that asks to confirm a purchase with 1,
@@ -45,9 +49,10 @@ export function parseMenu(reply) {
     if (m) options.push({ key: m[1], label: m[2] });
     else if (!title && !options.length) title = l;
   }
-  if (options.some((o) => o.key === "1" && ACCEPT.test(o.label))) {
-    const price = /\d+(?:[.,]\d+)?\s*CUP/i.exec(reply);
-    return { kind: "confirm", text: reply, price: price ? price[0] : null };
+  if (options.some((o) => (o.key === "1" && ACCEPT.test(o.label)) || DECLINE.test(o.label)) || (options.length && ASKS.test(reply))) {
+    // The plan's price follows "por"; otherwise the last amount, since a balance tends to come first.
+    const price = /por\s+(\d+(?:[.,]\d+)?\s*CUP)/i.exec(reply)?.[1] ?? reply.match(/\d+(?:[.,]\d+)?\s*CUP/gi)?.at(-1) ?? null;
+    return { kind: "confirm", text: reply, price };
   }
   return options.length >= 2 ? { kind: "menu", title, options } : null;
 }

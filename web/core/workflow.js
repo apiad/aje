@@ -321,7 +321,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     };
     telemetry.event("ussd_sent", { op: "133", via: "api" });
     const r = await send("133", subId, code);
-    if ((!r.ok && r.failureCode === -1) || (r.ok && parseMenu(r.reply))) {
+    const outcome = r.ok ? purchaseOutcome(r.reply) : null;
+    if ((!r.ok && r.failureCode === -1) || (r.ok && !outcome && parseMenu(r.reply))) {
       telemetry.event("ussd_sent", { op: "133", via: "dialer" });
       try {
         await bridge.dial(code);
@@ -331,7 +332,6 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       return finish("dialer", { state: "dialer" });
     }
     if (!r.ok) return finish("failed", { state: "failed", failureCode: r.failureCode });
-    const outcome = purchaseOutcome(r.reply);
     if (outcome === "bought") {
       const done = await finish("bought", { state: "verified", verifiedAt: now(), reply: r.reply }, r.reply);
       await refreshBalance(subId);
