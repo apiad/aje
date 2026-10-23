@@ -14,6 +14,10 @@
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <!-- Read the bank's confirmation SMS as it arrives. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Notify money or balance that came in while Ajé was closed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The contact's name in those notices: one lookup of the SMS's number, the contacts are never copied. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Dev build only: opt-in telemetry. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Updates: Android's installer, for APKs from the project's GitHub releases. -->
@@ -28,6 +32,7 @@
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|fontScale|density|locale"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

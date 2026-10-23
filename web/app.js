@@ -86,6 +86,8 @@ async function boot() {
   const crash = (error) => telemetry.event("crash", { error: String(error?.message ?? error).slice(0, 500), stack: String(error?.stack ?? "") });
   window.addEventListener("error", (e) => crash(e.error ?? e.message));
   window.addEventListener("unhandledrejection", (e) => crash(e.reason));
+  // A tapped notification names its notice; registered before onSms, whose ready makes the shell push it.
+  bridge.onOpen((r) => { location.hash = `#/${r}`; });
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
 
   const view = h("main", { id: "view" });

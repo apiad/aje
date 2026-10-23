@@ -20,7 +20,7 @@ private val PERMISSIONS = arrayOf(
     Manifest.permission.READ_PHONE_STATE,
     Manifest.permission.READ_PHONE_NUMBERS,
     Manifest.permission.RECEIVE_SMS,
-)
+) + (if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
 
 /** A one-shot USSD code: digits, `*` and `#`, starting with `*` and ending with `#`. */
 private val USSD = Regex("""^\*[0-9*#]+#$""")
@@ -33,6 +33,8 @@ private val USSD = Regex("""^\*[0-9*#]+#$""")
 class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessageListener {
     private var pushProxy: JavaScriptReplyProxy? = null
     private var permissionReply: Pair<JavaScriptReplyProxy, Int>? = null
+    // A notice route that came before the page was listening; pushed on ready.
+    private var pendingRoute: String? = null
 
     override fun onPostMessage(
         view: WebView, message: WebMessageCompat, sourceOrigin: Uri, isMainFrame: Boolean, replyProxy: JavaScriptReplyProxy,
@@ -73,6 +75,12 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                     reply(replyProxy, id, JSONObject.NULL)
                 }
                 "pickContact" -> activity.pickContact { reply(replyProxy, id, it ?: JSONObject.NULL) }
+                "contactNames" -> {
+                    val numbers = args.optJSONArray("numbers") ?: JSONArray()
+                    val lookUp = { contactNames(numbers) { reply(replyProxy, id, it) } }
+                    val granted = activity.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                    if (args.optBoolean("ask") && !granted) activity.askContacts(lookUp) else lookUp()
+                }
                 "installUpdate" -> Updater.install(
                     activity, args.getString("url"), args.getString("sha256"),
                     progress = { received, total ->
@@ -83,6 +91,8 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                     pushProxy = replyProxy
                     live = this
                     SmsQueue.drain(activity).forEach { push(it) }
+                    pendingRoute?.let { open(it) }
+                    pendingRoute = null
                     reply(replyProxy, id, JSONObject.NULL)
                 }
                 else -> fail(replyProxy, id, "unknown method")
@@ -104,6 +114,28 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
         }
     }
 
+    /** Tells the page to open a notice's route, now or once it sends ready. */
+    fun open(route: String) {
+        val proxy = pushProxy
+        if (proxy == null) {
+            pendingRoute = route
+            return
+        }
+        post(proxy, JSONObject().put("event", "open").put("route", route))
+    }
+
+    /** `{number: name}` for the numbers in the contacts; looked up off the main thread. */
+    private fun contactNames(numbers: JSONArray, reply: (JSONObject) -> Unit) {
+        Thread {
+            val names = JSONObject()
+            for (i in 0 until numbers.length()) {
+                val number = numbers.optString(i)
+                if (number.isNotEmpty()) Notices.nameOf(activity, number)?.let { names.put(number, it) }
+            }
+            activity.runOnUiThread { reply(names) }
+        }.start()
+    }
+
     fun onPermissionsResult() {
         val (proxy, id) = permissionReply ?: return
         permissionReply = null
@@ -114,7 +146,9 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                 .put("callPhone", granted(Manifest.permission.CALL_PHONE))
                 .put("readPhoneState", granted(Manifest.permission.READ_PHONE_STATE))
                 .put("readPhoneNumbers", granted(Manifest.permission.READ_PHONE_NUMBERS))
-                .put("receiveSms", granted(Manifest.permission.RECEIVE_SMS)),
+                .put("receiveSms", granted(Manifest.permission.RECEIVE_SMS))
+                .put("postNotifications", Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.POST_NOTIFICATIONS))
+                .put("readContacts", granted(Manifest.permission.READ_CONTACTS)),
         )
     }
 

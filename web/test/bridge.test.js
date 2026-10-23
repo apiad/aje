@@ -113,3 +113,29 @@ test("installUpdate reports download progress before it resolves", async () => {
   assert.deepEqual(await p, { ok: true });
   assert.deepEqual(seen, [[1000, 4000], [4000, 4000]]);
 });
+
+// A tapped notification opens the app on its notice; the shell may push it before the page listens.
+test("an open event pushed before a handler is delivered when onOpen registers", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native });
+  f.push({ event: "open", route: "inbox/4:abc" });
+  const got = [];
+  b.onOpen((r) => got.push(r));
+  assert.deepEqual(got, ["inbox/4:abc"]);
+  f.push({ event: "open", route: "inbox/5:def" });
+  assert.deepEqual(got, ["inbox/4:abc", "inbox/5:def"]);
+  // An open event is not an SMS.
+  const sms = [];
+  b.onSms((m) => sms.push(m));
+  assert.deepEqual(sms, []);
+});
+
+test("contactNames asks the shell with the numbers and whether to ask for the permission", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native });
+  const p = b.contactNames(["51234567"], true);
+  const req = f.sent.at(-1);
+  assert.deepEqual(req, { id: req.id, method: "contactNames", args: { numbers: ["51234567"], ask: true } });
+  f.push({ id: req.id, result: { 51234567: "Mamá" } });
+  assert.deepEqual(await p, { 51234567: "Mamá" });
+});

@@ -147,6 +147,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       calls.push({ method: "contactNames", args: { numbers, ask } });
       return Object.fromEntries(numbers.filter((n) => CONTACTS[n]).map((n) => [n, CONTACTS[n]]));
     },
+    // The browser has no notifications to tap.
+    onOpen() {},
     injectSms: (sender, body) => emit(sender, body),
     // Incoming money and plans, as PAGOxMOVIL, ETECSA and Cubacel send them.
     cardReceived: () => emit(BANK, `El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW${Date.now() % 1e9}`),

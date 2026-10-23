@@ -3,6 +3,7 @@
 //
 // JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"installUpdate", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
+//   | {"event": "open", "route": "inbox/<id>"}, when a tapped notification opens the app
 
 /** How long a USSD may go unanswered; some phones never call back. */
 const USSD_TIMEOUT_MS = 60_000;
@@ -17,9 +18,16 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
   const pending = new Map();
   const buffered = [];
   let handler = null;
+  const opens = [];
+  let openHandler = null;
 
   native.onmessage = (event) => {
     const msg = JSON.parse(event.data);
+    if (msg.event === "open") {
+      if (openHandler) openHandler(msg.route);
+      else opens.push(msg.route);
+      return;
+    }
     if (msg.event === "sms") {
       const sms = { sender: msg.sender, body: msg.body, sentAt: msg.sentAt ?? null, receivedAt: msg.receivedAt, subId: msg.subId ?? null };
       if (handler) handler(sms);
@@ -75,6 +83,11 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
      * then delete, the SMS it queued while no page was alive: so only a page that can save them
      * asks for them. SMS that arrived before a handler existed are delivered to it.
      */
+    /** The route a tapped notification opens; one pushed before a handler is delivered to it. */
+    onOpen(fn) {
+      openHandler = fn;
+      for (const route of opens.splice(0)) fn(route);
+    },
     onSms(fn) {
       const first = handler === null;
       handler = fn;
