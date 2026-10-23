@@ -26,3 +26,7 @@ Safety rules the script keeps:
 - At most 80 dials, depth at most 6, at least 4 s between dials.
 - Before writing, phone numbers become `5XXXXXXX`, the figure after "saldo" becomes
   `0.00` and any run of 7 or more digits becomes `#######`. Prices stay.
+
+After a new capture, rebuild the app's plan catalog from it and commit both outputs:
+
+    python3 tools/plan-catalog.py   # writes web/core/plancatalog.js and site/plans.json
