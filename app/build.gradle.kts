@@ -86,4 +86,7 @@ dependencies {
     implementation("androidx.webkit:webkit:1.17.1")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment:1.8.5")
+    // SmsNoticeTest runs on the JVM, where Android's org.json is a stub.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
