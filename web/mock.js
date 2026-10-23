@@ -126,8 +126,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       return { ok: true };
     },
     injectSms: (sender, body) => emit(sender, body),
-    lineSent: () => emit("Cubacel", `Usted ha transferido ${lastTransfer.amount}.00 CUP al numero ${lastTransfer.to}. Su saldo es 120.50 CUP.`),
-    lineReceived: () => emit("Cubacel", "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP."),
+    lineSent: () => emit("ETECSA", `Usted ha transferido ${lastTransfer.amount} CUP al numero ${lastTransfer.to}. Saldo principal 1234.56 CUP, linea activa hasta 2027-01-01, vence 2027-02-01`),
+    lineReceived: () => emit("ETECSA", "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP."),
     endSession: () => { session = false; },
   };
   if (typeof document !== "undefined") panel(mock);
