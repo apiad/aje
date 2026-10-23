@@ -2,7 +2,7 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
-import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
+import { changeKey, parseMenu, planPath, purchaseOutcome, transferBalance as transferBalanceCode } from "./lines.js";
 import { BANKISH, parseBankSms, parseLineSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
@@ -293,6 +293,50 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { ok, reply: r.reply };
   }
 
+  /** One level of the `*133` plan menu: a menu, a confirm, or null when the reply is neither. */
+  async function planMenu(subId, path) {
+    telemetry.event("ussd_sent", { op: "133", via: "api" });
+    const r = await send("133", subId, dial(planPath(path), config));
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const view = parseMenu(r.reply);
+    if (view) await store.setPlanMenu(path.join("*"), view);
+    return { ok: true, view, reply: r.reply };
+  }
+
+  /**
+   * Buys the plan at `path`: the path plus 1, the network's confirm option, over the API. When the
+   * network answers with a menu again, which the API cannot follow (-1, or a reply that reads as one),
+   * the same code goes to the dialer. A purchase that went through reads the line's balance again.
+   */
+  async function buyPlan(subId, path) {
+    const code = dial(planPath([...path, "1"]), config);
+    const attempt = await store.add({ id: null, startedAt: now(), code, state: "sent", op: "133", subId });
+    const finish = async (outcome, patch, reply = null) => {
+      await store.patch(attempt.id, (a) => ({ ...a, ...patch }));
+      return { outcome, reply, attempt: current(attempt.id) };
+    };
+    telemetry.event("ussd_sent", { op: "133", via: "api" });
+    const r = await send("133", subId, code);
+    if ((!r.ok && r.failureCode === -1) || (r.ok && parseMenu(r.reply))) {
+      telemetry.event("ussd_sent", { op: "133", via: "dialer" });
+      try {
+        await bridge.dial(code);
+      } catch {
+        return finish("failed", { state: "failed", failureCode: -100 });
+      }
+      return finish("dialer", { state: "dialer" });
+    }
+    if (!r.ok) return finish("failed", { state: "failed", failureCode: r.failureCode });
+    const outcome = purchaseOutcome(r.reply);
+    if (outcome === "bought") {
+      const done = await finish("bought", { state: "verified", verifiedAt: now(), reply: r.reply }, r.reply);
+      await refreshBalance(subId);
+      return done;
+    }
+    if (outcome === "refused") return finish("refused", { state: "failed", reply: r.reply }, r.reply);
+    return finish("unknown", { state: "replied", reply: r.reply }, r.reply);
+  }
+
   /** Today's balance transfers from a line that did not fail; the network caps them per day. */
   function transfersToday(subId) {
     const midnight = new Date(now()).setHours(0, 0, 0, 0);
@@ -354,7 +398,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, handleSms };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, planMenu, buyPlan, handleSms };
 }
 
 /** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */

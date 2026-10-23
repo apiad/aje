@@ -10,15 +10,16 @@ function title(ctx, a) {
   if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
   if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
   if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;
+  if (a.op === "133") return "Compra de plan";
   return `Consulta de saldo${card ? ` · ${card.alias}` : ""}`;
 }
 
 /** One history row; the home screen's recent activity uses it too. */
 export function row(ctx, a) {
   const [label, cls] = STATE[a.state] ?? ["○ sin verificar", "pend"];
-  const detail = a.op === "45" ? `a ····${last4(a.to)}` : a.op.startsWith("234") ? "" : (a.available ?? a.reply ?? "");
+  const detail = a.op === "45" ? `a ····${last4(a.to)}` : a.op.startsWith("234") || a.op === "133" ? "" : (a.available ?? a.reply ?? "");
   return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
-    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" ? "phone" : "card", "ic"),
+    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" ? "phone" : a.op === "133" ? "plan" : "card", "ic"),
     h("div", { class: "tx" }, h("b", {}, title(ctx, a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
     h("span", { class: `st ${cls}` }, label),
     h("span", { class: "chev" }, "›"),
@@ -40,7 +41,7 @@ function detail(ctx, a) {
       kv("Transacción", a.transactionId),
       kv("Saldo contable", a.accounting),
       kv("Saldo disponible", a.available)),
-    a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
+    a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") || a.op === "133" ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
     a.code ? h("details", { class: "codefold" }, h("summary", {}, "Ver el código que marcó Ajé"), h("div", { class: "cc" }, a.code)) : null,
   );
 }

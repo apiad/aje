@@ -26,7 +26,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const defaults = {
     settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, retryBalance: null, seenSms: [],
+    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planMenus: {}, retryBalance: null, seenSms: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -124,6 +124,12 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     async setMobileBalance(subId, value, details = null) {
       state.mobileBalances = { ...state.mobileBalances, [subId]: value };
       if (details) state.mobileDetails = { ...state.mobileDetails, [subId]: { ...details, at: now() } };
+      await commit();
+    },
+
+    /** The last view read of a *133 menu level, keyed by its path joined with "*". */
+    async setPlanMenu(key, view) {
+      state.planMenus = { ...state.planMenus, [key]: view };
       await commit();
     },
 
