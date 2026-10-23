@@ -1,4 +1,4 @@
-// Updates as the screens show them: the automatic daily check, "Buscar actualización", and the
+// Updates as the screens show them: the automatic check on opening the app, "Buscar actualización", and the
 // "Actualizar" button that hands the release's APK to the shell (installUpdate).
 import { checkForUpdate, shouldAutoCheck } from "../core/update.js";
 import { h } from "./dom.js";
@@ -24,7 +24,7 @@ export async function checkNow(ctx) {
   return update;
 }
 
-/** At most once a day, quietly: a failed check shows nothing. */
+/** On opening or returning to the app, at most once an hour, quietly: a failed check shows nothing. */
 export function autoCheck(ctx) {
   if (shouldAutoCheck(ctx.store.state.update.checkedAt, Date.now())) checkNow(ctx).catch(() => {});
 }

@@ -5,7 +5,8 @@
 // downloads on github.com send no CORS headers, so the page reads nothing but the API.
 
 export const RELEASES_URL = "https://api.github.com/repos/apiad/aje/releases?per_page=30";
-const DAY_MS = 86_400_000;
+/** How long after a check the app waits before checking again on its own. */
+const CHECK_EVERY_MS = 3_600_000;
 const APK = /^aje-(.+)-(\d+)\.apk$/;
 
 /** The update a release offers, or null when it carries no APK named by the convention. */
@@ -36,4 +37,4 @@ export async function checkForUpdate({ fetch, channel, currentCode }) {
   return pickUpdate(await res.json(), { channel, currentCode });
 }
 
-export const shouldAutoCheck = (lastAt, now) => lastAt === null || now - lastAt >= DAY_MS;
+export const shouldAutoCheck = (lastAt, now) => lastAt === null || now - lastAt >= CHECK_EVERY_MS;

@@ -54,9 +54,10 @@ test("checkForUpdate reports GitHub's status when it fails", async () => {
   await assert.rejects(checkForUpdate({ fetch, channel: "stable", currentCode: 1 }), /403/);
 });
 
-test("the automatic check runs at most once a day", () => {
-  const DAY = 86_400_000;
+test("the automatic check runs at most once an hour", () => {
   assert.equal(shouldAutoCheck(null, 5), true);
-  assert.equal(shouldAutoCheck(1, 1 + DAY - 1), false);
-  assert.equal(shouldAutoCheck(1, 1 + DAY), true);
+  // Every open or return to the app may check, at most once an hour.
+  const HOUR = 3_600_000;
+  assert.equal(shouldAutoCheck(1, 1 + HOUR - 1), false);
+  assert.equal(shouldAutoCheck(1, 1 + HOUR), true);
 });
