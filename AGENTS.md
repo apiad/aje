@@ -67,7 +67,8 @@ off until the person turns it on; the script checks it is there.
   collector stamps the hour). Texts and error messages go through `redact` in
   `web/core/redact.js` before they are queued: digits become `#`, and any word outside the
   vocabulary in `web/core/vocab.js` becomes `‹w›`. Stacks keep only `function@file:line:col`.
-  No field carries a phone or card number, a name, an amount or a balance. The allowlist is
+  No field carries a phone or card number, a name, an amount or a balance. The one text that keeps
+  its digits is a `*133` menu in `menu`, through `redactMenu`, since it is the network's public catalog. The allowlist is
   `ALLOWED` in `web/core/telemetry.js`; `telemetry/collector.py` mirrors it and redacts again.
   The collector publishes every row, so the vocabulary never takes a name. See `docs/telemetry.md`.
 - The native shell gains no logic and no new primitive without a change to the spec.

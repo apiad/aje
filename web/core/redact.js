@@ -21,6 +21,19 @@ export function redact(text, vocab = VOCAB) {
   }).join("");
 }
 
+/**
+ * A *133 menu, which is the network's public catalog: like redact, but option numbers and prices keep
+ * their digits. A run of 8 or more digits, which could be a phone number, still becomes #.
+ */
+export function redactMenu(text, vocab = VOCAB) {
+  const masked = text.replace(/\p{N}(?:[\s.-]?\p{N}){7,}/gu, (run) => run.replace(/\p{N}/gu, "#"));
+  return masked.split(/(‹w›|[\p{L}\p{N}\p{M}]+)/u).map((token, i) => {
+    if (i % 2 === 0 || token === "‹w›") return token;
+    if (/\p{N}/u.test(token)) return token.replace(/\p{Lu}/gu, "A").replace(/[\p{Ll}\p{Lo}\p{Lm}\p{Lt}]/gu, "a");
+    return vocab.has(fold(token)) ? token : "‹w›";
+  }).join("");
+}
+
 /** A V8 stack as `function@file:line:col` lines, relative to web/, at most 20. */
 export function reduceStack(stack) {
   const frames = [];

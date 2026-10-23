@@ -38,12 +38,17 @@ text shows up in the data with `‹w›` where its fixed words are, add those wo
 `telemetry/collector.py` implements the same `redact` in Python; both run the vectors in
 `web/test/fixtures/redact-vectors.json`.
 
+A `*133` plan menu is the network's public catalog, and its option numbers and prices are what
+there is to learn. The `plan_menu` event carries it in `menu`, through `redactMenu`: the same
+rules, except that digits stay, and any run of 8 or more digits, which could be a phone number,
+still becomes `#`. The collector has `redact_menu`; both run `web/test/fixtures/menu-vectors.json`.
+
 ## The collector
 
 `telemetry/collector.py`, standard library only, behind Caddy at `https://aje.apiad.net/t`.
 
 - Accepts one JSON object up to 16 KB with a string `event`; answers 204, or 400, 403, 413.
-- Keeps only the allowlisted fields, redacts `text` and `error` again, keeps only frame lines in
+- Keeps only the allowlisted fields, redacts `text` and `error` again, and `menu` with `redact_menu`, keeps only frame lines in
   `stack`, and adds `hour`, the UTC hour the event arrived (`2026-10-23T10:00Z`).
 - Writes no request log, and the Caddy site has no access log, so no IP is ever written.
 - Rows wait in `pending/<hour>.jsonl`. Once the hour is over, they are shuffled and appended to

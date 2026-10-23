@@ -585,3 +585,14 @@ test("buyPlan reports an unknown reply and a failed USSD without dialing", async
   assert.equal((await b.wf.buyPlan(2, ["9"])).outcome, "failed");
   for (const w of [a, b]) assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
 });
+
+test("a *133 menu reaches telemetry with its digits; other replies do not", async () => {
+  const w = await world([{ ok: true, reply: PLAN.SUBMENU }, { ok: true, reply: "Opcion no valida" }]);
+  await w.wf.planMenu(2, ["1"]);
+  await w.wf.planMenu(2, ["9"]);
+  await w.telemetry.idle();
+  const menus = w.posted.flatMap((b) => [JSON.parse(b)].flat()).filter((e) => e.event === "plan_menu");
+  assert.equal(menus.length, 1);
+  assert.equal(menus[0].menu, PLAN.SUBMENU);
+  assert.equal(menus[0].kind, "menu");
+});

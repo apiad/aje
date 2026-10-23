@@ -299,7 +299,11 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const r = await send("133", subId, dial(planPath(path), config));
     if (!r.ok) return { ok: false, failureCode: r.failureCode };
     const view = parseMenu(r.reply);
-    if (view) await store.setPlanMenu(path.join("*"), view);
+    if (view) {
+      await store.setPlanMenu(path.join("*"), view);
+      // The menu is the network's public catalog; its option numbers and prices are what to learn.
+      telemetry.event("plan_menu", { op: "133", kind: view.kind, menu: r.reply });
+    }
     return { ok: true, view, reply: r.reply };
   }
 
