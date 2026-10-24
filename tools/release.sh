@@ -20,4 +20,10 @@ PRE=()
 [[ $VERSION == *-* ]] && PRE=(--prerelease)
 gh release create "v$VERSION" "build/release/$APK" "build/release/$APK.sha256" --target "$HEAD" \
   --title "Ajé $VERSION" "${PRE[@]}" --notes "Ajé $VERSION (versionCode $CODE). Instala el APK o actualiza desde Ajé: Ajustes → Buscar actualización. Qué es Ajé y cómo instalarla: https://aje.apiad.net/"
+# Only the newest beta stays a release; every stable one stays. Tags stay too, so each beta can be rebuilt.
+# The updater reads one page of 30 releases, which old betas would otherwise fill.
+if [[ $VERSION == *-* ]]; then
+  gh release list --limit 1000 --json tagName,isPrerelease --jq ".[] | select(.isPrerelease and .tagName != \"v$VERSION\") | .tagName" |
+    while read -r tag; do gh release delete "$tag" --yes; echo "deleted the release $tag (its tag stays)"; done
+fi
 echo "released v$VERSION as $APK"
