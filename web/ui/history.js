@@ -28,7 +28,7 @@ function title(ctx, a) {
   if (a.op === "in-card") return `Transferencia recibida · ${plus(a)}`;
   if (a.op === "in-recharge") return `Recarga recibida · ${a.amount !== null ? plus(a) : a.plan}`;
   if (a.op === "in-plan") return `Plan recibido · ${a.plan}`;
-  if (a.op === "234-charge") return a.state === "verified" ? `Cobro de ${a.from} · +${a.receivedAmount} CUP` : `Cobro${a.amount ? ` · ${a.amount} CUP` : ""}`;
+  if (a.op === "234-charge") return a.state === "verified" ? `Saldo de ${a.from} por QR · +${a.receivedAmount} CUP` : `QR para recibir saldo${a.amount ? ` · ${a.amount} CUP` : ""}`;
   return `Consulta de saldo${card ? ` · ${card.alias}` : ""}`;
 }
 

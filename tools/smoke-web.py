@@ -628,7 +628,7 @@ def charge_by_qr(page):
     # Review finding 4: a double tap creates one charge.
     page.wait_for_timeout(300)
     assert page.evaluate("ajeDev.store.state.attempts.filter((a) => a.op === '234-charge').length") == charges + 1
-    expect(page.locator("#lc-status")).to_contain_text("Esperando el pago")
+    expect(page.locator("#lc-status")).to_contain_text("Esperando el saldo")
     expect(page.locator("#line-charge")).to_contain_text("150 CUP")
     page.click("#mock-panel summary")
     page.click("#mock-line-received")
@@ -652,7 +652,7 @@ def pay_by_qr(page):
     # Headless Chromium has no camera: the scanner says so and offers the number instead.
     expect(page.locator("#qr-msg")).to_contain_text("cámara", timeout=10_000)
     page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'https://example.com/pago' }))")
-    expect(page.locator("#qr-msg")).to_have_text("Este QR no es un cobro de Ajé")
+    expect(page.locator("#qr-msg")).to_have_text("Este QR no es de Ajé para recibir saldo")
     page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'aje:saldo?v=9&n=56666666' }))")
     expect(page.locator("#qr-msg")).to_have_text("Actualiza Ajé para leer este QR")
     page.click("#mock-panel summary")
@@ -660,8 +660,8 @@ def pay_by_qr(page):
     expect(page.locator("#line-transfer")).to_be_visible()
     expect(page.locator("#lt-to")).to_have_text("Para Ana · 56666666")
     expect(page.locator("#lt-amount")).to_have_value("150")
-    expect(page.locator("#lt-submit")).to_have_text("Pasar 150 CUP")
-    # Scanning fills the form; nothing goes out until the person taps Pasar and gives the key.
+    expect(page.locator("#lt-submit")).to_have_text("Enviar 150 CUP")
+    # Scanning fills the form; nothing goes out until the person taps Enviar and gives the key.
     assert line_sends(page) == dials
     # Review finding 7: leaving the QR tab removes its test listener, so the panel's QR does nothing elsewhere.
     page.goto(page.url.split("#")[0] + "#/qr")
@@ -696,7 +696,7 @@ def line_transfer_by_number(page):
     page.fill("#lt-num", "+53 5555 5555")
     expect(page.locator("#lt-to")).to_contain_text("55555555")
     page.fill("#lt-amount", "25")
-    expect(page.locator("#lt-submit")).to_have_text("Pasar 25 CUP")
+    expect(page.locator("#lt-submit")).to_have_text("Enviar 25 CUP")
     expect(page.locator("#lt-total")).to_have_text("30 CUP")
     page.click("#lt-submit")
     expect(page.locator("#key-input")).to_be_visible()
@@ -768,7 +768,7 @@ def double_tap_sends_once(page):
 
 
 def no_key_double_tap_sends_once(page):
-    # Line 4 has no saved key: Pasar stays off while the send runs.
+    # Line 4 has no saved key: Enviar stays off while the send runs.
     open_line_transfer(page, sub=4)
     before = line_sends(page)
     page.fill("#lt-num", "55555555")

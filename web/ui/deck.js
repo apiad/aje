@@ -26,8 +26,8 @@ const ACTIONS = {
     ["mobile-balance", "Saldo móvil", "phone"],
     ["soon", "Recargar", "bolt"],
     ["plans", "Comprar plan", "plan"],
-    ["line-transfer", "Pasar saldo", "send"],
-    ["line-charge", "Cobrar", "qr"],
+    ["line-transfer", "Enviar saldo", "send"],
+    ["line-charge", "Recibir saldo", "qr"],
   ],
 };
 const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], pending: [["resume", "Continuar"]], line: [["mobile-balance", "Saldo"]] };
