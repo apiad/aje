@@ -25,6 +25,14 @@ export function parseBankSms(body) {
     return { kind: "transfer", bank, date, beneficiary, amount, transactionId, remaining: money(text, "Saldo restante") };
   }
   if (/se ha autenticado en la plataforma de pagos m[oó]viles/i.test(text)) return { kind: "auth", bank };
+  // A Nauta recharge ("recargada") or a Nauta Hogar bill ("pagada"): the amount is the one asked, before any discount.
+  const nauta = /La cuenta\s*(Nauta Hogar)?\s*:\s*([^\s@:]+)@nauta\.com?\.cu ha sido (?:recargada|pagada) con ([0-9][0-9.,]*)\s*CUP/i.exec(text);
+  if (nauta) {
+    const cents = centsOf(nauta[3]);
+    const transactionId = /Transacci[oó]n\s*:\s*([A-Z0-9]+)/i.exec(text)?.[1] ?? null;
+    if (cents === null) return null;
+    return { kind: "nauta", bank, user: nauta[2].toLowerCase(), hogar: Boolean(nauta[1]), amount: { cents, currency: "CUP" }, transactionId };
+  }
   return null;
 }
 

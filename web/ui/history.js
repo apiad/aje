@@ -1,6 +1,6 @@
 // History: every operation, logged when sent and verified when the bank's SMS arrives.
 // The code shown is the display form, with any key masked; the dialed form is never kept.
-import { KINDS } from "../core/bills.js";
+import { KINDS, titleOf } from "../core/bills.js";
 import { last4 } from "../core/money.js";
 import { formatMoney } from "../core/sms.js";
 import { CHARGE_MS } from "../core/store.js";
@@ -19,7 +19,7 @@ const card = (ctx, a) => ctx.store.state.cards.find((c) => c.id === a.cardId);
 
 function title(ctx, a) {
   const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
-  if (a.billId) return `${KINDS[a.kind]?.label ?? "Pago"} · ${a.alias}${a.amount ? ` · ${a.amount} CUP` : ""}`;
+  if (a.billId) return a.debt ? `Deuda · ${titleOf(a)}` : `${titleOf(a)}${a.amount ? ` · ${a.amount} CUP` : ""}`;
   if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
   if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
   if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;

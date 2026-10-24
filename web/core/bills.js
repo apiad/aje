@@ -68,5 +68,18 @@ export function payBill(bill, card) {
   }
 }
 
+/**
+ * Op 47: what a bill owes, as `type*number`, with Metropolitano's type for each kind. Nauta has no
+ * debt to ask; a Nauta Hogar debt is another op.
+ */
+export function debtQuery(bill) {
+  const type = bill.kind === "water" ? { 1: "AGUAHABANA", 2: "AGUAPROVINCIAS", 3: "AGUAVARADERO" }[bill.region] : { phone: "1", electricity: "2", gas: "11" }[bill.kind];
+  if (!type) throw new RangeError(`no debt query for ${bill.kind}`);
+  return encoded("47", [field(type), field(bill.number)]);
+}
+
 /** The op a bill's payment dials, for history and telemetry. */
 export const opOf = (bill) => (bill.kind === "water" ? WATER_REGIONS[bill.region]?.op : { electricity: "41", phone: "42", gas: "67", nauta: "59" }[bill.kind]);
+
+/** "Luz · Casa", or just "Luz" when the account is named after its kind. */
+export const titleOf = ({ kind, alias }) => (alias && alias !== KINDS[kind]?.label ? `${KINDS[kind]?.label ?? "Pago"} · ${alias}` : KINDS[kind]?.label ?? "Pago");

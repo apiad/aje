@@ -129,6 +129,15 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       return at - pending.startedAt;
     },
 
+    /** Verifies the pending Nauta payment to this account for this amount. Returns the latency, or null. */
+    async verifyNauta(sms, at = now()) {
+      const pending = pendingWhere(at, (a) => a.kind === "nauta" && a.billId && a.to === sms.user && a.amount * 100 === sms.amount.cents);
+      if (!pending) return null;
+      confirmCard(pending.cardId);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, verifiedAt: at }));
+      return at - pending.startedAt;
+    },
+
     /** Verifies the pending balance transfer to this number for this amount. Returns the latency, or null. */
     async verifyLineTransfer(sms, at = now()) {
       const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);

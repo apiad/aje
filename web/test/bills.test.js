@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkNumber, digitsOf, opOf, payBill } from "../core/bills.js";
+import { checkNumber, debtQuery, digitsOf, opOf, payBill, titleOf } from "../core/bills.js";
 import { dial, DEFAULT_CONFIG } from "../core/ussd.js";
 
 const card = { bank: "METROPOLITANO", currency: "CUP", pan: "9227959900000001" };
@@ -40,4 +40,19 @@ test("bill numbers are checked by kind, bank and water region", () => {
   assert.match(checkNumber("water", "12345678901", { region: 2 }).error, /14 o 16/);
   assert.deepEqual(checkNumber("nauta", " Ana.Perez@nauta.com.cu "), { number: "ana.perez" });
   assert.ok(checkNumber("nauta", "a b").error);
+});
+
+test("the debt query sends Metropolitano's type for each kind and the bill number", () => {
+  const q = (b) => [debtQuery(b).op, ...values(debtQuery(b))];
+  assert.deepEqual(q({ kind: "electricity", number: "1234567890123" }), ["47", "2", "1234567890123"]);
+  assert.deepEqual(q({ kind: "phone", number: "123456789012345" }), ["47", "1", "123456789012345"]);
+  assert.deepEqual(q({ kind: "gas", number: "123456789012" }), ["47", "11", "123456789012"]);
+  assert.deepEqual(q({ kind: "water", number: "12345678901", region: 1 }), ["47", "AGUAHABANA", "12345678901"]);
+  assert.deepEqual(q({ kind: "water", number: "12345678901234", region: 2 }), ["47", "AGUAPROVINCIAS", "12345678901234"]);
+  assert.throws(() => debtQuery({ kind: "nauta", number: "ana" }), RangeError);
+});
+
+test("a bill's title skips an alias that repeats its kind", () => {
+  assert.equal(titleOf({ kind: "electricity", alias: "Casa" }), "Luz · Casa");
+  assert.equal(titleOf({ kind: "electricity", alias: "Luz" }), "Luz");
 });

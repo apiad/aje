@@ -14,6 +14,9 @@ const SAMPLES = {
     " Monto: 100.00 CUP \n" +
     " Nro. Transaccion: AB0000XYZ0001 \n" +
     " Saldo restante: CR 1134.56 CUP ",
+  // The mock cannot decode the dialed user and amount: these match the smoke test's Nauta account.
+  NAUTA: "Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB000CD0001. \n" +
+    " Importe Pagado: 100.00 \n Saldo Restante: DB 1100.06 CUP. \n Se aplico un descuento del 00% al pago realizado. Gracias por utilizar nuestros servicios, ETECSA.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
 };
@@ -71,6 +74,13 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     // Seen on a phone: 111 without a MiTransfer session.
     if (code.startsWith("*444*111*") && !session) return "No es posible realizar la operacion. Debe autenticarse.";
     if (code.startsWith("*444*111*")) { clasica = true; return "Su solicitud de asociacion esta siendo procesada, espere un SMS"; }
+    // Bills and Nauta (41, 42, 67, 19, 51, 21, 59): a session first; Nauta's SMS confirms its recharge.
+    const bill = /^\*444\*(41|42|67|19|51|21|59)\*/.exec(code);
+    if (bill && !session) return "No es posible realizar la operacion. Debe autenticarse.";
+    if (bill?.[1] === "59") later(() => emit(BANK, SAMPLES.NAUTA));
+    if (bill) return "Su solicitud esta siendo procesada, espere un sms con los datos de la transaccion.";
+    // The debt query's reply has not been captured yet: a guess at its shape.
+    if (code.startsWith("*444*47*")) return session ? "La factura tiene una deuda de 85.40 CUP" : "No es posible realizar la operacion. Debe autenticarse.";
     if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";

@@ -49,7 +49,7 @@ function status(a) {
 }
 
 /** The status mark: a spinner while the operation still waits on the bank, a dot once it is settled. */
-const mark = (waiting) => h("span", { class: waiting ? "spin" : "dot", "aria-hidden": "true" });
+export const mark = (waiting) => h("span", { class: waiting ? "spin" : "dot", "aria-hidden": "true" });
 
 function attemptView(a) {
   const waiting = !a || a.state === "sent" || (a.op === "46" && a.state === "replied");
