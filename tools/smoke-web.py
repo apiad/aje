@@ -201,11 +201,18 @@ def pay_bills(page):
     expect(page.locator('#bills [data-bill]')).to_have_count(1)
     expect(page.locator("#bills")).to_contain_text("Casa")
     expect(page.locator("#bills")).to_contain_text("····0123")
-    before = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
     page.locator("#bills [data-pay]").click()
     expect(page.locator("#sheet")).to_contain_text("Luz · Casa")
-    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
-    assert len(dials) == before + 1 and dials[-1].startswith("*444*41*"), dials[-1:]
+    # The reload dropped the mock's session: the bank asks for one first.
+    expect(page.locator('#pin, #bill-result:not([data-state="sent"])').first).to_be_visible(timeout=10_000)
+    if page.locator("#pin").count():
+        page.fill("#pin", "1234")
+        page.click("#pin-submit")
+    expect(page.locator("#bill-result")).to_contain_text("procesada", timeout=10_000)
+    sent = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
+    assert sent[-1].startswith("*444*41*"), sent[-1:]
+    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
     page.keyboard.press("Escape")
     # Nauta from the backup's offer: the user comes filled in, the amount is asked.
     page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
@@ -219,6 +226,16 @@ def pay_bills(page):
     page.click("#bill-save")
     expect(page.locator('#bills [data-bill]')).to_have_count(2)
     expect(page.locator("#bill-offers .row")).to_have_count(1)
+    # With the session gone, paying asks for the key, logs in, pays, and the bank's SMS verifies it.
+    page.click("#mock-panel summary")
+    page.click("#mock-logout")
+    page.locator("#bills [data-bill]", has_text="ana.perez").locator("[data-pay]").click()
+    expect(page.locator("#pin")).to_be_visible(timeout=10_000)
+    page.fill("#pin", "1234")
+    page.click("#pin-submit")
+    expect(page.locator('#bill-result[data-state="verified"]')).to_contain_text("Verificado", timeout=15_000)
+    expect(page.locator("#sheet")).to_contain_text("AB000CD0001")
+    page.keyboard.press("Escape")
     # Water asks for the company; the number's length follows it.
     page.click("#bill-add")
     page.click('#bill-kind button[data-value="water"]')
@@ -231,7 +248,9 @@ def pay_bills(page):
     page.click("#bill-delete")
     expect(page.locator('#bills [data-bill]')).to_have_count(1)
     page.click('nav a[href="#/history"]')
-    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(1)
+    # The attempt the bank refused for want of a session, then the payment.
+    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(2)
+    expect(page.locator("#history .row", has_text="ana.perez").first).to_contain_text("verificada")
     page.goto(page.url.split("#")[0] + "#/home")
 
 

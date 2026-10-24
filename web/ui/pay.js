@@ -1,11 +1,11 @@
 // Pagar: the saved bill and service accounts, each paid with one tap, and the form that adds or
 // edits one. A payment is dialed: the bank's menu shows the debt and the person confirms with 1.
-import { checkNumber, digitsOf, KINDS, NAUTA_TYPES, WATER_REGIONS } from "../core/bills.js";
+import { checkNumber, digitsOf, KINDS, NAUTA_TYPES, titleOf, WATER_REGIONS } from "../core/bills.js";
 import { BANKS, last4, parseAmount } from "../core/money.js";
 import { billNumberFromText } from "../core/ocr.js";
 import { h, icon } from "./dom.js";
 import { openScanner, paperFrame } from "./scanner.js";
-import { transferSheet } from "./sheets.js";
+import { mark, openSheet } from "./sheets.js";
 
 /** Cards a bill can be paid from: linked bank cards; the Clásica's bills go through MiTransfer, not here. */
 const payingCards = (ctx) => ctx.store.state.cards.filter((c) => c.state === "linked" && c.bank !== "CLASICA");
@@ -29,6 +29,106 @@ function suggestions(ctx) {
 
 const inFlight = new Set();
 
+/**
+ * Pays a bill and follows it: the bank's reply, then its SMS for Nauta. When the bank wants a session,
+ * the sheet asks for the key (or unlocks the saved one), waits for the session, and pays again.
+ */
+async function billSheet(ctx, bill) {
+  const card = ctx.store.state.cards.find((c) => c.id === bill.cardId);
+  const session = ctx.workflow.sessionOf(card.bank);
+  let phase = "paying"; // paying | unlocking | login | waiting
+  let attemptId = null;
+  let error = null;
+  let loginReply = null;
+  let saved = { available: false, saved: false };
+  let unsubscribe = null;
+  const attempt = () => ctx.store.state.attempts.find((a) => a.id === attemptId) ?? null;
+
+  function view(a) {
+    if (!a || a.state === "sent") return [true, "Pagando…"];
+    if (a.state === "verified") return [false, "Pagado. Verificado por el SMS del banco."];
+    if (a.state === "dialer") return [false, "Termina en el marcador: responde al menú del banco. Su SMS lo verificará."];
+    if (a.state === "failed") return [false, `El teléfono no lo envió (código ${a.failureCode}).`];
+    // Only Nauta's confirmation SMS is known so far; the other kinds stop at the bank's reply.
+    return bill.kind === "nauta" ? [true, "Respuesta del banco; esperando su SMS…"] : [false, "Respuesta del banco"];
+  }
+
+  const sheet = openSheet(ctx, () => {
+    const parts = [h("h3", {}, titleOf(bill))];
+    if (phase === "unlocking") {
+      parts.push(h("div", { class: "reply pending" }, h("div", { class: "k status" }, mark(true), "Desbloquea la clave guardada con tu huella o el bloqueo del teléfono.")));
+    } else if (phase === "login") {
+      const pin = h("input", { id: "pin", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Clave del banco" });
+      parts.push(h("p", { class: "lead" }, "El banco pide abrir sesión. Escribe la clave de tu tarjeta; luego Ajé paga."),
+        h("div", { class: "field" }, pin), h("div", { class: "err" }, error ?? ""),
+        h("button", { id: "pin-submit", class: "btn gold", onclick: () => {
+          const key = pin.value;
+          pin.value = "";
+          if (!/^[0-9]{4}$/.test(key)) { error = "La clave tiene 4 dígitos."; return sheet.redraw(); }
+          login(() => ctx.workflow.login(session, key));
+        } }, "Autenticarse y pagar"));
+      queueMicrotask(() => pin.focus());
+    } else if (phase === "waiting") {
+      parts.push(h("div", { class: "reply pending" }, h("div", { class: "k status" }, mark(true), "Esperando el SMS del banco; luego Ajé paga."),
+        loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
+    } else {
+      const a = attempt();
+      const [waiting, text] = view(a);
+      parts.push(h("div", { class: `reply${waiting ? " pending" : ""}`, id: "bill-result", "data-state": a?.state ?? "sent" },
+        h("div", { class: "k status" }, mark(waiting), text), a?.reply ? h("div", { class: "m" }, a.reply) : null),
+      a?.transactionId ? h("div", { class: "kv" }, h("span", {}, "Transacción"), h("b", {}, a.transactionId)) : null);
+    }
+    parts.push(h("button", { class: "btn ghost", onclick: () => sheet.close() }, "Cerrar"));
+    return parts;
+  }, () => unsubscribe?.());
+
+  async function pay() {
+    phase = "paying";
+    sheet.redraw();
+    const r = await ctx.workflow.payBill(bill.id);
+    attemptId = r.attempt.id;
+    if (!r.needsLogin) return sheet.redraw();
+    saved = await ctx.workflow.savedPin(session);
+    if (saved.saved) {
+      phase = "unlocking";
+      sheet.redraw();
+      if (await login(() => ctx.workflow.loginWithSaved(session))) return;
+      error = "No se desbloqueó la clave guardada. Escríbela.";
+    }
+    phase = "login";
+    sheet.redraw();
+  }
+
+  // Logs in, then pays again once the session is open: at once when the reply opened it, else on the bank's SMS.
+  async function login(run) {
+    const since = Date.now();
+    const opened = () => (ctx.store.state.banks[session]?.authenticatedAt ?? 0) >= since;
+    phase = "waiting";
+    loginReply = null;
+    sheet.redraw();
+    const r = await run();
+    if (!r) return false;
+    if (!r.ok) {
+      phase = "login";
+      error = `El teléfono no la envió (código ${r.failureCode}).`;
+      sheet.redraw();
+      return true;
+    }
+    loginReply = r.reply;
+    if (opened()) return pay().then(() => true);
+    sheet.redraw();
+    unsubscribe = ctx.store.subscribe(() => {
+      if (!opened()) return;
+      unsubscribe();
+      unsubscribe = null;
+      pay();
+    });
+    return true;
+  }
+
+  await pay();
+}
+
 export function renderPay(ctx) {
   const cards = payingCards(ctx);
   const { bills } = ctx.store.state;
@@ -39,8 +139,7 @@ export function renderPay(ctx) {
     if (inFlight.has(bill.id)) return;
     inFlight.add(bill.id);
     try {
-      const attempt = await ctx.workflow.payBill(bill.id);
-      transferSheet(ctx, attempt, `${KINDS[bill.kind].label} · ${bill.alias}`);
+      await billSheet(ctx, bill);
     } finally {
       inFlight.delete(bill.id);
     }
@@ -63,7 +162,7 @@ export function renderPay(ctx) {
       h("div", { class: "list", id: "bill-offers" }, offered.map((o) => h("div", { class: "row" }, icon(KINDS[o.kind].icon, "ic"),
         h("div", { class: "tx" }, h("b", {}, KINDS[o.kind].label), h("span", {}, o.kind === "nauta" ? o.number : `····${last4(o.number)}`)),
         h("button", { class: "addchip", onclick: () => ctx.go(`bill?kind=${o.kind}&number=${encodeURIComponent(o.number)}${o.nautaType ? `&type=${o.nautaType}` : ""}`) }, "Añadir"))))] : null,
-    h("div", { class: "warn" }, "El pago termina en el marcador del teléfono: el banco muestra lo que debes y confirmas con ", h("b", {}, "1"), "."));
+    h("div", { class: "warn" }, "Ajé paga por USSD en la línea elegida en Ajustes. Si el banco muestra un menú, termina en el marcador."));
 }
 
 export function renderBill(ctx, r) {
@@ -100,7 +199,7 @@ export function renderBill(ctx, r) {
     if (checked.error) return fail(checked.error);
     const amount = s.kind === "nauta" ? parseAmount(s.amount) : null;
     if (s.kind === "nauta" && !(amount > 0)) return fail("El importe es un número entero de CUP, sin decimales.");
-    const bill = { id: editing?.id, kind: s.kind, alias: s.alias.trim() || KINDS[s.kind].label, number: checked.number, cardId: card.id,
+    const bill = { id: editing?.id, kind: s.kind, alias: s.alias.trim() || (s.kind === "nauta" ? checked.number : KINDS[s.kind].label), number: checked.number, cardId: card.id,
       ...(s.kind === "water" ? { region: s.region } : {}), ...(s.kind === "nauta" ? { nautaType: s.nautaType, amount } : {}) };
     try {
       await ctx.store.saveBill(bill);

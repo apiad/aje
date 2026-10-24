@@ -193,7 +193,11 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return current(attempt.id);
   }
 
-  /** Pays a saved bill from its card. It is dialed: the bank's menu shows the debt and asks for a 1. */
+  /**
+   * Pays a saved bill from its card, on the chosen SIM: a Nauta recharge goes through with no menu.
+   * When the bank answers with a menu the API cannot follow, the code goes to the dialer, where the
+   * person answers it. `needsLogin` says the bank wants a session first; nothing was paid then.
+   */
   async function payBill(billId) {
     const bill = store.state.bills.find((b) => b.id === billId);
     if (!bill) throw new RangeError(`no bill ${billId}`);
@@ -202,18 +206,31 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const op = opOf(bill);
     const s = seed();
     const attempt = await store.add({
-      id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
-      amount: bill.kind === "nauta" ? bill.amount : null,
+      id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
+      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null,
     });
-    telemetry.event("ussd_sent", { op, bank: card.bank, via: "dialer", kind: bill.kind });
-    try {
-      await bridge.dial(dial(ussd, config, s));
-    } catch (e) {
-      // The dialer never opened (no call permission, no dialer): nothing can have been sent.
-      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
-      telemetry.event("ussd_reply", { op, ok: false, failure_code: -100, error: e.message });
+    telemetry.event("ussd_sent", { op, bank: card.bank, via: "api", kind: bill.kind });
+    const r = await send(op, settings().subId, dial(ussd, config, s));
+    if (!r.ok && r.failureCode === -1) {
+      telemetry.event("ussd_sent", { op, bank: card.bank, via: "dialer", kind: bill.kind });
+      try {
+        await bridge.dial(dial(ussd, config, s));
+        await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "dialer" }));
+      } catch (e) {
+        // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+        await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+        telemetry.event("ussd_reply", { op, ok: false, failure_code: -100, error: e.message });
+      }
+      return { attempt: current(attempt.id), needsLogin: false };
     }
-    return current(attempt.id);
+    if (!r.ok) {
+      await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "failed", failureCode: r.failureCode }));
+      return { attempt: current(attempt.id), needsLogin: false };
+    }
+    const lost = needsLogin(r.reply);
+    // The bank's SMS may have verified it before this reply landed: keep it verified.
+    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: lost ? "failed" : "replied", reply: r.reply }));
+    return { attempt: current(attempt.id), needsLogin: lost };
   }
 
   /**
@@ -412,6 +429,11 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       case "auth":
         await sessionOpened(sms.bank, receivedAt, base);
         break;
+      case "nauta": {
+        const latency = await store.verifyNauta(sms, receivedAt);
+        telemetry.event("sms", { kind: "nauta", ...base, ok: latency !== null, latency_ms: latency });
+        break;
+      }
     }
     return sms;
   }

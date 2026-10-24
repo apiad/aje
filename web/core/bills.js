@@ -70,3 +70,6 @@ export function payBill(bill, card) {
 
 /** The op a bill's payment dials, for history and telemetry. */
 export const opOf = (bill) => (bill.kind === "water" ? WATER_REGIONS[bill.region]?.op : { electricity: "41", phone: "42", gas: "67", nauta: "59" }[bill.kind]);
+
+/** "Luz · Casa", or just "Luz" when the account is named after its kind. */
+export const titleOf = ({ kind, alias }) => (alias && alias !== KINDS[kind]?.label ? `${KINDS[kind]?.label ?? "Pago"} · ${alias}` : KINDS[kind]?.label ?? "Pago");
