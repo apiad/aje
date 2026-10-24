@@ -53,6 +53,14 @@ export function renderAddCard(ctx, r) {
     if (s.step === "coord" && !s.coordinate) s.coordinate = drawCoordinate();
     draw();
   }
+  // A card the person already uses in Transfermóvil is linked to this line at the bank: it needs no
+  // login or coordinate here. It is trusted until the bank serves it, as an imported card is.
+  const trusted = () => (s.card ? h("button", { id: "add-trusted", class: "btn ghost", onclick: async () => {
+    unsubscribe?.();
+    await store.setBank(loginBank(), { registered: true });
+    await store.updateCard(s.card.id, { state: bank() === "CLASICA" ? "associated" : "linked", step: 5, unverified: true });
+    ctx.go("home");
+  } }, "Ya la uso en Transfermóvil") : null);
   const bar = (title, sub, back) => h("div", { class: "sbar" },
     h("button", { class: "back", "aria-label": "Volver", onclick: back ?? (() => history.back()) }, "‹"),
     h("div", {}, h("h2", {}, title), sub ? h("div", { class: "sub" }, sub) : null));
@@ -122,7 +130,8 @@ export function renderAddCard(ctx, r) {
     ask: () => [bar(`Tu registro con ${BANKS[bank()].name}`, null, () => go("review")),
       h("p", { class: "lead" }, `¿Ya estás registrado con ${BANKS[bank()].name} para pagos móviles, en Transfermóvil o en Ajé?`),
       h("button", { id: "add-registered", class: "btn gold", onclick: async () => { await store.setBank(bank(), { registered: true }); go("link"); } }, "Sí, ya lo estoy"),
-      h("button", { id: "add-not-registered", class: "btn ghost", onclick: async () => { await store.setBank(bank(), { registered: false }); go("guide"); } }, "No, es mi primera tarjeta de este banco")],
+      h("button", { id: "add-not-registered", class: "btn ghost", onclick: async () => { await store.setBank(bank(), { registered: false }); go("guide"); } }, "No, es mi primera tarjeta de este banco"),
+      trusted()],
 
     guide: () => {
       const at = s.card.step;
@@ -200,7 +209,8 @@ export function renderAddCard(ctx, r) {
           : [h("p", { class: "lead" }, mt ? "Para asociar la Clásica, Ajé abre sesión en MiTransfer. Escribe tu clave de MiTransfer; Ajé no la guarda."
               : "Para asociar la tarjeta, Ajé abre sesión con el banco. Escribe tu clave; Ajé no la guarda."),
             h("div", { class: "field" }, pin), bankReply(), err(),
-            h("button", { id: "add-pin-submit", class: "btn gold", onclick: () => (/^[0-9]{4}$/.test(pin.value) ? submit() : go("login", { error: "La clave tiene 4 dígitos." })) }, "Autenticarse")]];
+            h("button", { id: "add-pin-submit", class: "btn gold", onclick: () => (/^[0-9]{4}$/.test(pin.value) ? submit() : go("login", { error: "La clave tiene 4 dígitos." })) }, "Autenticarse")],
+        trusted()];
     },
 
     coord: () => {
@@ -223,7 +233,7 @@ export function renderAddCard(ctx, r) {
         bpa ? h("p", { class: "lead" }, "BPA asocia la tarjeta con su número; no pide coordenada.")
           : [h("p", { class: "lead" }, `Mira el reverso de tu ${MATRIX[bank()]} y escribe el valor de la coordenada `, h("b", { id: "add-cell" }, cell), "."), grid,
             h("div", { class: "field" }, h("label", { for: "add-coord" }, `Valor de ${cell}`), value)],
-        bankReply(), err(), send];
+        bankReply(), err(), send, trusted()];
     },
 
     mitransfer: () => [bar("Tu Tarjeta Clásica", `${s.card.alias} · ···· ${last4(s.card.pan)}`, () => ctx.go("home")),
