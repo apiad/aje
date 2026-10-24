@@ -861,3 +861,34 @@ test("'ya se encuentra autenticado' with no recent login, or from a person, open
   await w.sms(SMS.ALREADY_AUTH);
   assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null, "the login is too old");
 });
+
+test("payBill dials the saved bill from its card and keeps the bill number out of telemetry", async () => {
+  const w = await world();
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  const a = await w.wf.payBill(bill.id);
+  assert.equal(w.bridge.calls.length, 1);
+  assert.equal(w.bridge.calls[0].method, "dial");
+  assert.match(w.bridge.calls[0].args.code, /^\*444\*41\*61/);
+  assert.deepEqual([a.op, a.state, a.billId, a.kind, a.alias, a.cardId], ["41", "dialer", bill.id, "electricity", "Casa", w.card.id]);
+  await w.telemetry.idle();
+  const sent = JSON.stringify([w.telemetryBackend.saved, w.posted]);
+  assert.ok(sent.includes('"op":"41"') && sent.includes('"kind":"electricity"'));
+  assert.ok(!sent.includes("1234567890123"));
+});
+
+test("a bill whose dialer does not open is failed", async () => {
+  const w = await world([], memoryBackend(), { dialFails: true });
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana", nautaType: 2, amount: 100, cardId: w.card.id });
+  const a = await w.wf.payBill(bill.id);
+  assert.deepEqual([a.op, a.state, a.amount], ["59", "failed", 100]);
+});
+
+test("saveBill adds, edits and refuses a duplicate; removeBill drops it", async () => {
+  const w = await world();
+  const b = await w.store.saveBill({ kind: "gas", alias: "Gas", number: "123456789012", cardId: w.card.id });
+  await w.store.saveBill({ ...b, alias: "Gas casa" });
+  assert.deepEqual(w.store.state.bills.map((x) => x.alias), ["Gas casa"]);
+  await assert.rejects(w.store.saveBill({ kind: "gas", alias: "Otro", number: "123456789012", cardId: w.card.id }), /ya está guardada/);
+  await w.store.removeBill(b.id);
+  assert.deepEqual(w.store.state.bills, []);
+});

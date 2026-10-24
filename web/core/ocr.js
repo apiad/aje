@@ -11,6 +11,18 @@ export function panFromText(text) {
   return null;
 }
 
+/**
+ * The first run of digits, allowing single spaces or dashes between groups, whose length is one
+ * of `digits`; else null. A bill number carries no check digit either, so the vote decides.
+ */
+export function billNumberFromText(text, digits) {
+  for (const m of text.matchAll(/\d(?:[ -]?\d)*/g)) {
+    const n = m[0].replace(/[ -]/g, "");
+    if (digits.includes(n.length)) return n;
+  }
+  return null;
+}
+
 /** A vote over reads: returns the number once it is seen in `n` consecutive reads, else null. */
 export function createVote(n = 2) {
   let last = null;

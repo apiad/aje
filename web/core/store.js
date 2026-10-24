@@ -33,7 +33,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const defaults = {
     settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
+    cards: [], bills: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
     // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
     imported: null,
   };
@@ -219,6 +219,22 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
 
     async setPlan(subId, plan) {
       state.settings = { ...state.settings, plans: { ...state.settings.plans, [subId]: plan } };
+      await commit();
+    },
+
+    /** Saves a bill or service account to pay later: `kind`, `alias`, `number`, `cardId`, and per kind `region`, `nautaType`, `amount`. */
+    async saveBill(bill) {
+      const saved = { ...bill, id: bill.id ?? newId() };
+      if (state.bills.some((b) => b.id !== saved.id && b.kind === saved.kind && b.number === saved.number)) {
+        throw new Error("Esa cuenta ya está guardada.");
+      }
+      state.bills = state.bills.some((b) => b.id === saved.id) ? state.bills.map((b) => (b.id === saved.id ? saved : b)) : [...state.bills, saved];
+      await commit();
+      return saved;
+    },
+
+    async removeBill(id) {
+      state.bills = state.bills.filter((b) => b.id !== id);
       await commit();
     },
 

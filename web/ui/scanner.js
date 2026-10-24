@@ -80,6 +80,17 @@ function binarize(px, w, h) {
   for (let i = 0; i < w * h; i++) px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = out[i];
 }
 
+/** The frame's rectangle in grey, as it is: a paper bill is dark ink on white, which Tesseract reads well. */
+export function paperFrame(source, rect) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(rect.w);
+  canvas.height = Math.round(rect.h);
+  const g = canvas.getContext("2d", { willReadFrequently: true });
+  g.filter = "grayscale(1)";
+  g.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
 /** The text Tesseract reads in a canvas or image. */
 export async function readText(image) {
   const { data } = await (await ocrWorker()).recognize(image);
@@ -87,11 +98,12 @@ export async function readText(image) {
 }
 
 /**
- * Opens the camera in `box` and reads frames until a card number is accepted (`onPan`), the
+ * Opens the camera in `box` and reads frames until a number is accepted (`onPan`), the
  * person gives up after `timeoutMs` without one, or there is no camera (`onFallback`, with the
- * best number read so far or null). Returns a function that stops the camera.
+ * best number read so far or null). Returns a function that stops the camera. A card number by
+ * default; `parse` and `crop` read another kind of number, such as a bill's.
  */
-export function openScanner(box, { onPan, onFallback, timeoutMs = 8000, media = globalThis.navigator?.mediaDevices } = {}) {
+export function openScanner(box, { onPan, onFallback, timeoutMs = 8000, media = globalThis.navigator?.mediaDevices, parse = panFromText, crop = numberBand } = {}) {
   let stopped = false;
   let stream = null;
   let timer = null;
@@ -127,8 +139,8 @@ export function openScanner(box, { onPan, onFallback, timeoutMs = 8000, media = 
       const vh = video.videoHeight;
       // The frame on screen is inset 14% by 7%; the card fills it.
       const card = { x: vw * 0.07, y: vh * 0.14, w: vw * 0.86, h: vh * 0.72 };
-      const text = vw ? await readText(numberBand(video, card)).catch(() => "") : "";
-      const pan = panFromText(text);
+      const text = vw ? await readText(crop(video, card)).catch(() => "") : "";
+      const pan = parse(text);
       if (pan) best = pan;
       read.textContent = pan ? pan.replace(/(\d{4})(?=\d)/g, "$1 ") : "";
       const accepted = vote(pan);

@@ -2,6 +2,7 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS, last4 } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
+import { opOf, payBill as payBillCode } from "./bills.js";
 import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
@@ -188,6 +189,29 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       // The dialer never opened (no call permission, no dialer): nothing can have been sent.
       await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
       telemetry.event("ussd_reply", { op: "45", ok: false, failure_code: -100, error: e.message });
+    }
+    return current(attempt.id);
+  }
+
+  /** Pays a saved bill from its card. It is dialed: the bank's menu shows the debt and asks for a 1. */
+  async function payBill(billId) {
+    const bill = store.state.bills.find((b) => b.id === billId);
+    if (!bill) throw new RangeError(`no bill ${billId}`);
+    const card = cardOf(bill.cardId);
+    const ussd = payBillCode(bill, card);
+    const op = opOf(bill);
+    const s = seed();
+    const attempt = await store.add({
+      id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
+      amount: bill.kind === "nauta" ? bill.amount : null,
+    });
+    telemetry.event("ussd_sent", { op, bank: card.bank, via: "dialer", kind: bill.kind });
+    try {
+      await bridge.dial(dial(ussd, config, s));
+    } catch (e) {
+      // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      telemetry.event("ussd_reply", { op, ok: false, failure_code: -100, error: e.message });
     }
     return current(attempt.id);
   }
@@ -462,5 +486,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
 }

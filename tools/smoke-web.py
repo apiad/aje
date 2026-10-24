@@ -185,6 +185,56 @@ def already_authenticated_login(page):
     page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
 
 
+def pay_bills(page):
+    """Pagar: a saved electricity bill is paid with one tap through the dialer; Nauta keeps its amount."""
+    page.goto(page.url.split("#")[0].split("?")[0] + "#/pay")
+    # The sample backup's electricity contract and Nauta account are offered.
+    expect(page.locator("#bill-offers .row")).to_have_count(2)
+    page.click("#bill-add")
+    expect(page.locator('#bill-kind button.on')).to_have_text("Luz")
+    page.fill("#bill-number", "12345")
+    page.fill("#bill-alias", "Casa")
+    page.click("#bill-save")
+    expect(page.locator("#bill-error")).to_contain_text("13 dígitos")
+    page.fill("#bill-number", "1234 5678 90123")
+    page.click("#bill-save")
+    expect(page.locator('#bills [data-bill]')).to_have_count(1)
+    expect(page.locator("#bills")).to_contain_text("Casa")
+    expect(page.locator("#bills")).to_contain_text("····0123")
+    before = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
+    page.locator("#bills [data-pay]").click()
+    expect(page.locator("#sheet")).to_contain_text("Luz · Casa")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').map((c) => c.args.code)")
+    assert len(dials) == before + 1 and dials[-1].startswith("*444*41*"), dials[-1:]
+    page.keyboard.press("Escape")
+    # Nauta from the backup's offer: the user comes filled in, the amount is asked.
+    page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
+    expect(page.locator('#bill-kind button.on')).to_have_text("Nauta")
+    expect(page.locator("#bill-number")).to_have_value("ana.perez")
+    expect(page.locator('#bill-nauta-type button.on')).to_have_text("Navegación internacional")
+    expect(page.locator("#bill-scan")).to_have_count(0)
+    page.click("#bill-save")
+    expect(page.locator("#bill-error")).to_contain_text("importe")
+    page.fill("#bill-amount", "100")
+    page.click("#bill-save")
+    expect(page.locator('#bills [data-bill]')).to_have_count(2)
+    expect(page.locator("#bill-offers .row")).to_have_count(1)
+    # Water asks for the company; the number's length follows it.
+    page.click("#bill-add")
+    page.click('#bill-kind button[data-value="water"]')
+    page.click('#bill-region button[data-value="2"]')
+    expect(page.locator("#bill")).to_contain_text("14 o 16 dígitos")
+    page.click(".sbar .back")
+    # Editing the Nauta account and deleting it.
+    page.locator("#bills [data-bill]", has_text="ana.perez").locator(".tx").click()
+    expect(page.locator("#bill-amount")).to_have_value("100")
+    page.click("#bill-delete")
+    expect(page.locator('#bills [data-bill]')).to_have_count(1)
+    page.click('nav a[href="#/history"]')
+    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(1)
+    page.goto(page.url.split("#")[0] + "#/home")
+
+
 def type_number(page):
     """Skips the camera; without one, the scanner already went to the review screen."""
     try:
@@ -366,6 +416,23 @@ def scan_reads_card(p, base, out, errors):
     expect(page.locator("#tr-scanbox")).to_be_hidden()
     expect(page.locator("#tr-scan")).to_be_visible()
     page.screenshot(path=out / "transfer_scans_card.png", full_page=True)
+    browser.close()
+
+
+def scan_reads_bill(p, base, out, errors):
+    """The bill form reads a printed bill's number from Chromium's fake camera."""
+    fixtures = out / "fixtures"
+    browser = p.chromium.launch(args=["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+                                      f"--use-file-for-fake-video-capture={fixtures / 'bill.mjpeg'}"])
+    page = browser.new_context(viewport={"width": 390, "height": 844}, permissions=["camera"]).new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "/index.html#/home")
+    seed_card(page)
+    page.goto(base + "/index.html#/bill")
+    page.click("#bill-scan")
+    expect(page.locator("#bill-number")).to_have_value("1234567890123", timeout=60_000)
+    expect(page.locator("#bill-scanbox")).to_be_hidden()
+    page.screenshot(path=out / "scan_reads_bill.png", full_page=True)
     browser.close()
 
 
@@ -718,7 +785,7 @@ def inbox_from_sms(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 
 
 def main():
@@ -740,10 +807,11 @@ def main():
             page.screenshot(path=out / f"{step.__name__}.png", full_page=True)
         width = page.evaluate("document.documentElement.scrollWidth")
         scan_reads_card(p, base, out, errors)
+        scan_reads_bill(p, base, out, errors)
         consent_once(p, base, out, errors)
     assert width <= 390, f"page is {width}px wide on a 390px phone"
     assert not errors, errors
-    print(f"{len(STEPS) + 2} steps passed, 0 errors, {width}px wide")
+    print(f"{len(STEPS) + 3} steps passed, 0 errors, {width}px wide")
 
 
 if __name__ == "__main__":
