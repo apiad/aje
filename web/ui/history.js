@@ -19,7 +19,7 @@ const card = (ctx, a) => ctx.store.state.cards.find((c) => c.id === a.cardId);
 
 function title(ctx, a) {
   const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
-  if (a.billId) return `${titleOf(a)}${a.amount ? ` · ${a.amount} CUP` : ""}`;
+  if (a.billId) return a.debt ? `Deuda · ${titleOf(a)}` : `${titleOf(a)}${a.amount ? ` · ${a.amount} CUP` : ""}`;
   if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
   if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
   if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;

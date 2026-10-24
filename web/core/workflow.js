@@ -2,7 +2,7 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS, last4 } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
-import { opOf, payBill as payBillCode } from "./bills.js";
+import { debtQuery as debtQueryCode, opOf, payBill as payBillCode } from "./bills.js";
 import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
@@ -78,6 +78,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     }
     return { attempt: current(attempt.id), needsLogin: lost };
   }
+  /** Op 47: asks the bank what a saved bill owes; the answer is the bank's reply, kept on the attempt. */
+  const debtQuery = (billId) => payBill(billId, { debt: true });
 
   /**
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
@@ -198,16 +200,16 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * When the bank answers with a menu the API cannot follow, the code goes to the dialer, where the
    * person answers it. `needsLogin` says the bank wants a session first; nothing was paid then.
    */
-  async function payBill(billId) {
+  async function payBill(billId, { debt = false } = {}) {
     const bill = store.state.bills.find((b) => b.id === billId);
     if (!bill) throw new RangeError(`no bill ${billId}`);
     const card = cardOf(bill.cardId);
-    const ussd = payBillCode(bill, card);
-    const op = opOf(bill);
+    const ussd = debt ? debtQueryCode(bill) : payBillCode(bill, card);
+    const op = debt ? "47" : opOf(bill);
     const s = seed();
     const attempt = await store.add({
       id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
-      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null,
+      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null, debt,
     });
     telemetry.event("ussd_sent", { op, bank: card.bank, via: "api", kind: bill.kind });
     const r = await send(op, settings().subId, dial(ussd, config, s));
@@ -508,5 +510,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
 }

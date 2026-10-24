@@ -33,7 +33,7 @@ const inFlight = new Set();
  * Pays a bill and follows it: the bank's reply, then its SMS for Nauta. When the bank wants a session,
  * the sheet asks for the key (or unlocks the saved one), waits for the session, and pays again.
  */
-async function billSheet(ctx, bill) {
+async function billSheet(ctx, bill, { debt = false } = {}) {
   const card = ctx.store.state.cards.find((c) => c.id === bill.cardId);
   const session = ctx.workflow.sessionOf(card.bank);
   let phase = "paying"; // paying | unlocking | login | waiting
@@ -45,7 +45,8 @@ async function billSheet(ctx, bill) {
   const attempt = () => ctx.store.state.attempts.find((a) => a.id === attemptId) ?? null;
 
   function view(a) {
-    if (!a || a.state === "sent") return [true, "Pagando…"];
+    if (!a || a.state === "sent") return [true, debt ? "Consultando la deuda…" : "Pagando…"];
+    if (debt && a.state === "replied") return [false, "Respuesta del banco"];
     if (a.state === "verified") return [false, "Pagado. Verificado por el SMS del banco."];
     if (a.state === "dialer") return [false, "Termina en el marcador: responde al menú del banco. Su SMS lo verificará."];
     if (a.state === "failed") return [false, `El teléfono no lo envió (código ${a.failureCode}).`];
@@ -54,22 +55,22 @@ async function billSheet(ctx, bill) {
   }
 
   const sheet = openSheet(ctx, () => {
-    const parts = [h("h3", {}, titleOf(bill))];
+    const parts = [h("h3", {}, debt ? `Deuda · ${titleOf(bill)}` : titleOf(bill))];
     if (phase === "unlocking") {
       parts.push(h("div", { class: "reply pending" }, h("div", { class: "k status" }, mark(true), "Desbloquea la clave guardada con tu huella o el bloqueo del teléfono.")));
     } else if (phase === "login") {
       const pin = h("input", { id: "pin", type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Clave del banco" });
-      parts.push(h("p", { class: "lead" }, "El banco pide abrir sesión. Escribe la clave de tu tarjeta; luego Ajé paga."),
+      parts.push(h("p", { class: "lead" }, `El banco pide abrir sesión. Escribe la clave de tu tarjeta; luego Ajé ${debt ? "consulta" : "paga"}.`),
         h("div", { class: "field" }, pin), h("div", { class: "err" }, error ?? ""),
         h("button", { id: "pin-submit", class: "btn gold", onclick: () => {
           const key = pin.value;
           pin.value = "";
           if (!/^[0-9]{4}$/.test(key)) { error = "La clave tiene 4 dígitos."; return sheet.redraw(); }
           login(() => ctx.workflow.login(session, key));
-        } }, "Autenticarse y pagar"));
+        } }, debt ? "Autenticarse y consultar" : "Autenticarse y pagar"));
       queueMicrotask(() => pin.focus());
     } else if (phase === "waiting") {
-      parts.push(h("div", { class: "reply pending" }, h("div", { class: "k status" }, mark(true), "Esperando el SMS del banco; luego Ajé paga."),
+      parts.push(h("div", { class: "reply pending" }, h("div", { class: "k status" }, mark(true), `Esperando el SMS del banco; luego Ajé ${debt ? "consulta" : "paga"}.`),
         loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
     } else {
       const a = attempt();
@@ -85,7 +86,7 @@ async function billSheet(ctx, bill) {
   async function pay() {
     phase = "paying";
     sheet.redraw();
-    const r = await ctx.workflow.payBill(bill.id);
+    const r = await ctx.workflow.payBill(bill.id, { debt });
     attemptId = r.attempt.id;
     if (!r.needsLogin) return sheet.redraw();
     saved = await ctx.workflow.savedPin(session);
@@ -135,11 +136,11 @@ export function renderPay(ctx) {
   const top = h("div", { class: "topbar" }, h("div", { class: "t" }, "Pagar"));
   if (!cards.length) return h("div", { id: "pay" }, top, h("div", { class: "empty" }, "Añade y asocia una tarjeta para pagar la luz, el agua, el gas, el teléfono o Nauta."));
 
-  async function pay(bill) {
+  async function pay(bill, debt = false) {
     if (inFlight.has(bill.id)) return;
     inFlight.add(bill.id);
     try {
-      await billSheet(ctx, bill);
+      await billSheet(ctx, bill, { debt });
     } finally {
       inFlight.delete(bill.id);
     }
@@ -151,6 +152,7 @@ export function renderPay(ctx) {
       icon(KINDS[b.kind].icon, "ic"),
       h("div", { class: "tx", onclick: () => ctx.go(`bill/${b.id}`) }, h("b", {}, b.alias),
         h("span", {}, `${KINDS[b.kind].label} · ${describe(b)}${card ? ` · ${card.alias}` : " · sin tarjeta"}`)),
+      b.kind === "nauta" ? null : h("button", { class: "addchip", "data-debt": b.id, disabled: !card || null, onclick: () => pay(b, true) }, "Deuda"),
       h("button", { class: "paybtn", "data-pay": b.id, disabled: !card || null, onclick: () => pay(b) }, "Pagar"));
   });
   const offered = suggestions(ctx);

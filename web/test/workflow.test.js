@@ -918,3 +918,11 @@ test("saveBill adds, edits and refuses a duplicate; removeBill drops it", async 
   await w.store.removeBill(b.id);
   assert.deepEqual(w.store.state.bills, []);
 });
+
+test("debtQuery asks the bank by API and keeps its reply on the attempt", async () => {
+  const w = await world([{ ok: true, reply: "La deuda de la factura es 85.40 CUP" }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  const r = await w.wf.debtQuery(bill.id);
+  assert.match(w.bridge.calls[0].args.code, /^\*444\*47\*61/);
+  assert.deepEqual([r.attempt.op, r.attempt.debt, r.attempt.state, r.attempt.reply], ["47", true, "replied", "La deuda de la factura es 85.40 CUP"]);
+});

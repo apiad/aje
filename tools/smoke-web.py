@@ -214,6 +214,12 @@ def pay_bills(page):
     assert sent[-1].startswith("*444*41*"), sent[-1:]
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
     page.keyboard.press("Escape")
+    # The debt query answers in the sheet with the bank's words.
+    page.locator("#bills [data-debt]").click()
+    expect(page.locator("#sheet h3")).to_have_text("Deuda · Luz · Casa")
+    expect(page.locator("#bill-result")).to_contain_text("deuda de 85.40 CUP", timeout=10_000)
+    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
+    page.keyboard.press("Escape")
     # Nauta from the backup's offer: the user comes filled in, the amount is asked.
     page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
     expect(page.locator('#bill-kind button.on')).to_have_text("Nauta")
@@ -248,8 +254,8 @@ def pay_bills(page):
     page.click("#bill-delete")
     expect(page.locator('#bills [data-bill]')).to_have_count(1)
     page.click('nav a[href="#/history"]')
-    # The attempt the bank refused for want of a session, then the payment.
-    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(2)
+    # The attempt the bank refused for want of a session, the payment, and the debt query.
+    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(3)
     expect(page.locator("#history .row", has_text="ana.perez").first).to_contain_text("verificada")
     page.goto(page.url.split("#")[0] + "#/home")
 
