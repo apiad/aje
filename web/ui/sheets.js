@@ -15,7 +15,15 @@ export function openSheet(ctx, build, onClose = null) {
   const body = h("div", { class: "sheet-body" });
   const sheet = h("div", { class: "sheet", id: "sheet", role: "dialog", "aria-modal": "true" }, h("div", { class: "grab" }), body);
   const scrim = h("div", { class: "scrim", onclick: () => close() });
-  const draw = () => body.replaceChildren(...[build()].flat().filter(Boolean));
+  // The draw that ends a wait marks its reply settled, once: the bar fills and the dot pings.
+  let waited = false;
+  const draw = () => {
+    body.replaceChildren(...[build()].flat().filter(Boolean));
+    const waiting = Boolean(body.querySelector(".reply.pending"));
+    const reply = body.querySelector(".reply:not(.pending)");
+    if (waited && !waiting && reply) reply.classList.add("settled");
+    waited = waiting;
+  };
   const off = ctx.store.subscribe(draw);
   const esc = (e) => e.key === "Escape" && close();
   document.addEventListener("keydown", esc);
@@ -59,7 +67,7 @@ export const mark = (waiting) => h("span", { class: waiting ? "spin" : "dot", "a
 function attemptView(a) {
   const waiting = !a || a.state === "sent" || (a.op === "46" && a.state === "replied");
   return [
-    h("div", { class: `reply${waiting ? " pending" : ""}` },
+    h("div", { class: `reply${waiting ? " pending" : ""}${a?.state === "failed" ? " failed" : ""}` },
       h("div", { class: "k status" }, mark(waiting), waiting && a?.state === "replied" ? "Respuesta del banco; esperando su SMS…" : status(a)),
       a?.reply ? h("div", { class: "m" }, a.reply) : null),
     a?.state === "verified" && a.available ? h("div", { class: "kv" }, h("span", {}, "Saldo disponible"), h("b", {}, a.available)) : null,

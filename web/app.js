@@ -14,6 +14,7 @@ import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
 import { editSheet } from "./ui/edit.js";
+import { startShine } from "./ui/shine.js";
 import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
@@ -102,6 +103,7 @@ async function boot() {
   const inFlight = new Set();
   // The smoke test seeds cards through the store; only under the mock, never in the APK.
   if (bridge.kind === "mock") globalThis.ajeDev = { store, bridge };
+  startShine();
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
