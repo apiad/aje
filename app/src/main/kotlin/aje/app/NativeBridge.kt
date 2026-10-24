@@ -97,6 +97,17 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                         post(replyProxy, JSONObject().put("id", id).put("progress", JSONObject().put("received", received).put("total", total)))
                     },
                 ) { reply(replyProxy, id, it) }
+                // Phase 0 of the background-work spec; goes away with it.
+                "spikeSchedule" -> {
+                    Spike.schedule(activity, args.optJSONArray("delaysMin") ?: JSONArray())
+                    reply(replyProxy, id, JSONObject.NULL)
+                }
+                "spikeLog" -> reply(replyProxy, id, Spike.log(activity))
+                "spikeClear" -> {
+                    Spike.cancel(activity)
+                    Spike.clear(activity)
+                    reply(replyProxy, id, JSONObject.NULL)
+                }
                 "ready" -> {
                     pushProxy = replyProxy
                     live = this

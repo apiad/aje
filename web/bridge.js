@@ -70,6 +70,10 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     secretLoad: (name) => call("secretLoad", { name }),
     // The system contact picker: the one contact the person picks, {name, number}, or null; no timeout.
     pickContact: () => call("pickContact"),
+    // Phase 0 of the background-work spec, a throwaway: schedule wake-ups, read their log, clear both.
+    spikeSchedule: (delaysMin) => call("spikeSchedule", { delaysMin }),
+    spikeLog: () => call("spikeLog"),
+    spikeClear: () => call("spikeClear"),
     secretForget: (name) => call("secretForget", { name }),
     // The contact names of these numbers, `{number: name}` for those in the contacts. With `ask`, the
     // shell first asks for the contacts permission, so it waits on the person: no timeout.

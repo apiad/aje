@@ -28,6 +28,37 @@ function pinRow(ctx, bank) {
   return box;
 }
 
+const hhmm = (ms) => new Date(ms).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+
+// Phase 0 of the background-work spec, a throwaway: wake-ups with the app closed and what each one saw.
+function spikeSection(ctx) {
+  const list = h("div", { id: "spike-log" });
+  const load = () => ctx.bridge.spikeLog().then((log) => {
+    list.replaceChildren(...(log.length ? log.slice().reverse() : [null]).map((e) => (e ? h("div", { class: "set-row" },
+      h("div", { class: "tx" },
+        h("b", {}, `${e.n}/${e.of} · pedida ${hhmm(e.askedAt)} · llegó ${hhmm(e.startedAt)} (${Math.round(e.lateMin)} min tarde)`),
+        h("span", {}, [
+          `Pantalla ${e.screenOn ? "encendida" : "apagada"}${e.dozing ? ", en reposo" : ""}${e.appInFront ? ", Ajé delante" : ""}`,
+          e.page?.error ? `Página: ${e.page.error}` : `Página en ${e.page?.loadMs ?? "?"} ms · IndexedDB: ${e.page?.cards ?? "?"} tarjetas`,
+          e.page?.ussd ? `${e.page.ussd.code}: ${e.page.ussd.ok ? `ok · ${e.page.ussd.reply ?? ""}` : `falló ${e.page.ussd.failureCode ?? ""} ${e.page.ussd.error ?? ""}`}` : "USSD: no se probó",
+          `Ahorro de batería: ${e.batteryExempt ? "Ajé excluida" : "activo"} · ${e.maker} · Android API ${e.android}`,
+        ].join(" · ")))) : h("div", { class: "empty" }, "Aún no hay despertares."))));
+  }).catch(() => list.replaceChildren(h("div", { class: "empty" }, "Esta versión no tiene la prueba.")));
+  load();
+  const btn = (id, label, fn) => h("button", { id, class: "addchip", onclick: async () => { await fn(); load(); } }, label);
+  return [
+    h("div", { class: "group" }, "Prueba de segundo plano (fase 0)"),
+    h("div", { class: "set-row" }, h("div", { class: "tx" }, h("b", {}, "Cómo probar"),
+      h("span", {}, "Programa los despertares, cierra Ajé (quítala de recientes) y apaga la pantalla. Cada uno consulta el saldo de la línea por USSD y deja una notificación."))),
+    h("div", { class: "addrow" },
+      btn("spike-1", "Uno en 2 min", () => ctx.bridge.spikeSchedule([2])),
+      btn("spike-24", "24, uno por hora", () => ctx.bridge.spikeSchedule([...Array(24).keys()].map((i) => 60 * (i + 1)))),
+      btn("spike-refresh", "Actualizar", async () => {}),
+      btn("spike-clear", "Borrar y cancelar", () => ctx.bridge.spikeClear())),
+    list,
+  ];
+}
+
 // Settings redraws on every store change; the fold of the telemetry history keeps its state.
 let historyOpen = false;
 
@@ -60,6 +91,8 @@ export function renderSettings(ctx) {
       h("button", { id: "import-tm-settings", class: "addchip", onclick: () => ctx.go("import") }, "Importar")),
 
     updateSettings(ctx, chips),
+
+    ctx.bridge.spikeLog ? spikeSection(ctx) : null,
 
     config.telemetryUrl ? [
       h("div", { class: "group" }, "Privacidad"),
