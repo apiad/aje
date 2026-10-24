@@ -17,6 +17,10 @@ const SAMPLES = {
   // The mock cannot decode the dialed user and amount: these match the smoke test's Nauta account.
   NAUTA: "Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB000CD0001. \n" +
     " Importe Pagado: 100.00 \n Saldo Restante: DB 1100.06 CUP. \n Se aplico un descuento del 00% al pago realizado. Gracias por utilizar nuestros servicios, ETECSA.",
+  // An electricity payment, as Banco Metropolitano confirms it; name and figures are made up.
+  ELECTRICITY: "Banco Metropolitano:  El pago de la factura de electricidad fue completado. \n Nro. Factura Pagada: 1234567890123 \n" +
+    " Propietario: ANA PEREZ GARCIA \n Importe Pagado: 80.10 CUP \n Importe Factura: 85.40 CUP \n Consumo mensual: 120 KW \n" +
+    " Nro. Transaccion: MM000A000X001  \n Saldo disponible: CR 1120.50 CUP \n Periodo Pagado Mes/Año: 10/2026.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
 };
@@ -83,6 +87,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     const bill = /^\*444\*(41|42|67|19|51|21|59)\*/.exec(code);
     if (bill && !session) return "No es posible realizar la operacion. Debe autenticarse.";
     if (bill?.[1] === "59") later(() => emit(BANK, SAMPLES.NAUTA));
+    // The mock cannot decode the dialed bill: this matches the smoke test's electricity account.
+    if (bill?.[1] === "41") later(() => emit(BANK, SAMPLES.ELECTRICITY));
     if (bill) return "Su solicitud esta siendo procesada, espere un sms con los datos de la transaccion.";
     // The debt query's reply has not been captured yet: a guess at its shape.
     // The debt comes by SMS. Only the no-debt form was seen; this one with an amount is a guess.

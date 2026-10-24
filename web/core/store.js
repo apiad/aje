@@ -160,6 +160,26 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     },
 
     /**
+     * Verifies the pending payment of the bill this SMS names, or the only one pending when no saved bill
+     * has that number, and keeps what the bank took. Returns the latency, or null.
+     */
+    async verifyBill(sms, at = now()) {
+      const digits = (n) => String(n).replace(/^0+/, "");
+      const numberOf = (a) => state.bills.find((b) => b.id === a.billId)?.number;
+      const paying = (a) => a.billId && !a.debt && a.op !== "47" && a.kind !== "nauta";
+      const pending = pendingWhere(at, (a) => paying(a) && numberOf(a) !== undefined && digits(numberOf(a)) === digits(sms.number)) ??
+        (state.bills.some((b) => digits(b.number) === digits(sms.number)) ? null : pendingWhere(at, paying));
+      if (!pending) return null;
+      confirmCard(pending.cardId);
+      const available = sms.available ? formatMoney(sms.available) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", amount: sms.paid.cents / 100, transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
+      const bill = state.bills.find((b) => b.id === pending.billId);
+      if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, cents: sms.paid.cents, verified: true } });
+      return at - pending.startedAt;
+    },
+
+    /**
      * Answers the pending debt query of the bill this SMS names, or the only one pending when no saved
      * bill has that number. Keeps the debt in `debtCents` (0 for none, null when the SMS gave no
      * figure). Returns the latency, or null.

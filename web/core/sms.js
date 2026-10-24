@@ -36,6 +36,19 @@ export function parseBankSms(body) {
     const remaining = left && { cents: Math.abs(left.cents), currency: left.currency };
     return { kind: "nauta", bank, user: nauta[2].toLowerCase(), hogar: Boolean(nauta[1]), amount: { cents, currency: "CUP" }, transactionId, remaining };
   }
+  // A bill paid from the card. Seen for electricity; the bank names the service, so others likely share the layout.
+  const bill = /El pago de la factura de\s+(\S+)\s+fue completado/i.exec(text);
+  if (bill) {
+    const number = /Nro\.?\s*Factura\s+Pagada\s*:\s*([0-9]+)/i.exec(text)?.[1];
+    const paid = money(text, "Importe Pagado");
+    if (!number || !paid) return null;
+    return {
+      kind: "bill", bank, service: bill[1].toLowerCase(), number, paid, billed: money(text, "Importe Factura"),
+      owner: field(text, "Propietario"), consumption: /Consumo\s+mensual\s*:\s*([0-9][0-9.,]*\s*KW)/i.exec(text)?.[1] ?? null,
+      period: /Mes\/A[nñ]o\s*:\s*([0-9]{1,2}\/[0-9]{4})/i.exec(text)?.[1] ?? null,
+      transactionId: /Nro\.?\s*Transacci[oó]n\s*:\s*([A-Z0-9]+)/i.exec(text)?.[1] ?? null, available: money(text, "Saldo disponible"),
+    };
+  }
   return null;
 }
 

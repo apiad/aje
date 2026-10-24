@@ -45,6 +45,7 @@ function statusLine(bill, now = Date.now()) {
     return [s.verified ? "ok" : "", `${s.verified ? "✓ " : ""}Recargado ${money(s.cents)}`, `${when} · ${s.verified ? "verificado por SMS" : "sin verificar"}`, "pay"];
   }
   if (s.kind === "never") return ["", "Sin revisar", "Revisa para saber si debes", "check-due"];
+  if (s.kind === "paid" && s.verified) return ["ok", `✓ Pagado ${money(s.cents)}`, `${when} · verificado por SMS`, "check"];
   if (s.kind === "paid") return ["", s.cents ? `Pagado ${money(s.cents)}` : "Pago enviado", `${when} · revisa para confirmar`, "check-due"];
   if (s.kind === "owe") return ["owe", `Debe ${money(s.cents)}`, `revisado ${when}${old}`, "pay"];
   if (s.kind === "unknown") return ["", "El banco respondió", `revisado ${when} · mira su SMS`, "check-due"];

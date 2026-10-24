@@ -270,10 +270,18 @@ def pay_bills(page):
     assert sent[-1].startswith("*444*41*"), sent[-1:]
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
     expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
-    # Paid after the check: the row says so and asks to check again to confirm.
+    # Paid after the check, and the bank's SMS confirmed it: the row says what the bank took, with its discount.
     expect(row).to_have_attribute("data-status", "paid")
-    expect(row).to_contain_text("Pagado 85.40 CUP")
-    expect(row.locator("[data-debt]")).to_have_class("checkbtn due")
+    expect(row).to_contain_text("✓ Pagado 80.10 CUP", timeout=10_000)
+    expect(row).to_contain_text("verificado por SMS")
+    # Its receipt, in the history, hides the owner and the balance.
+    page.goto(page.url.split("#")[0] + "#/history")
+    page.locator("#history .row", has_text="Luz").first.click()
+    expect(page.locator("#receipt")).to_contain_text("Pago de la luz completado")
+    expect(page.locator("#receipt")).to_contain_text("MM000A000X001")
+    expect(page.locator("#receipt")).not_to_contain_text("ANA")
+    expect(page.locator("#receipt")).not_to_contain_text("1 120,50")
+    page.goto(page.url.split("#")[0] + "#/pay")
     # Nauta from the backup's offer: the user comes filled in, the amount is asked.
     page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
     expect(page.locator('#bill-kind button.on')).to_have_text("Nauta")

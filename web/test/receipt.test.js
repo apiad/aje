@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { maskSms, money, receipt, receiptText, visibleFields } from "../core/receipt.js";
 import { memoryBackend, openStore } from "../core/store.js";
 import { parseBankSms, parseLineSms } from "../core/sms.js";
-import { PLAN_BOUGHT, SMS } from "./helpers.js";
+import { BILL_ELECTRICITY, PLAN_BOUGHT, SMS } from "./helpers.js";
 
 const AT = new Date(2026, 9, 24, 14, 32).getTime();
 const CARDS = [{ id: "c1", alias: "Sueldo", pan: "9227959900000002", currency: "CUP" }];
@@ -81,4 +81,38 @@ test("verifying a transfer or a line transfer keeps the SMS's text", async () =>
   await store.add({ id: null, startedAt: AT - 60_000, state: "dialer", op: "234", subId: 3, to: "55555555", amount: 25 });
   await store.verifyLineTransfer({ ...parseLineSms(SMS.LINE_SENT), body: SMS.LINE_SENT }, AT);
   assert.equal(store.state.attempts[0].sms, SMS.LINE_SENT);
+});
+
+test("an electricity payment: the bank's SMS verifies it, and its receipt hides the owner and the balance", async () => {
+  const store = await openStore(memoryBackend(), { now: () => AT });
+  const bill = await store.saveBill({ kind: "electricity", alias: "Luz de casa", number: "1234567890123", cardId: "c1" });
+  const a = await store.add({ id: null, startedAt: AT - 60_000, state: "replied", op: "41", cardId: "c1", billId: bill.id, kind: "electricity", amount: null, debt: false });
+  await store.markBill(bill.id, { paid: { at: a.startedAt, cents: 8540, verified: false } });
+  const sms = parseBankSms(BILL_ELECTRICITY);
+  assert.equal(await store.verifyBill({ ...sms, body: BILL_ELECTRICITY }, AT), 60_000);
+  const row = store.state.attempts[0];
+  assert.equal(row.state, "verified");
+  assert.equal(row.amount, 80.1);
+  assert.deepEqual(store.state.bills[0].paid, { at: a.startedAt, cents: 8010, verified: true });
+
+  const r = receipt(row, { cards: CARDS });
+  assert.equal(r.what, "Pago de la luz completado");
+  assert.deepEqual(visibleFields(r, true).map((f) => [f.label, f.value]), [
+    ["Nro. factura", "1234567890123"], ["Período", "10/2026"], ["Importe de la factura", "85,40 CUP"], ["Consumo", "120 KW"],
+    ["Fecha", "24/10/2026 · 14:32"], ["Nro. transacción", "MM000A000X001"],
+  ]);
+  assert.deepEqual(r.show, [["Nro. factura", "1234567890123"], ["Nro. transacción", "MM000A000X001"], ["Período", "10/2026"]]);
+  for (const secret of ["ANA", "PEREZ", "1120"]) {
+    assert.ok(!receiptText(r, true).includes(secret), secret);
+    assert.ok(!maskSms(BILL_ELECTRICITY).includes(secret), secret);
+  }
+  assert.match(receiptText(r, false), /Titular: ANA PEREZ GARCIA/);
+});
+
+test("a bill SMS verifies no payment of another saved bill", async () => {
+  const store = await openStore(memoryBackend(), { now: () => AT });
+  const other = await store.saveBill({ kind: "electricity", alias: "Luz de mamá", number: "9999999999999", cardId: "c1" });
+  await store.saveBill({ kind: "electricity", alias: "Luz", number: "1234567890123", cardId: "c1" });
+  await store.add({ id: null, startedAt: AT - 60_000, state: "replied", op: "41", cardId: "c1", billId: other.id, kind: "electricity", debt: false });
+  assert.equal(await store.verifyBill(parseBankSms(BILL_ELECTRICITY), AT), null);
 });

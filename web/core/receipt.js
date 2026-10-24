@@ -2,6 +2,7 @@
 // screen for the person across the counter, and "Compartir" sends it as text. Discreet mode, on by
 // default, leaves out what is the person's own: the card that paid, the balance left, a line's dates.
 import { last4 } from "./money.js";
+import { parseBankSms } from "./sms.js";
 
 /** `1500` as `1 500,00`, as a receipt shows money. */
 export function money(n) {
@@ -21,7 +22,8 @@ const shortStamp = (ms) => stamp(ms).replace(/\/\d{4}/, "");
 const maskedPan = (b) => b.replace(/X/g, "•").replace(/(.{4})(?=.)/g, "$1 ");
 
 /** What the SMS says the line or card has left, as the text writes it. */
-const SALDO = /(Saldo\s+(?:restante|principal|actual)\s*:?\s*(?:CR|DB)?\s*)([0-9][0-9.,]*)/gi;
+const SALDO = /(Saldo\s+(?:restante|principal|actual|disponible)\s*:?\s*(?:CR|DB)?\s*)([0-9][0-9.,]*)/gi;
+const OWNER = /(Propietario\s*:\s*)([^\n]+?)(\s*\n|$)/gi;
 const LINE_DATES = /((?:activa\s+hasta|vence)\s+)([0-9][0-9\-/]+)/gi;
 const NAUTA_USER = /(:\s*)([^\s@:]+)(@nauta\.com?\.cu)/gi;
 
@@ -31,7 +33,8 @@ export function maskSms(text) {
   return text
     .replace(SALDO, (_, k, v) => k + dots(v))
     .replace(LINE_DATES, (_, k, v) => k + dots(v))
-    .replace(NAUTA_USER, (_, k, u, d) => k + u[0] + "•••" + d);
+    .replace(NAUTA_USER, (_, k, u, d) => k + u[0] + "•••" + d)
+    .replace(OWNER, (_, k, v, end) => k + dots(v) + end);
 }
 
 /** The figure after "Saldo principal|actual" in a Cubacel SMS, as `1234.56 CUP`, or null. */
@@ -76,6 +79,27 @@ export function receipt(a, { cards = [] } = {}) {
         from, left(a.available),
       ],
       show: [["Cuenta", account], ["Nro. transacción", a.transactionId], ["Fecha", shortStamp(at)]].filter(([, v]) => v),
+    });
+  }
+  if (a.billId && !a.debt && a.op !== "47" && a.kind !== "nauta") {
+    const b = a.sms ? parseBankSms(a.sms) : null;
+    if (b?.kind !== "bill") return null;
+    const amountOf = (m) => `${money(m.cents / 100)} ${m.currency}`;
+    return done({
+      from: "Banco Metropolitano", what: a.kind === "electricity" ? "Pago de la luz completado" : `Pago de ${b.service} completado`,
+      amount: b.paid.cents / 100, currency: b.paid.currency,
+      fields: [
+        { label: "Nro. factura", value: b.number },
+        b.period && { label: "Período", value: b.period },
+        b.billed && b.billed.cents !== b.paid.cents && { label: "Importe de la factura", value: amountOf(b.billed) },
+        b.consumption && { label: "Consumo", value: b.consumption },
+        { label: "Fecha", value: stamp(at) },
+        b.transactionId && { label: "Nro. transacción", value: b.transactionId },
+        b.owner && { label: "Titular", value: b.owner, private: true },
+        from,
+        b.available && { label: "Saldo disponible", value: amountOf(b.available), private: true },
+      ],
+      show: [["Nro. factura", b.number], ["Nro. transacción", b.transactionId], ["Período", b.period ?? shortStamp(at)]].filter(([, v]) => v),
     });
   }
   if (a.op === "234") {

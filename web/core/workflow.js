@@ -455,6 +455,11 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         telemetry.event("sms", { kind: "nauta", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
+      case "bill": {
+        const latency = await store.verifyBill({ ...sms, body }, receivedAt);
+        telemetry.event("sms", { kind: "bill", ...base, ok: latency !== null, latency_ms: latency });
+        break;
+      }
     }
     return sms;
   }
@@ -511,6 +516,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       balance: () => store.verifyBalance(sms, at, { add: false }),
       transfer: () => store.verifyTransfer({ ...sms, body }, at),
       nauta: () => store.verifyNauta({ ...sms, body }, at),
+      bill: () => store.verifyBill({ ...sms, body }, at),
     }[sms.kind];
     return verify && (await verify()) !== null ? "verified" : "known";
   }
