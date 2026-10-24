@@ -49,7 +49,7 @@ off until the person turns it on; the script checks it is there.
 - `web/bridge.js`: the client of the message protocol with the native shell;
   `web/mock.js` fakes the six primitives in a browser and is not shipped.
 - `app/`: the native shell. `MainActivity` hosts the WebView on
-  `https://appassets.androidplatform.net`, `NativeBridge` holds the six primitives, `SecretStore` the Keystore-backed PIN store,
+  `https://appassets.androidplatform.net` and serves file inputs with the system picker, `NativeBridge` holds the six primitives, `SecretStore` the Keystore-backed PIN store,
   `SmsQueue` keeps SMS that arrive while no page is alive.
 - `tools/smoke-web.py`: drives the frontend against the mock with Playwright.
 - `telemetry/collector.py`: the public telemetry endpoint behind `https://aje.apiad.net/t`;

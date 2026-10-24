@@ -25,7 +25,7 @@ from pathlib import Path
 
 BASE = {"event", "app", "commit", "android", "maker"}
 # Mirrors ALLOWED in web/core/telemetry.js; web/test/telemetry.test.js checks it.
-ALLOWED = {"op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines", "text", "error", "stack", "menu"}
+ALLOWED = {"op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines", "text", "error", "stack", "menu", "cards", "added", "kept"}
 FIELDS = frozenset(BASE | ALLOWED)
 MAX_BODY = 16 * 1024
 MAX_FRAMES = 20

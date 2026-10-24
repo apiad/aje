@@ -53,6 +53,11 @@ enters the inbox, with `ok: false`, and again when the person opens it, with `ok
 carries only `kind` (`card-received`, `line-received`, `recharge-intl`, `recharge`, `plan-gift`,
 `plan-expiry`): never the amount, the number, the account or the text.
 
+Picking a Transfermóvil backup to import (`web/ui/import.js`) sends one `import` event. It carries
+`ok`, and on a failure `failure_code` (`format`, `hash`, `empty`, `read` when the file could not be
+read, or `cancel` when the picker was closed); on success `cards` (cards found), `added` (cards added) and `kept` (rows saved for later):
+only counts, never a number, a name, an alias or anything else from the file.
+
 ## The collector
 
 `telemetry/collector.py`, standard library only, behind Caddy at `https://aje.apiad.net/t`.

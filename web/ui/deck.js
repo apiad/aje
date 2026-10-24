@@ -88,7 +88,9 @@ function bell(ctx) {
 
 export function renderHome(ctx) {
   const list = accounts(ctx.store.state, ctx.sims);
-  const add = h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta");
+  const add = h("div", { class: "addrow" },
+    h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta"),
+    h("button", { id: "import-tm", class: "addchip", onclick: () => ctx.go("import") }, "Importar de Transfermóvil"));
   if (list.length === 0) return h("div", { id: "deck" }, updateBanner(ctx), h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas"), bell(ctx)),
     h("div", { class: "empty" }, "Aún no hay tarjetas. Añade la primera con una foto."), add);
   if (!list.some((a) => a.id === frontId)) frontId = list[0].id;

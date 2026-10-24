@@ -34,6 +34,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
     cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
+    // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
+    imported: null,
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -190,6 +192,12 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     /** The newest plan catalog read from aje.apiad.net, already validated. */
     async setPlanCatalog(catalog) {
       state.planCatalog = catalog;
+      await commit();
+    },
+
+    /** Keeps what a backup held (see readBackup in trm.js), replacing an earlier import whole. */
+    async saveImported({ exportedAt, recipients, bills, onat, phones, landlines, nauta }) {
+      state.imported = { at: now(), exportedAt, recipients, bills, onat, phones, landlines, nauta };
       await commit();
     },
 

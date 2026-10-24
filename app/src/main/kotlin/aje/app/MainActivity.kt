@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -64,6 +65,15 @@ class MainActivity : FragmentActivity() {
         val contact = if (result.resultCode == RESULT_OK && uri != null) readContact(uri) else null
         contactReply?.invoke(contact)
         contactReply = null
+    }
+
+    // A file input waits here while the system picker is open. The picker grants read access to the
+    // one file the person picks, so the app needs no storage permission.
+    private var fileReply: ValueCallback<Array<Uri>>? = null
+    private val filePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        fileReply?.onReceiveValue(if (result.resultCode == RESULT_OK && uri != null) arrayOf(uri) else null)
+        fileReply = null
     }
 
     /** Opens the system picker over phone numbers; [reply] gets {name, number}, or null on cancel. */
@@ -122,6 +132,18 @@ class MainActivity : FragmentActivity() {
         }
         // The card scanner: video capture for the bundled frontend only, and nothing else.
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileReply?.onReceiveValue(null)
+                fileReply = callback
+                try {
+                    filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"))
+                } catch (_: ActivityNotFoundException) {
+                    fileReply?.onReceiveValue(null)
+                    fileReply = null
+                }
+                return true
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 val video = PermissionRequest.RESOURCE_VIDEO_CAPTURE
                 if (request.origin.toString().trimEnd('/') != ORIGIN || request.resources.toList() != listOf(video)) {

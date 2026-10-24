@@ -5,6 +5,7 @@ import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
 import { renderAddCard } from "./ui/addcard.js";
+import { renderImport } from "./ui/import.js";
 import { askTelemetry } from "./ui/consent.js";
 import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
@@ -34,6 +35,7 @@ const SCREENS = {
   plans: { render: renderPlans },
   "line-charge": { render: renderLineCharge },
   add: { render: renderAddCard },
+  import: { render: renderImport },
   history: { render: renderHistory, live: true },
   inbox: { render: renderInbox, live: true },
   pay: { render: soon("Pagar un servicio") },
@@ -41,7 +43,7 @@ const SCREENS = {
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "inbox"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
 const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
