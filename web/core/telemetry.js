@@ -9,7 +9,7 @@ import { redact, redactMenu, reduceStack } from "./redact.js";
 /** Mirrored in telemetry/collector.py; web/test/telemetry.test.js checks the two match. */
 export const ALLOWED = new Set([
   "op", "bank", "via", "ok", "failure_code", "latency_ms", "age_ms", "kind", "sender", "length", "lines",
-  "text", "error", "stack", "menu",
+  "text", "error", "stack", "menu", "cards", "added", "kept",
 ]);
 
 const LOG_SIZE = 200;

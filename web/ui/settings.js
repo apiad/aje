@@ -51,6 +51,11 @@ export function renderSettings(ctx) {
         chips([["PREPAGO", "Prepago · *222#"], ["POSPAGO", "Pospago · *111#"]],
           (v) => store.planFor(sim.subId) === v, (v) => store.setPlan(sim.subId, v))))),
 
+    h("div", { class: "group" }, "Transfermóvil"),
+    h("div", { class: "set-row" },
+      h("div", { class: "tx" }, h("b", {}, "Importar de Transfermóvil"), h("span", {}, "Tus tarjetas, destinatarios y contratos, desde su respaldo.")),
+      h("button", { id: "import-tm-settings", class: "addchip", onclick: () => ctx.go("import") }, "Importar")),
+
     updateSettings(ctx, chips),
 
     config.telemetryUrl ? [

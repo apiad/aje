@@ -256,6 +256,50 @@ def pending_card_resumes_ask(page):
     expect(page.locator("#add-registered")).to_be_visible()
 
 
+def write_backup(path):
+    subprocess.run(["node", str(WEB / "test" / "write-trm.mjs"), str(path)], check=True)
+    return path
+
+
+def import_backup(page):
+    """A sample backup: three new cards ticked, one already in Ajé, one Ajé cannot operate; the rest is kept."""
+    path = write_backup(Path("/tmp/aje-smoke-sample.trm"))
+    page.click("#import-tm")
+    expect(page.locator("#import-pick")).to_be_visible()
+    expect(page.locator("#import")).not_to_contain_text("null")
+    page.locator("#import-file").set_input_files(str(path))
+    expect(page.locator("#import-cards input[type=checkbox]")).to_have_count(3)
+    expect(page.locator('#import-cards label[data-pan-last4="0001"]')).to_contain_text("ya está en Ajé")
+    expect(page.locator('#import-cards label[data-pan-last4="0014"]')).to_contain_text("Clásica empresarial")
+    expect(page.locator("#import-kept")).to_contain_text("Destinatarios")
+    expect(page.locator("#import-go")).to_have_text("Importar 3 tarjetas")
+    page.locator('#import-cards label[data-pan-last4="0013"] input').uncheck()
+    expect(page.locator("#import-go")).to_have_text("Importar 2 tarjetas")
+    page.click("#import-go")
+    expect(page.locator("#import-done")).to_contain_text("2 tarjetas")
+    state = page.evaluate("""() => ({
+        pending: ajeDev.store.state.cards.filter((c) => ["9227959900000011", "9760030000000012"].includes(c.pan) && c.state === "pending").length,
+        skipped: ajeDev.store.state.cards.some((c) => c.pan === "9227069900000013"),
+        clasica: ajeDev.store.state.cards.find((c) => c.pan === "9760030000000012")?.currency,
+        recipients: ajeDev.store.state.imported?.recipients.length,
+        secret: JSON.stringify(ajeDev.store.state).includes('"pin"'),
+    })""")
+    assert state == {"pending": 2, "skipped": False, "clasica": "USD", "recipients": 2, "secret": False}, state
+    page.click("#import-first")
+    expect(page.locator("#addcard")).to_be_visible()
+
+
+def import_not_a_backup(page):
+    """Any other file says so in one line and lets the person pick again."""
+    path = Path("/tmp/aje-smoke-not-a-backup.txt")
+    path.write_text("hola")
+    page.goto(page.url.split("#")[0] + "#/settings")
+    page.click("#import-tm-settings")
+    page.locator("#import-file").set_input_files(str(path))
+    expect(page.locator("#import-error")).to_have_text("Este archivo no es un respaldo de Transfermóvil.")
+    expect(page.locator("#import-pick")).to_be_visible()
+
+
 def scan_reads_card(p, base, out, errors):
     """The scanner reads a synthetic card from Chromium's fake camera into the review screen."""
     fixtures = out / "fixtures"
@@ -621,7 +665,7 @@ def inbox_from_sms(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, update_beta, refused_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, import_backup, import_not_a_backup, update_beta, refused_login, scanner_without_reader]
 
 
 def main():

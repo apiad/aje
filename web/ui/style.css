@@ -195,7 +195,7 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .matrix i{color:var(--muted)}
 .matrix span{background:var(--surface);min-height:20px}
 .matrix span.hit{background:var(--gold);color:var(--on-gold);font-weight:700}
-#addcard .addchip,#deck #add-card{margin-top:12px}
+#addcard .addchip,#deck .addrow{margin-top:12px}
 .pair{display:flex;gap:10px}.pair .btn{flex:1}
 .consent{color:var(--bone);font-size:14.5px;line-height:1.5;margin:8px 0}
 .consent-link{color:var(--gold);font-size:14px}
@@ -235,3 +235,19 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 .notice .linkbtn.dim{color:var(--muted)}
 .notice[data-state="seen"],.notice[data-state="dismissed"]{opacity:.72}
 .notice.hl{border-color:var(--gold);background:var(--raised)}
+
+/* Importing a Transfermóvil backup. */
+.addrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#import .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 12px}
+#import .chk{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line-soft);cursor:pointer;min-height:44px}
+#import .chk:last-child,#import .kept:last-child{border-bottom:0}
+#import .chk input{width:20px;height:20px;accent-color:var(--gold);flex:none;margin:0}
+#import .chk .nobox{width:20px;flex:none}
+#import .chk .t{flex:1;min-width:0;font-size:13.5px}
+#import .chk small{display:block;color:var(--muted);font-size:11px}
+#import .tag{font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--muted);white-space:nowrap}
+#import .tag.new{color:var(--river);border-color:#244a3e}
+#import .tag.bad{color:var(--clay)}
+#import .kept{display:flex;justify-content:space-between;font-size:12.5px;padding:9px 0;color:var(--muted);border-bottom:1px solid var(--line-soft)}
+#import .kept b{color:var(--bone);font-weight:500}
+#import .btn:disabled{opacity:.45;cursor:default}
