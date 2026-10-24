@@ -29,7 +29,8 @@ export function renderAddCard(ctx, r) {
   if (resumed) {
     s.card = resumed;
     s.step = resumed.bank === "CLASICA" ? null
-      : store.state.banks[resumed.bank]?.registered ? "link" : "guide";
+      // An imported card has never answered whether its bank is registered: ask, as a new card does.
+      : { true: "link", false: "guide" }[store.state.banks[resumed.bank]?.registered] ?? "ask";
   }
 
   const bank = () => s.card?.bank;

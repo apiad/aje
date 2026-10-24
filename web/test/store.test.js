@@ -219,3 +219,25 @@ test("addReceived gives each incoming kind its own row", async () => {
   assert.deepEqual([plan.op, plan.plan, plan.amount], ["in-plan", "3GB", null]);
   assert.deepEqual([(await s.addReceived(n("recharge-intl", { plan: "10GB" }), 1)).op], ["in-recharge"]);
 });
+
+test("a backup's lists are kept whole, and a second import replaces them", async () => {
+  const backend = memoryBackend();
+  const s = await openStore(backend, { now: () => 42 });
+  assert.equal(s.state.imported, null);
+  const backup = {
+    exportedAt: "23/10/2026 18:44:20", cards: [{ pan: "9227959900000001" }], unreadable: 2,
+    recipients: [{ name: "Ana", account: "9227959900000009", phone: "51234567" }],
+    bills: [{ kind: "electricity", type: 1, contract: "100001", code: "C1" }],
+    onat: [], phones: [{ number: "51234567" }], landlines: [], nauta: [{ user: "ana.perez", type: 1 }],
+  };
+  await s.saveImported(backup);
+  const again = await openStore(backend);
+  assert.deepEqual(again.state.imported, {
+    at: 42, exportedAt: "23/10/2026 18:44:20", recipients: backup.recipients, bills: backup.bills,
+    onat: [], phones: backup.phones, landlines: [], nauta: backup.nauta,
+  });
+  await again.saveImported({ ...backup, recipients: [{ name: "Ben", account: "9227959900000008", phone: "" }], nauta: [] });
+  assert.deepEqual(again.state.imported.recipients.map((r) => r.name), ["Ben"]);
+  assert.deepEqual(again.state.imported.nauta, []);
+  assert.deepEqual(again.state.cards, []);
+});
