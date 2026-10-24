@@ -94,7 +94,7 @@ function lineSheet(ctx, account) {
       h("div", { class: "lead" }, simLabel(account)),
       h("div", { class: "field" }, h("label", { for: "edit-alias" }, "Nombre"), alias),
       h("div", { class: "field" }, h("label", { for: "edit-number" }, "Tu número"), number,
-        h("div", { class: "hint" }, "El teléfono casi nunca lo sabe; Ajé lo usa para cobrar con QR.")),
+        h("div", { class: "hint" }, "El teléfono casi nunca lo sabe; Ajé lo usa para recibir saldo con QR.")),
       h("div", { class: "field" }, h("label", {}, "Plan"),
         chips([["PREPAGO", "Prepago · *222#"], ["POSPAGO", "Pospago · *111#"]], (v) => store.planFor(subId) === v, (v) => store.setPlan(subId, v), "edit-plan")),
       switchRow("edit-default", isDefault, "Línea por defecto", "La que Ajé usa con los bancos, y la primera de tus líneas en Inicio.",
