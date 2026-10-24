@@ -142,6 +142,18 @@ def history_and_verified_transfer(page):
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
 
+def settle_history(page):
+    """"Revisar SMS" reads the inbox back 72 hours and says what it found; a second run adds nothing."""
+    page.goto(page.url.split("#")[0] + "#/history")
+    rows = page.locator("#history .row").count()
+    page.click("#settle")
+    expect(page.locator("#settle-note")).to_contain_text("Revisé", timeout=10_000)
+    assert page.locator("#history .row").count() == rows, "settle added history rows"
+    since = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'readSms').at(-1).args.since")
+    age = page.evaluate("Date.now()") - since
+    assert 72 * 3600_000 <= age < 72 * 3600_000 + 60_000, f"settle read {age} ms back"
+
+
 def double_tap_transfers_once(page):
     page.goto(page.url.split("#")[0] + "#/transfer")
     page.fill("#tr-to", "9200950000000001")
@@ -808,7 +820,7 @@ def inbox_from_sms(page):
     expect(page.locator("#bell .count")).to_have_count(0)
 
 
-STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer, settle_history,
          double_tap_transfers_once, inbox_from_sms,
          line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 

@@ -43,6 +43,34 @@ export function row(ctx, a) {
   );
 }
 
+/** What the last settle found, `{id, text}`, shown again on the screen that ran it: a row's or the list's (id null). */
+let settled = null;
+
+/**
+ * The button that reads the last 72 hours of service SMS and settles the history with them. `a` is
+ * the row whose detail shows it, to say whether that one was verified.
+ */
+function settleButton(ctx, a = null) {
+  const id = a?.id ?? null;
+  const note = h("div", { class: "hint", id: "settle-note" }, settled?.id === id ? settled.text : "");
+  const btn = h("button", { class: "mini", id: "settle", onclick: async () => {
+    btn.disabled = true;
+    btn.textContent = "Revisando…";
+    try {
+      const r = await ctx.workflow.settle();
+      const row = a && ctx.store.state.attempts.find((x) => x.id === a.id);
+      settled = { id, text: row ? (row.state === "verified" ? "Un SMS verificó esta operación." : "Ningún SMS de las últimas 72 horas verifica esta operación.")
+        : `Revisé ${r.read} SMS de las últimas 72 horas: ${r.verified === 1 ? "1 operación verificada" : `${r.verified} operaciones verificadas`}.` };
+    } catch {
+      settled = { id, text: "No pude leer los SMS. Ajé necesita el permiso de leer SMS para revisarlos." };
+    }
+    btn.disabled = false;
+    btn.textContent = "Revisar SMS";
+    note.textContent = settled.text;
+  } }, icon("sms"), "Revisar SMS");
+  return [btn, note];
+}
+
 function detail(ctx, a) {
   const kv = (k, v) => (v === null || v === undefined || v === "" ? null : h("div", { class: "kv" }, h("span", {}, k), h("b", {}, v)));
   return h("div", { id: "detail" },
@@ -63,6 +91,7 @@ function detail(ctx, a) {
       kv("Saldo contable", a.accounting),
       kv("Saldo disponible", a.available)),
     a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") || a.op === "133" ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
+    a.state === "verified" || INCOMING.has(a.op) ? null : h("div", { class: "settle" }, ...settleButton(ctx, a)),
     a.code ? h("details", { class: "codefold" }, h("summary", {}, "Ver el código que marcó Ajé"), h("div", { class: "cc" }, a.code)) : null,
   );
 }
@@ -73,8 +102,10 @@ export function renderHistory(ctx, r) {
     const a = attempts.find((x) => String(x.id) === r.param);
     if (a) return detail(ctx, a);
   }
+  const [btn, note] = settleButton(ctx);
   return h("div", { id: "history" },
-    h("div", { class: "topbar" }, h("div", { class: "t" }, "Historial")),
+    h("div", { class: "topbar" }, h("div", { class: "t" }, "Historial"), btn),
+    note,
     attempts.length ? attempts.map((a) => row(ctx, a)) : h("div", { class: "empty" }, "Aún no hay operaciones."),
   );
 }

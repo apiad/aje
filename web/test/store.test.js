@@ -62,11 +62,11 @@ test("a transfer SMS verifies the pending transfer to that card for that amount"
   assert.equal(byId[1].state, "dialer");
 });
 
-test("seen remembers the last fifty keys", async () => {
+test("seen remembers the last 500 keys", async () => {
   const s = await openStore(memoryBackend());
   assert.equal(await s.seen("a"), false);
   assert.equal(await s.seen("a"), true);
-  for (let i = 0; i < 50; i++) await s.seen(`k${i}`);
+  for (let i = 0; i < 500; i++) await s.seen(`k${i}`);
   assert.equal(await s.seen("a"), false);
 });
 

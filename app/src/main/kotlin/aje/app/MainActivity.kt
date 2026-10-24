@@ -50,6 +50,20 @@ class MainActivity : FragmentActivity() {
         contactsPermission.launch(Manifest.permission.READ_CONTACTS)
     }
 
+    // An inbox read that asked for the SMS permission waits here for the person's answer.
+    private var smsAsk: (() -> Unit)? = null
+    private val smsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        smsAsk?.invoke()
+        smsAsk = null
+    }
+
+    /** Asks for the permission to read the SMS inbox, then calls [then] whatever the answer. */
+    fun askSms(then: () -> Unit) {
+        smsAsk?.invoke()
+        smsAsk = then
+        smsPermission.launch(Manifest.permission.READ_SMS)
+    }
+
     // The page's camera request waits here while Android asks the person for the camera.
     private var cameraRequest: PermissionRequest? = null
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

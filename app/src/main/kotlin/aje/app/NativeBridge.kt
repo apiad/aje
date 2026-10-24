@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Telephony
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.webkit.WebView
@@ -21,6 +22,9 @@ private val PERMISSIONS = arrayOf(
     Manifest.permission.READ_PHONE_NUMBERS,
     Manifest.permission.RECEIVE_SMS,
 ) + (if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
+
+/** How far back `readSms` reads the inbox, whatever the page asks: old texts stay on the phone. */
+private const val SMS_HISTORY_MS = 72 * 60 * 60 * 1000L
 
 /** A one-shot USSD code: digits, `*` and `#`, starting with `*` and ending with `#`. */
 private val USSD = Regex("""^\*[0-9*#]+#$""")
@@ -81,6 +85,12 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                     val granted = activity.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                     if (args.optBoolean("ask") && !granted) activity.askContacts(lookUp) else lookUp()
                 }
+                "readSms" -> {
+                    val since = maxOf(args.optLong("since", 0), System.currentTimeMillis() - SMS_HISTORY_MS)
+                    val granted = { activity.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED }
+                    val read = { if (granted()) inbox(since) { reply(replyProxy, id, it) } else fail(replyProxy, id, "permission") }
+                    if (granted()) read() else activity.askSms(read)
+                }
                 "installUpdate" -> Updater.install(
                     activity, args.getString("url"), args.getString("sha256"),
                     progress = { received, total ->
@@ -133,6 +143,35 @@ class NativeBridge(private val activity: MainActivity) : WebViewCompat.WebMessag
                 if (number.isNotEmpty()) Notices.nameOf(activity, number)?.let { names.put(number, it) }
             }
             activity.runOnUiThread { reply(names) }
+        }.start()
+    }
+
+    /**
+     * The inbox SMS received since `since`, oldest first, from service senders only: a sender with a
+     * letter or of six digits or fewer, as senderTag in web/core/sms.js. A person's texts are never
+     * read. Read off the main thread.
+     */
+    private fun inbox(since: Long, reply: (JSONArray) -> Unit) {
+        Thread {
+            val list = JSONArray()
+            try {
+                activity.contentResolver.query(
+                    Telephony.Sms.Inbox.CONTENT_URI,
+                    arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE_SENT, Telephony.Sms.DATE, Telephony.Sms.SUBSCRIPTION_ID),
+                    "${Telephony.Sms.DATE} >= ?", arrayOf(since.toString()), "${Telephony.Sms.DATE} ASC",
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val sender = c.getString(0) ?: continue
+                        if (!sender.any { it.isLetter() } && sender.length > 6) continue
+                        val sms = JSONObject().put("sender", sender).put("body", c.getString(1) ?: "")
+                            .put("sentAt", c.getLong(2)).put("receivedAt", c.getLong(3))
+                        if (!c.isNull(4) && c.getInt(4) >= 0) sms.put("subId", c.getInt(4))
+                        list.put(sms)
+                    }
+                }
+            } catch (_: SecurityException) {
+            }
+            activity.runOnUiThread { reply(list) }
         }.start()
     }
 
