@@ -1,6 +1,7 @@
 // Settings: the SIM registered with the banks, the saved bank PINs, each line's balance code,
 // and the dev build's telemetry.
 import { PRIVACY_URL } from "./consent.js";
+import { simLabel as slotLabel } from "../core/accounts.js";
 import { BANKS } from "../core/money.js";
 import { h } from "./dom.js";
 import { updateSettings } from "./updates.js";
@@ -33,7 +34,8 @@ let historyOpen = false;
 export function renderSettings(ctx) {
   const { store, sims, config } = ctx;
   const s = store.state.settings;
-  const simLabel = (sim) => `SIM ${sim.slot + 1} · ${sim.carrier || "Cubacel"}`;
+  const simLabel = (sim) => s.lines?.[sim.subId]?.alias || slotLabel(sim);
+  const hidden = (sim) => Boolean(s.lines?.[sim.subId]?.hidden);
 
 
   return h("div", { id: "settings" },
@@ -47,9 +49,10 @@ export function renderSettings(ctx) {
 
     sims.length ? h("div", { class: "group" }, "Saldo móvil de cada línea") : null,
     sims.map((sim) => h("div", { class: "set-row", "data-line": sim.subId },
-      h("div", { class: "tx" }, h("b", {}, simLabel(sim)),
+      h("div", { class: "tx" }, h("b", {}, simLabel(sim), hidden(sim) ? " · oculta" : ""),
         chips([["PREPAGO", "Prepago · *222#"], ["POSPAGO", "Pospago · *111#"]],
-          (v) => store.planFor(sim.subId) === v, (v) => store.setPlan(sim.subId, v))))),
+          (v) => store.planFor(sim.subId) === v, (v) => store.setPlan(sim.subId, v))),
+      hidden(sim) ? h("button", { class: "addchip", "data-unhide": sim.subId, onclick: () => store.setLine(sim.subId, { hidden: false }) }, "Mostrar") : null)),
 
     h("div", { class: "group" }, "Transfermóvil"),
     h("div", { class: "set-row" },

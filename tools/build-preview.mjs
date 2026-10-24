@@ -1,9 +1,12 @@
 // Bundles web/ into one self-contained HTML page that runs against the mock: the
 // artifact for iterating on the interface without building an APK.
-// Usage: node tools/build-preview.mjs <out.html> [--aegis]
+// Usage: node tools/build-preview.mjs <out.html> [--aegis | --site]
 // --aegis adds aegis's artifact script, so the page can be sent as a live artifact.
+// --site builds the demo the landing page embeds: the store starts from site/demo-state.json
+// (made by tools/site-seed.py) and lives in memory, the mock's panel is hidden and nothing
+// is fetched off the page.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const [out, flag] = process.argv.slice(2);
@@ -16,8 +19,18 @@ const js = execFileSync("npx", ["-y", "esbuild@0.24.0", "web/app.js", "--bundle"
 const css = readFileSync("web/ui/style.css", "utf8");
 // An aegis artifact runs in a sandboxed frame with no IndexedDB, so the page gets an
 // in-memory stand-in with the few calls web/core/idb.js makes; state lasts until reload.
+// The site's seed moves every timestamp by the time since its capture, so the demo's history is recent.
+const SEED = flag === "--site" && existsSync("site/demo-state.json") ? readFileSync("site/demo-state.json", "utf8").trim() : "null";
 const MEMORY_IDB = `(() => {
   const data = new Map();
+  const seed = ${SEED};
+  if (seed) {
+    const by = Date.now() - seed.capturedAt;
+    const shift = (v) => Array.isArray(v) ? v.map(shift) : v && typeof v === "object"
+      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shift(x)]))
+      : typeof v === "number" && v > 1.6e12 && v < 2.2e12 ? v + by : v;
+    data.set("state", shift(seed.state));
+  }
   const later = (r, fn) => { setTimeout(() => { r.result = fn(); r.onsuccess?.(); }); return r; };
   const store = { get: (k) => later({}, () => data.get(k)), put: (v, k) => later({}, () => { data.set(k, v); return k; }) };
   const db = { createObjectStore: () => store, transaction: () => ({ objectStore: () => store }) };
@@ -44,8 +57,15 @@ const aegis = flag === "--aegis" ? `<script>${QUIET_RESIZE}</script>\n` + '<scri
   "</script>\n" : "";
 
 // Escape `</script` so the bundle cannot close its own tag.
+const SITE_FETCH = `(() => {
+  const real = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (url, init) => new URL(url, location.href).origin === location.origin ? real(url, init)
+    : Promise.resolve(String(url).startsWith("https://api.github.com/") ? new Response("[]") : new Response("", { status: 404 }));
+})();`;
+const site = flag === "--site" ? `<script>\n${MEMORY_IDB}\n${SITE_FETCH}\n</script>\n<style>#mock-panel{display:none}</style>\n` : "";
+
 const html = readFileSync("web/index.html", "utf8")
-  .replace('<link rel="stylesheet" href="./ui/style.css">', () => `${aegis}<style>\n${css}</style>`)
+  .replace('<link rel="stylesheet" href="./ui/style.css">', () => `${aegis}${site}<style>\n${css}</style>`)
   .replace('<script type="module" src="./app.js"></script>', () => `<script>
 ${PREVIEW_CONFIG}
 </script>

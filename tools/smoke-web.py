@@ -5,6 +5,7 @@
 
 import functools
 import json
+import re
 import subprocess
 import http.server
 import sys
@@ -142,6 +143,49 @@ def history_and_verified_transfer(page):
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
 
+def receipt_discreet(page):
+    """A verified transfer's detail shows its receipt without the balance; turning discreet off shows it,
+    sharing sends what the screen shows, and Mostrar never shows the balance."""
+    history_and_verified_transfer(page)
+    rc = page.locator("#receipt")
+    expect(rc).to_contain_text("Transferencia completada")
+    expect(rc).to_contain_text("oculto")
+    expect(rc).not_to_contain_text("1 134,56")
+    page.locator("details.codefold summary", has_text="SMS original").click()
+    expect(page.locator("#receipt-sms")).not_to_contain_text("1134.56")
+    page.click("#receipt-share")
+    shared = page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'share').args.text")
+    assert "AB0000XYZ0001" in shared and "1134" not in shared and "1 134" not in shared, shared
+    page.click("#receipt-discreet")
+    expect(page.locator("#receipt")).to_contain_text("1 134,56 CUP")
+    page.click("#receipt-share")
+    assert "Saldo restante: 1 134,56 CUP" in page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'share').args.text")
+    page.click("#receipt-show-btn")
+    show = page.locator("#receipt-show")
+    expect(show).to_contain_text("AB0000XYZ0001")
+    expect(show).not_to_contain_text("1 134")
+    page.screenshot(path="/tmp/aje-smoke/receipt_show.png")
+    show.locator(".close").click()
+    expect(show).to_have_count(0)
+
+
+def settle_history(page):
+    """"Revisar SMS" reads the inbox back 72 hours and says what it found; a second run adds nothing."""
+    page.goto(page.url.split("#")[0] + "#/history")
+    rows = page.locator("#history .row").count()
+    page.click("#settle")
+    expect(page.locator("#settle-note")).to_contain_text("Revisé", timeout=10_000)
+    # The settle pill in a row's detail keeps the top bar's icon size.
+    page.locator('#history .row:not([data-state="verified"])').first.click()
+    width = page.locator("#detail #settle svg").bounding_box()["width"]
+    assert width <= 16, f"settle icon is {width}px wide"
+    page.goto(page.url.split("#")[0] + "#/history")
+    assert page.locator("#history .row").count() == rows, "settle added history rows"
+    since = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'readSms').at(-1).args.since")
+    age = page.evaluate("Date.now()") - since
+    assert 72 * 3600_000 <= age < 72 * 3600_000 + 60_000, f"settle read {age} ms back"
+
+
 def double_tap_transfers_once(page):
     page.goto(page.url.split("#")[0] + "#/transfer")
     page.fill("#tr-to", "9200950000000001")
@@ -183,6 +227,99 @@ def already_authenticated_login(page):
     page.click("#add-link")
     expect(page.locator("#add-done")).to_contain_text("Metro tres", timeout=10_000)
     page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
+
+
+def pay_bills(page):
+    """Servicios: a saved electricity bill is checked, shows its debt, and is paid with one tap; Nauta keeps its amount."""
+    page.goto(page.url.split("#")[0].split("?")[0] + "#/pay")
+    # The sample backup's electricity contract and Nauta account are offered.
+    expect(page.locator("#bill-offers .row")).to_have_count(2)
+    page.click("#bill-add")
+    expect(page.locator('#bill-kind button.on')).to_have_text("Luz")
+    page.fill("#bill-number", "12345")
+    page.fill("#bill-alias", "Casa")
+    page.click("#bill-save")
+    expect(page.locator("#bill-error")).to_contain_text("13 dígitos")
+    page.fill("#bill-number", "1234 5678 90123")
+    page.click("#bill-save")
+    expect(page.locator('#bills [data-bill]')).to_have_count(1)
+    expect(page.locator("#bills")).to_contain_text("Casa")
+    expect(page.locator("#bills")).to_contain_text("····0123")
+    # A new account is unchecked: it offers Revisar, not Pagar.
+    expect(page.locator("#bills [data-bill]")).to_have_attribute("data-status", "never")
+    expect(page.locator("#bills [data-pay]")).to_have_count(0)
+    page.locator("#bills [data-debt]").click()
+    expect(page.locator("#sheet h3")).to_have_text("Deuda · Luz · Casa")
+    # The reload dropped the mock's session: the bank asks for one first.
+    expect(page.locator('#pin, #bill-result:not([data-state="sent"])').first).to_be_visible(timeout=10_000)
+    if page.locator("#pin").count():
+        page.fill("#pin", "1234")
+        page.click("#pin-submit")
+    expect(page.locator("#bill-result")).to_contain_text("Debe 85.40 CUP.", timeout=10_000)
+    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
+    # A check that ended well closes its sheet; the row keeps the answer.
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
+    row = page.locator("#bills [data-bill]")
+    expect(row).to_have_attribute("data-status", "owe")
+    expect(row).to_contain_text("Debe 85.40 CUP")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
+    page.locator("#bills [data-pay]").click()
+    expect(page.locator("#sheet")).to_contain_text("Luz · Casa")
+    expect(page.locator("#bill-result")).to_contain_text("procesada", timeout=10_000)
+    sent = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
+    assert sent[-1].startswith("*444*41*"), sent[-1:]
+    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
+    # Paid after the check, and the bank's SMS confirmed it: the row says what the bank took, with its discount.
+    expect(row).to_have_attribute("data-status", "paid")
+    expect(row).to_contain_text("✓ Pagado 80.10 CUP", timeout=10_000)
+    expect(row).to_contain_text("verificado por SMS")
+    # Its receipt, in the history, hides the owner and the balance.
+    page.goto(page.url.split("#")[0] + "#/history")
+    page.locator("#history .row", has_text="Luz").first.click()
+    expect(page.locator("#receipt")).to_contain_text("Pago de la luz completado")
+    expect(page.locator("#receipt")).to_contain_text("MM000A000X001")
+    expect(page.locator("#receipt")).not_to_contain_text("ANA")
+    expect(page.locator("#receipt")).not_to_contain_text("1 120,50")
+    page.goto(page.url.split("#")[0] + "#/pay")
+    # Nauta from the backup's offer: the user comes filled in, the amount is asked.
+    page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
+    expect(page.locator('#bill-kind button.on')).to_have_text("Nauta")
+    expect(page.locator("#bill-number")).to_have_value("ana.perez")
+    expect(page.locator('#bill-nauta-type button.on')).to_have_text("Navegación internacional")
+    expect(page.locator("#bill-scan")).to_have_count(0)
+    page.click("#bill-save")
+    expect(page.locator("#bill-error")).to_contain_text("importe")
+    page.fill("#bill-amount", "100")
+    page.click("#bill-save")
+    expect(page.locator('#bills [data-bill]')).to_have_count(2)
+    expect(page.locator("#bill-offers .row")).to_have_count(1)
+    # With the session gone, paying asks for the key, logs in, pays, and the bank's SMS verifies it.
+    page.click("#mock-panel summary")
+    page.click("#mock-logout")
+    page.locator("#bills [data-bill]", has_text="ana.perez").locator("[data-pay]").click()
+    expect(page.locator("#pin")).to_be_visible(timeout=10_000)
+    page.fill("#pin", "1234")
+    page.click("#pin-submit")
+    expect(page.locator('#bill-result[data-state="verified"]')).to_contain_text("Verificado", timeout=15_000)
+    expect(page.locator("#sheet")).to_contain_text("AB000CD0001")
+    page.keyboard.press("Escape")
+    # Water asks for the company; the number's length follows it.
+    page.click("#bill-add")
+    page.click('#bill-kind button[data-value="water"]')
+    page.click('#bill-region button[data-value="2"]')
+    expect(page.locator("#bill")).to_contain_text("14 o 16 dígitos")
+    page.click(".sbar .back")
+    # Editing the Nauta account and deleting it.
+    page.locator("#bills [data-bill]", has_text="ana.perez").locator(".tx").click()
+    expect(page.locator("#bill-amount")).to_have_value("100")
+    page.click("#bill-delete")
+    expect(page.locator('#bills [data-bill]')).to_have_count(1)
+    page.click('nav a[href="#/history"]')
+    # The attempt the bank refused for want of a session, the payment, and the debt query.
+    expect(page.locator("#history .row", has_text="Luz · Casa")).to_have_count(3)
+    expect(page.locator("#history .row", has_text="ana.perez").first).to_contain_text("verificada")
+    page.goto(page.url.split("#")[0] + "#/home")
 
 
 def type_number(page):
@@ -249,7 +386,8 @@ def add_clasica_via_mitransfer(page):
     state = page.evaluate("ajeDev.store.state")
     assert next(c for c in state["cards"] if c["alias"] == "Mi Clásica")["state"] == "associated"
     assert state["banks"]["MITRANSFER"]["registered"] is True
-    assert "00000000000" not in json.dumps(state) and "4321" not in json.dumps(state)
+    # Bounded by non-digits: a timestamp such as 1792864321000 holds "4321" and is no leak.
+    assert not re.search(r"(?<!\d)(00000000000|4321)(?!\d)", json.dumps(state)), "the CI or the PIN was stored"
 
 
 def pending_card_resumes_guide(page):
@@ -369,6 +507,23 @@ def scan_reads_card(p, base, out, errors):
     browser.close()
 
 
+def scan_reads_bill(p, base, out, errors):
+    """The bill form reads a printed bill's number from Chromium's fake camera."""
+    fixtures = out / "fixtures"
+    browser = p.chromium.launch(args=["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+                                      f"--use-file-for-fake-video-capture={fixtures / 'bill.mjpeg'}"])
+    page = browser.new_context(viewport={"width": 390, "height": 844}, permissions=["camera"]).new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "/index.html#/home")
+    seed_card(page)
+    page.goto(base + "/index.html#/bill")
+    page.click("#bill-scan")
+    expect(page.locator("#bill-number")).to_have_value("1234567890123", timeout=60_000)
+    expect(page.locator("#bill-scanbox")).to_be_hidden()
+    page.screenshot(path=out / "scan_reads_bill.png", full_page=True)
+    browser.close()
+
+
 FAKE_RELEASES = [{
     "tag_name": "v9.9.0-beta.1", "prerelease": True, "draft": False, "html_url": "https://github.com/apiad/aje/releases/tag/v9.9.0-beta.1",
     "assets": [
@@ -426,6 +581,33 @@ def consent_once(p, base, out, errors):
         if on:
             telemetry_history_folds(page)
         ctx.close()
+
+
+def wake_now(p, base, out, errors):
+    """Opening asks the shell for a wake-up; "Despertar ahora" runs the update job, which notifies a new
+    beta once and asks for its next slot. The clock is fixed at 10:00, out of the night hours."""
+    ctx = p.chromium.launch().new_context(viewport={"width": 390, "height": 844})
+    page = ctx.new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.clock.set_fixed_time("2026-10-06T10:00:00")
+    fake_github(page, FAKE_RELEASES)
+    page.goto(base + "/index.html#/home")
+    page.wait_for_function("globalThis.ajeDev && ajeDev.bridge.calls.some((c) => c.method === 'wakeAt')")
+    # Never ran: due at once.
+    assert page.evaluate("ajeDev.bridge.calls.find((c) => c.method === 'wakeAt').args.at === Date.now()")
+    # As Ajustes switches the channel: the last check was the other channel's.
+    page.evaluate("ajeDev.store.update({ channel: 'beta' }).then(() => ajeDev.store.setUpdate({ checkedAt: null, available: null }))")
+    for n in (1, 2):
+        page.click("#mock-panel summary")
+        page.click("#mock-wake")
+        page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'done').length === {n}")
+    notices = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'notify').map((c) => c.args.id)")
+    assert notices == ["update:9.9.0-beta.1"], notices
+    assert page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'wakeAt').args.at === new Date(2026, 9, 6, 13).getTime()")
+    page.click("#mock-panel summary")
+    expect(page.locator("#mock-wake-info")).to_contain_text("aviso: Ajé 9.9.0-beta.1 disponible")
+    page.screenshot(path=out / "wake_now.png")
+    ctx.close()
 
 
 def open_line_transfer(page, sub=3):
@@ -509,7 +691,7 @@ def charge_by_qr(page):
     # Review finding 4: a double tap creates one charge.
     page.wait_for_timeout(300)
     assert page.evaluate("ajeDev.store.state.attempts.filter((a) => a.op === '234-charge').length") == charges + 1
-    expect(page.locator("#lc-status")).to_contain_text("Esperando el pago")
+    expect(page.locator("#lc-status")).to_contain_text("Esperando el saldo")
     expect(page.locator("#line-charge")).to_contain_text("150 CUP")
     page.click("#mock-panel summary")
     page.click("#mock-line-received")
@@ -533,7 +715,7 @@ def pay_by_qr(page):
     # Headless Chromium has no camera: the scanner says so and offers the number instead.
     expect(page.locator("#qr-msg")).to_contain_text("cámara", timeout=10_000)
     page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'https://example.com/pago' }))")
-    expect(page.locator("#qr-msg")).to_have_text("Este QR no es un cobro de Ajé")
+    expect(page.locator("#qr-msg")).to_have_text("Este QR no es de Ajé para recibir saldo")
     page.evaluate("dispatchEvent(new CustomEvent('aje-qr', { detail: 'aje:saldo?v=9&n=56666666' }))")
     expect(page.locator("#qr-msg")).to_have_text("Actualiza Ajé para leer este QR")
     page.click("#mock-panel summary")
@@ -541,8 +723,8 @@ def pay_by_qr(page):
     expect(page.locator("#line-transfer")).to_be_visible()
     expect(page.locator("#lt-to")).to_have_text("Para Ana · 56666666")
     expect(page.locator("#lt-amount")).to_have_value("150")
-    expect(page.locator("#lt-submit")).to_have_text("Pasar 150 CUP")
-    # Scanning fills the form; nothing goes out until the person taps Pasar and gives the key.
+    expect(page.locator("#lt-submit")).to_have_text("Enviar 150 CUP")
+    # Scanning fills the form; nothing goes out until the person taps Enviar and gives the key.
     assert line_sends(page) == dials
     # Review finding 7: leaving the QR tab removes its test listener, so the panel's QR does nothing elsewhere.
     page.goto(page.url.split("#")[0] + "#/qr")
@@ -577,7 +759,7 @@ def line_transfer_by_number(page):
     page.fill("#lt-num", "+53 5555 5555")
     expect(page.locator("#lt-to")).to_contain_text("55555555")
     page.fill("#lt-amount", "25")
-    expect(page.locator("#lt-submit")).to_have_text("Pasar 25 CUP")
+    expect(page.locator("#lt-submit")).to_have_text("Enviar 25 CUP")
     expect(page.locator("#lt-total")).to_have_text("30 CUP")
     page.click("#lt-submit")
     expect(page.locator("#key-input")).to_be_visible()
@@ -649,7 +831,7 @@ def double_tap_sends_once(page):
 
 
 def no_key_double_tap_sends_once(page):
-    # Line 4 has no saved key: Pasar stays off while the send runs.
+    # Line 4 has no saved key: Enviar stays off while the send runs.
     open_line_transfer(page, sub=4)
     before = line_sends(page)
     page.fill("#lt-num", "55555555")
@@ -716,9 +898,9 @@ def inbox_from_sms(page):
     expect(page.locator("#bell .count")).to_have_count(0)
 
 
-STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
+STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer, receipt_discreet, settle_history,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 
 
 def main():
@@ -740,10 +922,12 @@ def main():
             page.screenshot(path=out / f"{step.__name__}.png", full_page=True)
         width = page.evaluate("document.documentElement.scrollWidth")
         scan_reads_card(p, base, out, errors)
+        scan_reads_bill(p, base, out, errors)
         consent_once(p, base, out, errors)
+        wake_now(p, base, out, errors)
     assert width <= 390, f"page is {width}px wide on a 390px phone"
     assert not errors, errors
-    print(f"{len(STEPS) + 2} steps passed, 0 errors, {width}px wide")
+    print(f"{len(STEPS) + 4} steps passed, 0 errors, {width}px wide")
 
 
 if __name__ == "__main__":

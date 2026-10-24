@@ -2,11 +2,12 @@
 import { randomSeed } from "./encoder.js";
 import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS, last4 } from "./money.js";
 import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
+import { debtQuery as debtQueryCode, opOf, payBill as payBillCode } from "./bills.js";
 import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
 import { fnv1a, noticeOf } from "./notice.js";
-import { BANKISH, formatMoney, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
+import { BANKISH, formatMoney, parseBankSms, parseDebtSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
@@ -18,6 +19,8 @@ const REGISTERED = /proces|satisfactori|registrad/i;
 const LINKED = /asociad|vinculad|satisfactori/i;
 const REFUSED = /error|incorrect|no se pudo|denegad/i;
 const ALREADY_AUTH = /ya se encuentra autenticad/i;
+/** How far back settle reads the SMS inbox; the shell never reads further. */
+export const SETTLE_MS = 72 * 60 * 60 * 1000;
 
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
@@ -77,6 +80,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     }
     return { attempt: current(attempt.id), needsLogin: lost };
   }
+  /** Op 47: asks the bank what a saved bill owes; the answer is the bank's reply, kept on the attempt. */
+  const debtQuery = (billId) => payBill(billId, { debt: true });
 
   /**
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
@@ -190,6 +195,54 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       telemetry.event("ussd_reply", { op: "45", ok: false, failure_code: -100, error: e.message });
     }
     return current(attempt.id);
+  }
+
+  /**
+   * Pays a saved bill from its card, on the chosen SIM: a Nauta recharge goes through with no menu.
+   * When the bank answers with a menu the API cannot follow, the code goes to the dialer, where the
+   * person answers it. `needsLogin` says the bank wants a session first; nothing was paid then.
+   */
+  async function payBill(billId, { debt = false } = {}) {
+    const bill = store.state.bills.find((b) => b.id === billId);
+    if (!bill) throw new RangeError(`no bill ${billId}`);
+    const card = cardOf(bill.cardId);
+    const ussd = debt ? debtQueryCode(bill) : payBillCode(bill, card);
+    const op = debt ? "47" : opOf(bill);
+    const s = seed();
+    const attempt = await store.add({
+      id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
+      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null, debt,
+    });
+    telemetry.event("ussd_sent", { op, bank: card.bank, via: "api", kind: bill.kind });
+    const r = await send(op, settings().subId, dial(ussd, config, s));
+    if (!r.ok && r.failureCode === -1) {
+      telemetry.event("ussd_sent", { op, bank: card.bank, via: "dialer", kind: bill.kind });
+      try {
+        await bridge.dial(dial(ussd, config, s));
+        await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "dialer" }));
+        if (!debt) await markPaid(bill, current(attempt.id));
+      } catch (e) {
+        // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+        await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+        telemetry.event("ussd_reply", { op, ok: false, failure_code: -100, error: e.message });
+      }
+      return { attempt: current(attempt.id), needsLogin: false };
+    }
+    if (!r.ok) {
+      await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "failed", failureCode: r.failureCode }));
+      return { attempt: current(attempt.id), needsLogin: false };
+    }
+    const lost = needsLogin(r.reply);
+    // The bank's SMS may have verified it before this reply landed: keep it verified.
+    await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: lost ? "failed" : "replied", reply: r.reply }));
+    if (!debt && !lost) await markPaid(bill, current(attempt.id));
+    return { attempt: current(attempt.id), needsLogin: lost };
+  }
+
+  /** A payment the bank took: Nauta's amount, or the debt the last check found; verified by its SMS. */
+  function markPaid(bill, attempt) {
+    const cents = bill.kind === "nauta" ? Math.round(bill.amount * 100) : bill.checked?.cents ?? null;
+    return store.markBill(bill.id, { paid: { at: attempt.startedAt, cents, verified: attempt.state === "verified" } });
   }
 
   /**
@@ -346,19 +399,28 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (line) return handleLineSms(line, { sender, tag, body, sentAt, receivedAt });
     const plan = parsePlanSms(body);
     // A person's number can write the same text; only Cubacel's sender confirms a purchase.
-    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
+    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId, body }, { tag, body, sentAt, receivedAt });
     // A login while the session is still open: the bank answers that it already is, naming no bank.
     if (tag !== "number" && ALREADY_AUTH.test(body) && lastLogin && receivedAt - lastLogin.at < WINDOW_MS) {
       if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
       await sessionOpened(lastLogin.bank, receivedAt, { sender: tag, bank: lastLogin.bank, text: body });
       return { kind: "auth", bank: lastLogin.bank };
     }
+    const debt = tag !== "number" && parseDebtSms(body);
+    if (debt) {
+      if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return debt;
+      const latency = await store.verifyDebt(debt, receivedAt);
+      telemetry.event("sms", { kind: "debt", sender: tag, ok: latency !== null, latency_ms: latency, text: body });
+      return debt;
+    }
     const sms = parseBankSms(body);
     if (!sms) {
       const notice = noticeOf(sender, body);
       if (notice) return handleNotice(notice, { body, sentAt, receivedAt });
-      if (BANKISH.test(body)) {
-        telemetry.event("sms", { kind: "unparsed_bank", sender: tag, length: body.length, lines: body.split("\n").length, text: body });
+      // Any service sender's text the parser does not know is reported, once: settle skips it later.
+      if (tag !== "number" || BANKISH.test(body)) {
+        if (tag !== "number" && (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`))) return null;
+        reportUnparsed(tag, body);
       }
       return null;
     }
@@ -381,15 +443,82 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         break;
       }
       case "transfer": {
-        const latency = await store.verifyTransfer(sms, receivedAt);
+        const latency = await store.verifyTransfer({ ...sms, body }, receivedAt);
         telemetry.event("sms", { kind: "transfer", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
       case "auth":
         await sessionOpened(sms.bank, receivedAt, base);
         break;
+      case "nauta": {
+        const latency = await store.verifyNauta({ ...sms, body }, receivedAt);
+        telemetry.event("sms", { kind: "nauta", ...base, ok: latency !== null, latency_ms: latency });
+        break;
+      }
+      case "bill": {
+        const latency = await store.verifyBill({ ...sms, body }, receivedAt);
+        telemetry.event("sms", { kind: "bill", ...base, ok: latency !== null, latency_ms: latency });
+        break;
+      }
     }
     return sms;
+  }
+
+  function reportUnparsed(tag, body, via = null) {
+    telemetry.event("sms", { kind: "unparsed_bank", sender: tag, via, length: body.length, lines: body.split("\n").length, text: body });
+  }
+
+  /**
+   * Settles the history with the service SMS of the last 72 hours (issue #28). Each one confirms the unverified operation it matches, as if it had
+   * arrived live, but adds no row, opens no session and gives no notice. One the parser does not
+   * know goes to telemetry, redacted, while it is on. Both are remembered, so a second run skips
+   * them. Returns how many SMS it read, verified and reported.
+   */
+  async function settle() {
+    const list = await bridge.readSms(now() - SETTLE_MS);
+    const result = { read: list.length, verified: 0, reported: 0 };
+    for (const { sender, body, sentAt = null, receivedAt, subId = null } of list) {
+      const tag = senderTag(sender);
+      const key = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+      if (tag === "number") continue;
+      // A seen SMS may still verify: an older build reported it as unknown. Verifying twice is not
+      // possible, since a verified operation never matches again.
+      const seen = store.state.seenSms.includes(key);
+      const known = await settleOne({ sender, body, receivedAt, subId });
+      if (known === "verified") result.verified++;
+      if (seen) continue;
+      if (known === "unknown") {
+        if (!settings().telemetry) continue;
+        reportUnparsed(tag, body, "inbox");
+        result.reported++;
+      }
+      await store.seen(key);
+    }
+    return result;
+  }
+
+  /** "verified" when the SMS confirmed an operation, "known" when the parser knows it, else "unknown". */
+  async function settleOne({ sender, body, receivedAt: at, subId }) {
+    const line = parseLineSms(body);
+    if (line) return line.kind === "line-sent" && (await store.verifyLineTransfer({ ...line, body }, at)) ? "verified" : "known";
+    const plan = parsePlanSms(body);
+    if (plan) return (await store.verifyPlan({ ...plan, subId, body }, at)) ? "verified" : "known";
+    const debt = parseDebtSms(body);
+    if (debt) return (await store.verifyDebt(debt, at)) !== null ? "verified" : "known";
+    const sms = parseBankSms(body);
+    if (!sms) return noticeOf(sender, body) || ALREADY_AUTH.test(body) ? "known" : "unknown";
+    // A refusal closes its query as failed: settled, but not verified.
+    if (sms.kind === "balance-failed") {
+      await store.failBalance(sms, at);
+      return "known";
+    }
+    const verify = {
+      balance: () => store.verifyBalance(sms, at, { add: false }),
+      transfer: () => store.verifyTransfer({ ...sms, body }, at),
+      nauta: () => store.verifyNauta({ ...sms, body }, at),
+      bill: () => store.verifyBill({ ...sms, body }, at),
+    }[sms.kind];
+    return verify && (await verify()) !== null ? "verified" : "known";
   }
 
   /** A bank's session is open: note it, and rerun the balance query that asked for the login. */
@@ -431,7 +560,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
 
   /** The one saved card whose last four match the account a received transfer names, else null. */
   function cardOfAccount(account) {
-    const cards = account ? store.state.cards.filter((c) => last4(c.pan) === last4(account)) : [];
+    const cards = account ? store.state.cards.filter((c) => !c.removed && last4(c.pan) === last4(account)) : [];
     return cards.length === 1 ? cards[0].id : null;
   }
 
@@ -448,7 +577,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
     if (await store.seen(id)) return sms;
     if (sms.kind === "line-sent") {
-      const verified = await store.verifyLineTransfer(sms, receivedAt);
+      const verified = await store.verifyLineTransfer({ ...sms, body }, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
       if (verified) await refreshBalance(verified.subId);
     } else {
@@ -462,5 +591,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
 }

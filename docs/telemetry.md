@@ -58,6 +58,10 @@ Picking a Transfermóvil backup to import (`web/ui/import.js`) sends one `import
 read, or `cancel` when the picker was closed); on success `cards` (cards found), `added` (cards added) and `kept` (rows saved for later):
 only counts, never a number, a name, an alias or anything else from the file.
 
+Each time Android wakes Ajé to run its background jobs (`web/core/jobs.js`), a `wake` event carries
+`late_min`, how many minutes after the asked time the wake-up came, and `jobs`, each job that ran
+with its result (`update:ok`, `update:error`). Nothing a job read or found goes out.
+
 ## The collector
 
 `telemetry/collector.py`, standard library only, behind Caddy at `https://aje.apiad.net/t`.

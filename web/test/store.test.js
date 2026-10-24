@@ -62,11 +62,11 @@ test("a transfer SMS verifies the pending transfer to that card for that amount"
   assert.equal(byId[1].state, "dialer");
 });
 
-test("seen remembers the last fifty keys", async () => {
+test("seen remembers the last 500 keys", async () => {
   const s = await openStore(memoryBackend());
   assert.equal(await s.seen("a"), false);
   assert.equal(await s.seen("a"), true);
-  for (let i = 0; i < 50; i++) await s.seen(`k${i}`);
+  for (let i = 0; i < 500; i++) await s.seen(`k${i}`);
   assert.equal(await s.seen("a"), false);
 });
 
@@ -93,7 +93,7 @@ test("a card is added pending at step 1, and a number already stored is refused"
   await s.updateCard(c.id, { state: "linked" });
   assert.equal(s.state.cards[0].state, "linked");
   await s.removeCard(c.id);
-  assert.deepEqual(s.state.cards, []);
+  assert.deepEqual(s.state.cards.map((x) => x.removed), [true]);
 });
 
 test("a bank's record is patched, and authenticated is per bank", async () => {
@@ -240,4 +240,55 @@ test("a backup's lists are kept whole, and a second import replaces them", async
   assert.deepEqual(again.state.imported.recipients.map((r) => r.name), ["Ben"]);
   assert.deepEqual(again.state.imported.nauta, []);
   assert.deepEqual(again.state.cards, []);
+});
+
+const CARD = (n) => ({ alias: `Tarjeta ${n}`, pan: `922795990000000${n}`, bank: "METROPOLITANO", currency: "CUP" });
+
+test("removing a card marks it, hands its bills to another card and drops it as the default", async () => {
+  let ids = 0;
+  const s = await openStore(memoryBackend(), { newId: () => `id${++ids}` });
+  const a = await s.addCard(CARD(1));
+  const b = await s.addCard(CARD(2));
+  const bill = await s.saveBill({ kind: "electricity", alias: "Casa", number: "1", cardId: a.id });
+  await s.update({ defaultCard: a.id });
+  await s.removeCard(a.id, { billsTo: b.id });
+  assert.equal(s.state.cards.find((c) => c.id === a.id).removed, true);
+  assert.equal(s.state.bills.find((x) => x.id === bill.id).cardId, b.id);
+  assert.equal(s.state.settings.defaultCard, null);
+});
+
+test("adding a removed card's number brings it back under the new alias", async () => {
+  const s = await openStore(memoryBackend());
+  const a = await s.addCard(CARD(1));
+  await s.updateCard(a.id, { state: "linked" });
+  await s.removeCard(a.id);
+  const again = await s.addCard({ ...CARD(1), alias: "Otra vez" });
+  assert.deepEqual([again.id, again.alias, again.removed, again.state, s.state.cards.length], [a.id, "Otra vez", false, "linked", 1]);
+  await assert.rejects(s.addCard(CARD(1)), /ya está/);
+});
+
+test("moveCard swaps a card with its live neighbour, skipping removed ones", async () => {
+  const s = await openStore(memoryBackend());
+  const [a, b, c] = [await s.addCard(CARD(1)), await s.addCard(CARD(2)), await s.addCard(CARD(3))];
+  await s.removeCard(b.id);
+  await s.moveCard(c.id, -1);
+  assert.deepEqual(s.state.cards.filter((x) => !x.removed).map((x) => x.id), [c.id, a.id]);
+  await s.moveCard(c.id, -1);
+  assert.deepEqual(s.state.cards.filter((x) => !x.removed).map((x) => x.id), [c.id, a.id]);
+});
+
+test("a line keeps an alias and can be hidden", async () => {
+  const s = await openStore(memoryBackend());
+  await s.setLine(3, { alias: "Trabajo" });
+  await s.setLine(3, { hidden: true });
+  await s.setLine(3, { alias: "" });
+  assert.deepEqual(s.state.settings.lines, { 3: { hidden: true } });
+});
+
+test("moveCard moves past the default card, which stays first", async () => {
+  const s = await openStore(memoryBackend());
+  const [a, d, b] = [await s.addCard(CARD(1)), await s.addCard(CARD(2)), await s.addCard(CARD(3))];
+  await s.update({ defaultCard: d.id });
+  await s.moveCard(b.id, -1);
+  assert.deepEqual(s.state.cards.map((x) => x.id), [b.id, d.id, a.id]);
 });

@@ -1,10 +1,10 @@
-// The QR tab: a camera viewfinder whose frames go to jsQR. An Ajé charge opens Pasar saldo filled in
-// with its number, name and amount; the person still taps Pasar and gives the key.
+// The QR tab: a camera viewfinder whose frames go to jsQR. An Ajé charge opens Enviar saldo filled in
+// with its number, name and amount; the person still taps Enviar and gives the key.
 import { parseCharge } from "../core/qr.js";
 import { h } from "./dom.js";
 
 const MESSAGES = {
-  "not-aje": "Este QR no es un cobro de Ajé",
+  "not-aje": "Este QR no es de Ajé para recibir saldo",
   newer: "Actualiza Ajé para leer este QR",
   bad: "Este QR de Ajé está incompleto",
 };
@@ -24,7 +24,7 @@ function loadReader() {
 }
 
 export function renderQrScan(ctx) {
-  const msg = h("div", { id: "qr-msg", class: "hint" }, "Apunta al QR de cobro de otra persona.");
+  const msg = h("div", { id: "qr-msg", class: "hint" }, "Apunta al QR de Ajé de quien te pide saldo.");
   const video = h("video", { class: "qrcam", playsinline: true, muted: true });
   let stream = null;
   let done = false;
@@ -67,7 +67,7 @@ export function renderQrScan(ctx) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
     } catch {
-      msg.textContent = "Ajé no puede usar la cámara. Puedes escribir el número en Pasar saldo.";
+      msg.textContent = "Ajé no puede usar la cámara. Puedes escribir el número en Enviar saldo.";
       return;
     }
     if (done) return stop();
@@ -91,7 +91,7 @@ export function renderQrScan(ctx) {
   }
 
   const root = h("div", { id: "qr-scan" },
-    h("div", { class: "topbar" }, h("div", { class: "t" }, "Pagar con QR")),
+    h("div", { class: "topbar" }, h("div", { class: "t" }, "Enviar saldo con QR")),
     h("div", { class: "qrview" }, video),
     msg,
     h("button", { id: "qr-number", class: "btn ghost", onclick: () => { stop(); ctx.go(`line-transfer?sub=${ctx.sims[0]?.subId ?? ""}`); } },

@@ -9,7 +9,8 @@ const PLAN_MS = 30 * 60 * 1000;
 /** How long a charge's QR waits for the payment that closes it. */
 export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
-const SEEN = 50;
+// Every service SMS of the 72 hours settle reads back, with room to spare.
+const SEEN = 500;
 const INBOX = 200;
 /** The history row each incoming kind leaves; an expiring plan leaves none. */
 const RECEIVED_OPS = { "line-received": "234-in", "card-received": "in-card", "recharge-intl": "in-recharge", recharge: "in-recharge", "plan-gift": "in-plan" };
@@ -31,11 +32,14 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
+    // `defaultCard` comes first in the deck and in every card choice; `lines` holds each line's alias and whether it is hidden.
+    settings: { subId: -1, plans: {}, lineNumbers: {}, lines: {}, defaultCard: null, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
-    cards: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
+    cards: [], bills: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
     // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
     imported: null,
+    // What each background job last did: `{at, ok, fails, failDay, ...}` by job id (web/core/jobs.js).
+    jobRuns: {},
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -52,6 +56,13 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     state.cards = state.cards.map((c) => (c.id === cardId && c.unverified ? { ...c, unverified: false } : c));
   }
   const current = (id) => state.attempts.find((a) => a.id === id) ?? null;
+  // Keeps the balance a bank SMS reported on the card that paid, with the row it came from, unless
+  // the card already holds one from a later SMS (settle reads old SMS back).
+  function keepBalance(cardId, available, at, attempt) {
+    if (!available) return;
+    state.cards = state.cards.map((c) => (c.id === cardId && !(c.balance?.at > at)
+      ? { ...c, balance: { available, at, op: attempt.op, attemptId: attempt.id } } : c));
+  }
 
   async function commit() {
     await backend.save(state);
@@ -59,7 +70,9 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   }
 
   function pendingWhere(at, test) {
-    return state.attempts.find((a) => a.state !== "verified" && at - a.startedAt < WINDOW_MS && test(a));
+    // An SMS read back from the inbox can be older than an operation; it never confirms a later one.
+    // One the bank or the phone refused never produced an SMS.
+    return state.attempts.find((a) => a.state !== "verified" && a.state !== "failed" && at >= a.startedAt && at - a.startedAt < WINDOW_MS && test(a));
   }
 
   const store = {
@@ -93,17 +106,22 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Verifies the latest pending balance query. Returns the latency, or null if none matched. */
-    async verifyBalance(sms, at = now()) {
+    /**
+     * Verifies the latest pending balance query. Returns the latency, or null if none matched; then a
+     * balance from Transfermóvil gets its own row, unless `add` is false.
+     */
+    async verifyBalance(sms, at = now(), { add = true } = {}) {
       const accounting = formatMoney(sms.accounting);
       const available = formatMoney(sms.available);
       const bankOf = (cardId) => state.cards.find((c) => c.id === cardId)?.bank;
       const pending = pendingWhere(at, (a) => a.op === "46" && bankOf(a.cardId) === sms.bank);
       if (!pending) {
+        if (!add) return null;
         await store.add({ startedAt: at, state: "verified", op: "46", accounting, available, verifiedAt: at });
         return null;
       }
       confirmCard(pending.cardId);
+      keepBalance(pending.cardId, available, at, pending);
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", accounting, available, verifiedAt: at }));
       return at - pending.startedAt;
     },
@@ -122,10 +140,59 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       const pending = pendingWhere(at, (a) => a.op === "45" && a.to && a.amount && transferMatches(sms, a.to, a.amount * 100));
       if (!pending) return null;
       confirmCard(pending.cardId);
-      await store.patch(pending.id, (a) => ({
-        ...a, state: "verified", transactionId: sms.transactionId,
-        available: sms.remaining ? formatMoney(sms.remaining) : null, verifiedAt: at,
-      }));
+      const available = sms.remaining ? formatMoney(sms.remaining) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
+      return at - pending.startedAt;
+    },
+
+    /** Verifies the pending Nauta payment to this account for this amount. Returns the latency, or null. */
+    async verifyNauta(sms, at = now()) {
+      const pending = pendingWhere(at, (a) => a.kind === "nauta" && a.billId && a.to === sms.user && a.amount * 100 === sms.amount.cents);
+      if (!pending) return null;
+      confirmCard(pending.cardId);
+      const available = sms.remaining ? formatMoney(sms.remaining) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
+      const bill = state.bills.find((b) => b.id === pending.billId);
+      if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, verified: true } });
+      return at - pending.startedAt;
+    },
+
+    /**
+     * Verifies the pending payment of the bill this SMS names, or the only one pending when no saved bill
+     * has that number, and keeps what the bank took. Returns the latency, or null.
+     */
+    async verifyBill(sms, at = now()) {
+      const digits = (n) => String(n).replace(/^0+/, "");
+      const numberOf = (a) => state.bills.find((b) => b.id === a.billId)?.number;
+      const paying = (a) => a.billId && !a.debt && a.op !== "47" && a.kind !== "nauta";
+      const pending = pendingWhere(at, (a) => paying(a) && numberOf(a) !== undefined && digits(numberOf(a)) === digits(sms.number)) ??
+        (state.bills.some((b) => digits(b.number) === digits(sms.number)) ? null : pendingWhere(at, paying));
+      if (!pending) return null;
+      confirmCard(pending.cardId);
+      const available = sms.available ? formatMoney(sms.available) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", amount: sms.paid.cents / 100, transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
+      const bill = state.bills.find((b) => b.id === pending.billId);
+      if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, cents: sms.paid.cents, verified: true } });
+      return at - pending.startedAt;
+    },
+
+    /**
+     * Answers the pending debt query of the bill this SMS names, or the only one pending when no saved
+     * bill has that number. Keeps the debt in `debtCents` (0 for none, null when the SMS gave no
+     * figure). Returns the latency, or null.
+     */
+    async verifyDebt(sms, at = now()) {
+      const digits = (n) => String(n).replace(/^0+/, "");
+      const numberOf = (a) => state.bills.find((b) => b.id === a.billId)?.number;
+      const named = (a) => numberOf(a) !== undefined && digits(numberOf(a)) === digits(sms.number);
+      const pending = pendingWhere(at, (a) => a.op === "47" && named(a)) ??
+        (state.bills.some((b) => digits(b.number) === digits(sms.number)) ? null : pendingWhere(at, (a) => a.op === "47"));
+      if (!pending) return null;
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", debtCents: sms.cents, verifiedAt: at }));
+      await store.markBill(pending.billId, { checked: { at, cents: sms.cents } });
       return at - pending.startedAt;
     },
 
@@ -133,7 +200,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     async verifyLineTransfer(sms, at = now()) {
       const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);
       if (!pending) return null;
-      await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at, sms: sms.body ?? null }));
       return { latencyMs: at - pending.startedAt, subId: pending.subId };
     },
 
@@ -147,7 +214,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         (sms.subId === null || sms.subId === undefined || a.subId === sms.subId)).sort((x, y) => y.startedAt - x.startedAt);
       const p = waiting.find((a) => Math.round((a.plan?.price ?? -1) * 100) === sms.price.cents) ?? (waiting.length === 1 ? waiting[0] : null);
       if (!p) return null;
-      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance }));
+      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance, sms: sms.body ?? null }));
       return { latencyMs: at - p.startedAt, subId: p.subId };
     },
 
@@ -217,14 +284,54 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
+    /** Sets a line's `alias` or `hidden`; an empty alias or a false `hidden` is dropped. */
+    async setLine(subId, patch) {
+      const line = Object.fromEntries(Object.entries({ ...state.settings.lines[subId], ...patch }).filter(([, v]) => v));
+      state.settings = { ...state.settings, lines: { ...state.settings.lines, [subId]: line } };
+      await commit();
+    },
+
     async setPlan(subId, plan) {
       state.settings = { ...state.settings, plans: { ...state.settings.plans, [subId]: plan } };
       await commit();
     },
 
-    /** Adds a card, pending at the first step of its bank's onboarding. A number already stored is refused. */
+    /** Saves a bill or service account to pay later: `kind`, `alias`, `number`, `cardId`, and per kind `region`, `nautaType`, `amount`. */
+    async saveBill(bill) {
+      const saved = { ...bill, id: bill.id ?? newId() };
+      if (state.bills.some((b) => b.id !== saved.id && b.kind === saved.kind && b.number === saved.number)) {
+        throw new Error("Esa cuenta ya está guardada.");
+      }
+      state.bills = state.bills.some((b) => b.id === saved.id) ? state.bills.map((b) => (b.id === saved.id ? saved : b)) : [...state.bills, saved];
+      await commit();
+      return saved;
+    },
+
+    /** Keeps what Servicios shows on a saved bill: its last debt check or payment (billStatus). */
+    async markBill(id, patch) {
+      if (!state.bills.some((b) => b.id === id)) return;
+      state.bills = state.bills.map((b) => (b.id === id ? { ...b, ...patch } : b));
+      await commit();
+    },
+
+    async removeBill(id) {
+      state.bills = state.bills.filter((b) => b.id !== id);
+      await commit();
+    },
+
+    /**
+     * Adds a card, pending at the first step of its bank's onboarding. A number already stored is refused,
+     * unless that card was removed: then it comes back as it was, under the new alias.
+     */
     async addCard({ alias, pan, bank, currency }) {
-      if (state.cards.some((c) => c.pan === pan)) throw new Error("Esta tarjeta ya está en tus cuentas.");
+      const old = state.cards.find((c) => c.pan === pan);
+      if (old && !old.removed) throw new Error("Esta tarjeta ya está en tus cuentas.");
+      if (old) {
+        const back = { ...old, alias, removed: false };
+        state.cards = state.cards.map((c) => (c.id === old.id ? back : c));
+        await commit();
+        return back;
+      }
       const card = { id: newId(), alias, pan, bank, currency, state: "pending", step: 1 };
       state.cards = [...state.cards, card];
       await commit();
@@ -236,14 +343,41 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    async removeCard(id) {
-      state.cards = state.cards.filter((c) => c.id !== id);
+    /**
+     * Removes a card from the deck and every choice, but keeps it, so the history still names it.
+     * Its bills go to `billsTo`, or to no card.
+     */
+    async removeCard(id, { billsTo = null } = {}) {
+      state.cards = state.cards.map((c) => (c.id === id ? { ...c, removed: true } : c));
+      state.bills = state.bills.map((b) => (b.cardId === id ? { ...b, cardId: billsTo } : b));
+      if (state.settings.defaultCard === id) state.settings = { ...state.settings, defaultCard: null };
+      await commit();
+    },
+
+    /**
+     * Swaps a card with the card before it (`by` -1) or after it (1) in the deck, past removed cards and
+     * the default one, which always goes first; at either end it stays.
+     */
+    async moveCard(id, by) {
+      const live = state.cards.filter((c) => !c.removed && c.id !== state.settings.defaultCard);
+      const i = live.findIndex((c) => c.id === id);
+      const other = live[i + by];
+      if (i < 0 || !other) return;
+      const [x, y] = [state.cards.findIndex((c) => c.id === id), state.cards.findIndex((c) => c.id === other.id)];
+      [state.cards[x], state.cards[y]] = [state.cards[y], state.cards[x]];
+      state.cards = [...state.cards];
       await commit();
     },
 
     /** When the app last asked GitHub for releases, and the update it found, if any. */
     async setUpdate(patch) {
       state.update = { ...state.update, ...patch };
+      await commit();
+    },
+
+    /** Replaces a background job's record of its last run. */
+    async setJobRun(id, run) {
+      state.jobRuns = { ...state.jobRuns, [id]: run };
       await commit();
     },
 
@@ -263,7 +397,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Records a delivery key; true if it was already seen. Keeps the last fifty. */
+    /** Records a delivery key; true if it was already seen. Keeps the last 500. */
     async seen(key) {
       if (state.seenSms.includes(key)) return true;
       state.seenSms = [...state.seenSms, key].slice(-SEEN);

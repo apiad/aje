@@ -25,6 +25,30 @@ export function parseBankSms(body) {
     return { kind: "transfer", bank, date, beneficiary, amount, transactionId, remaining: money(text, "Saldo restante") };
   }
   if (/se ha autenticado en la plataforma de pagos m[oó]viles/i.test(text)) return { kind: "auth", bank };
+  // A Nauta recharge ("recargada") or a Nauta Hogar bill ("pagada"): the amount is the one asked, before any discount.
+  const nauta = /La cuenta\s*(Nauta Hogar)?\s*:\s*([^\s@:]+)@nauta\.com?\.cu ha sido (?:recargada|pagada) con ([0-9][0-9.,]*)\s*CUP/i.exec(text);
+  if (nauta) {
+    const cents = centsOf(nauta[3]);
+    const transactionId = /Transacci[oó]n\s*:\s*([A-Z0-9]+)/i.exec(text)?.[1] ?? null;
+    if (cents === null) return null;
+    // The bank marks this balance DB, though it is what the card has left, never a debt.
+    const left = money(text, "Saldo Restante");
+    const remaining = left && { cents: Math.abs(left.cents), currency: left.currency };
+    return { kind: "nauta", bank, user: nauta[2].toLowerCase(), hogar: Boolean(nauta[1]), amount: { cents, currency: "CUP" }, transactionId, remaining };
+  }
+  // A bill paid from the card. Seen for electricity; the bank names the service, so others likely share the layout.
+  const bill = /El pago de la factura de\s+(\S+)\s+fue completado/i.exec(text);
+  if (bill) {
+    const number = /Nro\.?\s*Factura\s+Pagada\s*:\s*([0-9]+)/i.exec(text)?.[1];
+    const paid = money(text, "Importe Pagado");
+    if (!number || !paid) return null;
+    return {
+      kind: "bill", bank, service: bill[1].toLowerCase(), number, paid, billed: money(text, "Importe Factura"),
+      owner: field(text, "Propietario"), consumption: /Consumo\s+mensual\s*:\s*([0-9][0-9.,]*\s*KW)/i.exec(text)?.[1] ?? null,
+      period: /Mes\/A[nñ]o\s*:\s*([0-9]{1,2}\/[0-9]{4})/i.exec(text)?.[1] ?? null,
+      transactionId: /Nro\.?\s*Transacci[oó]n\s*:\s*([A-Z0-9]+)/i.exec(text)?.[1] ?? null, available: money(text, "Saldo disponible"),
+    };
+  }
   return null;
 }
 
@@ -32,6 +56,21 @@ export function parseBankSms(body) {
 const LINE = new RegExp(String.raw`(transferido|recibido)\s+([0-9][0-9.,]*)\s*CUP\s+(?:al|del)\s+(?:n[uú]mero\s+)?(?:\+?53)?([56]\d{7})`, "i");
 
 /** Reads a Cubacel balance transfer SMS; anything else returns null. */
+/**
+ * The SMS that answers a debt query (op 47): `{kind: "debt", number, cents}`, where cents is 0 for
+ * "no tiene deudas", the first amount after the bill's number otherwise, or null when it names none.
+ * It names no bank. Only the no-debt form has been seen; the amount form is a guess.
+ */
+export function parseDebtSms(body) {
+  const text = body.replaceAll("\u00a0", " ");
+  if (!/Consulta de servicio completada/i.test(text)) return null;
+  const m = /Factura\s*:?\s*([0-9A-Za-z]+)([\s\S]*)/i.exec(text);
+  if (!m) return null;
+  if (/no tiene deuda/i.test(m[2])) return { kind: "debt", number: m[1], cents: 0 };
+  const amount = /(\d+(?:[.,]\d{1,2})?)\s*(?:CUP|pesos)?/i.exec(m[2]);
+  return { kind: "debt", number: m[1], cents: amount ? centsOf(amount[1]) : null };
+}
+
 export function parseLineSms(body) {
   const m = LINE.exec(body.replaceAll("\u00a0", " "));
   if (!m) return null;

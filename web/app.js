@@ -1,9 +1,11 @@
 // Boot: config, bridge, store, telemetry and workflow, then a hash router over the screens.
 import { connect } from "./bridge.js";
+import { loadConfig } from "./config.js";
 import { idbBackend } from "./core/idb.js";
 import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
+import { nextWake, wake } from "./core/jobs.js";
 import { renderAddCard } from "./ui/addcard.js";
 import { renderImport } from "./ui/import.js";
 import { askTelemetry } from "./ui/consent.js";
@@ -13,18 +15,18 @@ import { renderInbox } from "./ui/inbox.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
+import { editSheet } from "./ui/edit.js";
+import { startShine } from "./ui/shine.js";
 import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
 import { renderLineCharge } from "./ui/charge.js";
 import { renderQrScan } from "./ui/qrscan.js";
+import { renderBill, renderPay } from "./ui/pay.js";
 import { autoCheck } from "./ui/updates.js";
 
-const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
+const NAV = [["home", "Inicio", "home"], ["pay", "Servicios", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
-const soon = (title) => () => h("div", {},
-  h("div", { class: "topbar" }, h("div", { class: "t" }, title)),
-  h("div", { class: "empty" }, "Próximamente."));
 
 // `live` screens redraw when the store changes; forms do not, so typing is never lost.
 const SCREENS = {
@@ -38,14 +40,15 @@ const SCREENS = {
   import: { render: renderImport },
   history: { render: renderHistory, live: true },
   inbox: { render: renderInbox, live: true },
-  pay: { render: soon("Pagar un servicio") },
+  pay: { render: renderPay, live: true },
+  bill: { render: renderBill },
   qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox", "bill"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
-const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
+const tabOf = (r) => (r.name === "bill" ? "pay" : FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
 const EASE = "cubic-bezier(.2,0,0,1)";
 
@@ -55,16 +58,6 @@ function enter(view, from, to) {
   const sameTab = tabOf(from) === tabOf(to);
   const dx = sameTab ? (DEPTH(to) >= DEPTH(from) ? 36 : -36) : (TABS.indexOf(tabOf(to)) > TABS.indexOf(tabOf(from)) ? 16 : -16);
   view.animate([{ opacity: 0, transform: `translateX(${dx}px)` }, { opacity: 1, transform: "none" }], { duration: 360, easing: EASE });
-}
-
-async function loadConfig() {
-  try {
-    const res = await fetch("./config.json");
-    if (res.ok) return await res.json();
-  } catch {
-    // Served without a build: the browser during development.
-  }
-  return { app: "dev", commit: "", telemetryUrl: "", telemetryToken: "" };
 }
 
 function route() {
@@ -102,15 +95,18 @@ async function boot() {
   const inFlight = new Set();
   // The smoke test seeds cards through the store; only under the mock, never in the APK.
   if (bridge.kind === "mock") globalThis.ajeDev = { store, bridge };
+  startShine();
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
+      if (action === "pay") return ctx.go("pay");
       if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
       if (action === "line-transfer") return ctx.go(`line-transfer?sub=${account.subId}`);
       if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);
       if (action === "line-charge") return ctx.go(`line-charge?sub=${account.subId}`);
       if (action === "resume") return ctx.go(`add/${account.cardId}`);
+      if (action === "edit") return editSheet(ctx, account);
       const run = { balance: balanceSheet, movements: movementsSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.
       const key = `${action}:${account.id}`;
@@ -143,11 +139,32 @@ async function boot() {
   });
   store.subscribe(() => current?.live && draw());
 
+  // Background work (web/core/jobs.js): the shell wakes Ajé when the next job is due. While this page
+  // is alive the shell sends it the wake-up instead of opening a page without a window.
+  const jobs = { bridge, store, telemetry, config, fetch: (url, init) => globalThis.fetch(url, init) };
+  let asked;
+  const schedule = () => {
+    const at = nextWake(store.state, Date.now());
+    if (at !== asked) bridge.wakeAt((asked = at)).catch(() => {});
+  };
+  let waking = false;
+  bridge.onWake((at) => {
+    if (waking) return;
+    waking = true;
+    wake(jobs, at).catch(crash).finally(() => { waking = false; });
+  });
+  store.subscribe(schedule);
+
   telemetry.event("app_start");
   shown = draw();
   autoCheck(ctx);
+  schedule();
   // Android keeps the WebView alive in the background, so a return to the app checks again too.
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && autoCheck(ctx));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    autoCheck(ctx);
+    schedule();
+  });
   askTelemetry(ctx);
 }
 

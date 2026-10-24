@@ -41,7 +41,7 @@ export const POSTPAID_REPLY =
  * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
  * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
  */
-export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true } = {}) {
+export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true, inbox = [] } = {}) {
   const calls = [];
   const queue = [...replies];
   const vault = new Map();
@@ -68,7 +68,13 @@ export function fakeBridge(replies = [], { dialFails = false, secrets = true, un
   } : {};
   return {
     calls,
+    inbox,
     ...secretStore,
+    // The phone's SMS inbox: `inbox` holds {sender, body, sentAt, receivedAt}, as the shell reads it.
+    async readSms(since) {
+      calls.push({ method: "readSms", args: { since } });
+      return inbox.filter((m) => m.receivedAt >= since);
+    },
     async sendUssd(subId, code) {
       calls.push({ method: "sendUssd", args: { subId, code } });
       const next = queue.shift() ?? { ok: true, reply: "" };
@@ -80,3 +86,15 @@ export function fakeBridge(replies = [], { dialFails = false, secrets = true, un
     },
   };
 }
+
+// An electricity bill paid from a card, with the layout seen on a phone. The bank takes less than the
+// invoice when a discount applies. Not in SMS: it carries the owner's name, which redaction hides.
+export const BILL_ELECTRICITY = "Banco Metropolitano:  El pago de la factura de electricidad fue completado. \n" +
+    " Nro. Factura Pagada: 1234567890123 \n" +
+    " Propietario: ANA PEREZ GARCIA \n" +
+    " Importe Pagado: 80.10 CUP \n" +
+    " Importe Factura: 85.40 CUP \n" +
+    " Consumo mensual: 120 KW \n" +
+    " Nro. Transaccion: MM000A000X001  \n" +
+    " Saldo disponible: CR 1120.50 CUP \n" +
+    " Periodo Pagado Mes/Año: 10/2026.";

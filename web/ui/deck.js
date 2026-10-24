@@ -5,29 +5,34 @@ import { h, icon } from "./dom.js";
 import { body, FIRM, FLY, hold, kick, LAND, reduced, set } from "./motion.js";
 import { row } from "./history.js";
 import { updateBanner } from "./updates.js";
+import { glint, roll } from "./shine.js";
 
 // The front account survives re-renders and screen changes.
 let frontId = null;
+// The card that last glinted, and each card's balance as last drawn: Inicio redraws on every store
+// change, and only a new front card or a new balance shines.
+let glinted = null;
+const drawn = new Map();
 
 const ACTIONS = {
   card: [
     ["balance", "Ver saldo", "card"],
     ["transfer", "Transferir", "send"],
-    ["soon", "Pagar servicio", "bolt"],
+    ["pay", "Servicios", "bolt"],
     ["soon", "Cobrar o pagar con QR", "qr"],
   ],
   clasica: [
     ["balance", "Ver saldo", "card"],
     ["movements", "Últimas operaciones", "history"],
     ["transfer", "Transferir", "send"],
-    ["soon", "Pagar servicio", "bolt"],
+    ["soon", "Servicios", "bolt"],
   ],
   line: [
     ["mobile-balance", "Saldo móvil", "phone"],
     ["soon", "Recargar", "bolt"],
     ["plans", "Comprar plan", "plan"],
-    ["line-transfer", "Pasar saldo", "send"],
-    ["line-charge", "Cobrar", "qr"],
+    ["line-transfer", "Enviar saldo", "send"],
+    ["line-charge", "Recibir saldo", "qr"],
   ],
 };
 const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], pending: [["resume", "Continuar"]], line: [["mobile-balance", "Saldo"]] };
@@ -61,22 +66,31 @@ function stats(d) {
 }
 
 function cardFace(a, ctx) {
-  const kind = a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`;
+  const kind = (a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`) +
+    (a.isDefault ? " · por defecto" : "");
   const no = a.kind === "card" ? `${BANKS[a.bank]?.name ?? "Cuenta"} · ···· ${last4(a.pan)}` : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
   const tone = a.kind === "line" ? "line" : a.currency === "USD" ? "usd" : "cup";
   const chips = a.pending ? CHIPS.pending : CHIPS[a.kind];
-  return h("div", { class: `acct ${tone}`, "data-id": a.id },
+  const bal = a.balance ? h("div", { class: "bal" }, ...amount(a.balance)) : null;
+  const before = drawn.get(a.id);
+  drawn.set(a.id, a.balance);
+  const card = h("div", { class: `acct ${tone}`, "data-id": a.id },
     h("div", { class: "top" },
       h("div", {}, h("div", { class: "kind" }, kind), h("div", { class: "name" }, a.label)),
       h("div", { class: "acts" }, chips.map(([action, label]) =>
-        h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label))),
+        h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label)),
+        h("button", { class: "more", "data-action": "edit", "aria-label": `Editar ${a.label}`, onclick: () => ctx.act("edit", a) }, "⋯")),
     ),
     h("div", {},
-      a.balance ? h("div", { class: "bal" }, ...amount(a.balance))
-        : h("div", { class: "bal none" }, a.pending ? "Falta asociarla con el banco" : "Toca Saldo para consultarlo"),
+      bal ?? h("div", { class: "bal none" }, a.pending ? "Falta asociarla con el banco" : "Toca Saldo para consultarlo"),
       a.kind === "line" && a.details ? stats(a.details) : h("div", { class: "no" }, no),
     ),
   );
+  if (bal && before && before !== a.balance) {
+    roll(bal, before, a.balance, amount);
+    requestAnimationFrame(() => glint(card));
+  }
+  return card;
 }
 
 /** The inbox's bell, with the number of pending notices; no count at zero. */
@@ -134,6 +148,10 @@ export function renderHome(ctx) {
     });
     [...dots.children].forEach((b, k) => b.classList.toggle("on", k === i));
     const a = list[i];
+    if (glinted !== a.id) {
+      glinted = a.id;
+      requestAnimationFrame(() => glint(cards[i]));
+    }
     qaLabel.textContent = `Operaciones · ${a.label}`;
     const actions = a.kind === "card" && a.bank === "CLASICA" ? ACTIONS.clasica : ACTIONS[a.kind];
     qa.replaceChildren(...actions.map(([action, label, ic]) =>

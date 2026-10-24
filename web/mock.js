@@ -1,4 +1,4 @@
-// The six native primitives, fake, for designing in a browser. Not shipped in the APK.
+// The native primitives, fake, for designing in a browser. Not shipped in the APK.
 // The texts follow the layout of real bank and ETECSA texts; every number in them is made up.
 import { BUNDLED } from "./core/plancatalog.js";
 import { findPlan } from "./core/plans.js";
@@ -14,6 +14,13 @@ const SAMPLES = {
     " Monto: 100.00 CUP \n" +
     " Nro. Transaccion: AB0000XYZ0001 \n" +
     " Saldo restante: CR 1134.56 CUP ",
+  // The mock cannot decode the dialed user and amount: these match the smoke test's Nauta account.
+  NAUTA: "Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB000CD0001. \n" +
+    " Importe Pagado: 100.00 \n Saldo Restante: DB 1100.06 CUP. \n Se aplico un descuento del 00% al pago realizado. Gracias por utilizar nuestros servicios, ETECSA.",
+  // An electricity payment, as Banco Metropolitano confirms it; name and figures are made up.
+  ELECTRICITY: "Banco Metropolitano:  El pago de la factura de electricidad fue completado. \n Nro. Factura Pagada: 1234567890123 \n" +
+    " Propietario: ANA PEREZ GARCIA \n Importe Pagado: 80.10 CUP \n Importe Factura: 85.40 CUP \n Consumo mensual: 120 KW \n" +
+    " Nro. Transaccion: MM000A000X001  \n Saldo disponible: CR 1120.50 CUP \n Periodo Pagado Mes/Año: 10/2026.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
 };
@@ -40,10 +47,15 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   // The last balance transfer, so the panel's SMS can confirm it.
   let lastTransfer = { to: "55555555", amount: 25 };
   let balance = 185; // the prepaid line's CUP, lowered by a plan purchase
+  let wakeHandler = null;
 
+  // The phone's inbox, which readSms reads back: a text Ajé never saw, then every SMS emitted.
+  const missedAt = Date.now() - 2 * 60 * 60 * 1000;
+  const inbox = [{ sender: BANK, body: "Su factura del mes tiene un importe de 85.40 CUP.", sentAt: missedAt, receivedAt: missedAt }];
   const emit = (sender, body) => {
     const at = Date.now();
     const sms = { sender, body, sentAt: at, receivedAt: at };
+    inbox.push(sms);
     if (handler) handler(sms);
     else buffered.push(sms);
   };
@@ -71,6 +83,20 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     // Seen on a phone: 111 without a MiTransfer session.
     if (code.startsWith("*444*111*") && !session) return "No es posible realizar la operacion. Debe autenticarse.";
     if (code.startsWith("*444*111*")) { clasica = true; return "Su solicitud de asociacion esta siendo procesada, espere un SMS"; }
+    // Bills and Nauta (41, 42, 67, 19, 51, 21, 59): a session first; Nauta's SMS confirms its recharge.
+    const bill = /^\*444\*(41|42|67|19|51|21|59)\*/.exec(code);
+    if (bill && !session) return "No es posible realizar la operacion. Debe autenticarse.";
+    if (bill?.[1] === "59") later(() => emit(BANK, SAMPLES.NAUTA));
+    // The mock cannot decode the dialed bill: this matches the smoke test's electricity account.
+    if (bill?.[1] === "41") later(() => emit(BANK, SAMPLES.ELECTRICITY));
+    if (bill) return "Su solicitud esta siendo procesada, espere un sms con los datos de la transaccion.";
+    // The debt query's reply has not been captured yet: a guess at its shape.
+    // The debt comes by SMS. Only the no-debt form was seen; this one with an amount is a guess.
+    if (code.startsWith("*444*47*") && !session) return "No es posible realizar la operacion. Debe autenticarse.";
+    if (code.startsWith("*444*47*")) {
+      later(() => emit(BANK, "Consulta de servicio completada. \r\n La Factura: 00000000000 tiene una deuda de 85.40 CUP"));
+      return "Su solicitud esta siendo procesada, espere un sms con los datos del servicio y el numero de la transaccion.";
+    }
     if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";
@@ -149,8 +175,30 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       calls.push({ method: "contactNames", args: { numbers, ask } });
       return Object.fromEntries(numbers.filter((n) => CONTACTS[n]).map((n) => [n, CONTACTS[n]]));
     },
+    async readSms(since) {
+      calls.push({ method: "readSms", args: { since } });
+      await wait();
+      return inbox.filter((m) => m.receivedAt >= Math.max(since, Date.now() - 72 * 60 * 60 * 1000) && (/\p{L}/u.test(m.sender) || m.sender.length <= 6));
+    },
     // The browser has no notifications to tap.
     onOpen() {},
+    // Background work: the panel shows the asked wake-up and the last notification; "Despertar ahora" wakes the page.
+    async wakeAt(at) {
+      calls.push({ method: "wakeAt", args: { at } });
+      mock.onBackground?.();
+    },
+    async notify(n) {
+      calls.push({ method: "notify", args: n });
+      mock.onBackground?.();
+    },
+    async share(text) {
+      calls.push({ method: "share", args: { text } });
+    },
+    async done() {
+      calls.push({ method: "done", args: {} });
+    },
+    onWake(fn) { wakeHandler = fn; },
+    wake: () => wakeHandler?.(Date.now()),
     injectSms: (sender, body) => emit(sender, body),
     // Incoming money and plans, as PAGOxMOVIL, ETECSA and Cubacel send them.
     cardReceived: () => emit(BANK, `El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW${Date.now() % 1e9}`),
@@ -179,6 +227,8 @@ function panel(mock) {
     '<div style="display:flex;gap:6px;margin:6px 0"><button id="mock-card-received">Dinero a tarjeta</button>' +
     '<button id="mock-recharge-intl">Recarga int.</button><button id="mock-plan-gift">Plan regalado</button></div>' +
     '<button id="mock-logout">Cerrar la sesión del banco</button>' +
+    '<div style="display:flex;gap:6px;margin:6px 0;align-items:center"><button id="mock-wake">Despertar ahora</button>' +
+    '<span id="mock-wake-info"></span></div>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
   box.addEventListener("toggle", () => (box.style.width = box.open ? "280px" : ""));
@@ -193,6 +243,14 @@ function panel(mock) {
   box.querySelector("#mock-qr").onclick = () => {
     box.open = false;
     dispatchEvent(new CustomEvent("aje-qr", { detail: "aje:saldo?v=1&n=56666666&m=150&a=Ana" }));
+  };
+  box.querySelector("#mock-wake").onclick = () => { mock.wake(); box.open = false; };
+  const info = box.querySelector("#mock-wake-info");
+  const hhmm = (t) => new Date(t).toLocaleString("es", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  mock.onBackground = () => {
+    const at = mock.calls.findLast((c) => c.method === "wakeAt")?.args.at;
+    const n = mock.calls.findLast((c) => c.method === "notify")?.args;
+    info.textContent = [at ? `próximo: ${hhmm(at)}` : "", n ? `aviso: ${n.title}` : ""].filter(Boolean).join(" · ");
   };
   box.querySelector("#mock-logout").onclick = () => {
     mock.endSession();

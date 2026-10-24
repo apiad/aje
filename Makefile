@@ -1,5 +1,5 @@
 # Every mechanical check and build entry point.
-.PHONY: test smoke ocr preview apk release
+.PHONY: test smoke ocr preview site apk release
 
 # The logic, including the 1600 encoder vectors, in Node; and the telemetry collector.
 test:
@@ -17,6 +17,11 @@ ocr:
 # The frontend and the mock as one HTML page, for iterating on the interface without an APK.
 preview:
 	node tools/build-preview.mjs build/preview.html
+
+# The demo the landing page embeds, from site/demo-state.json (tools/site-seed.py remakes that).
+site:
+	node tools/build-preview.mjs site/demo.html --site
+	mkdir -p site/vendor && cp -r web/vendor/qr site/vendor/
 
 # A signed dev APK. The version code is the commit count plus 200, so each build installs over the last;
 # the offset clears dev builds made before squash merges shortened the history.

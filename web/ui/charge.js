@@ -1,4 +1,4 @@
-// Cobrar: a line shows a QR with its number and an optional amount and name; the payer scans it and
+// Recibir saldo: a line shows a QR with its number and an optional amount and name; the payer scans it and
 // passes the balance, and Cubacel's "recibido" SMS turns the status into what really arrived.
 import { normalizeNumber, simNumber } from "../core/lines.js";
 import { qrSvg } from "../core/qrimage.js";
@@ -17,7 +17,7 @@ export function renderLineCharge(ctx, r) {
   function header() {
     return h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
-      h("div", {}, h("h2", {}, "Cobrar"), h("div", { class: "sub" }, "Quien te paga escanea el QR con Ajé")));
+      h("div", {}, h("h2", {}, "Recibir saldo"), h("div", { class: "sub" }, "Quien te envía saldo escanea el QR con Ajé")));
   }
 
   function form() {
@@ -64,9 +64,9 @@ export function renderLineCharge(ctx, r) {
       saved ? h("div", { class: "kv", id: "lc-saved" }, h("span", {}, `Esta línea: ${saved}`),
         h("button", { id: "lc-change", class: "linkbtn", onclick: async () => { await ctx.store.setLineNumber(subId, null); form(); } }, "Cambiar")) : null,
       h("div", { class: "field" }, h("label", { for: "lc-amount" }, "Monto en CUP (opcional)"), amount,
-        h("div", { class: "hint" }, "Sin monto, quien paga lo escribe.")),
+        h("div", { class: "hint" }, "Sin monto, quien envía lo escribe.")),
       h("div", { class: "field" }, h("label", { for: "lc-name" }, "Tu nombre (opcional)"), name,
-        h("div", { class: "hint" }, "Para que quien paga vea a quién paga.")),
+        h("div", { class: "hint" }, "Para que quien envía vea a quién se lo manda.")),
       error,
       button);
   }
@@ -78,7 +78,7 @@ export function renderLineCharge(ctx, r) {
       const got = a.state === "verified";
       status.className = `reply${got ? "" : " pending"}`;
       status.replaceChildren(h("div", { class: "k status" }, h("span", { class: got ? "dot" : "spin", "aria-hidden": "true" }),
-        got ? `Recibido ${a.receivedAmount} CUP de ${a.from}` : "Esperando el pago"));
+        got ? `Recibido ${a.receivedAmount} CUP de ${a.from}` : "Esperando el saldo"));
       if (got) unsubscribe?.();
     };
     draw();
@@ -90,7 +90,7 @@ export function renderLineCharge(ctx, r) {
         attempt.amount ? h("span", {}, ` · ${attempt.amount} CUP`) : null,
         attempt.name ? h("span", {}, ` · ${attempt.name}`) : null),
       status,
-      h("button", { id: "lc-new", class: "btn ghost", onclick: form }, "Nuevo cobro"));
+      h("button", { id: "lc-new", class: "btn ghost", onclick: form }, "Nuevo QR"));
   }
 
   form();

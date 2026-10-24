@@ -1,4 +1,4 @@
-// Pasar saldo: one Cubacel line passes balance to another with *234*1 over the USSD API. The
+// Enviar saldo: one Cubacel line passes balance to another with *234*1 over the USSD API. The
 // destination is typed or picked from the contacts; the transfer key can be remembered behind
 // the fingerprint, and Cubacel's SMS verify the transfer afterwards.
 import { MIN_BALANCE, normalizeNumber, TRANSFER_FEE, validKey } from "../core/lines.js";
@@ -52,7 +52,7 @@ export function renderLineTransfer(ctx, r) {
     if (c) setDest(c.number, c.name || null);
   } }, "Elegir un contacto");
   const amount = h("input", { id: "lt-amount", inputmode: "numeric", autocomplete: "off", oninput: () => update() });
-  const button = h("button", { id: "lt-submit", class: "btn gold", onclick: () => !button.disabled && submit() }, "Pasar saldo");
+  const button = h("button", { id: "lt-submit", class: "btn gold", onclick: () => !button.disabled && submit() }, "Enviar saldo");
 
   const tabs = h("div", { class: "chips", role: "tablist" },
     h("button", { id: "lt-tab-num", class: "on", onclick: () => show("num") }, "Número"),
@@ -75,7 +75,7 @@ export function renderLineTransfer(ctx, r) {
       setDest(n);
     } }, n)))) : null;
 
-  const lineChips = sims.length > 1 ? h("div", { class: "field" }, h("label", {}, "Pagar desde"),
+  const lineChips = sims.length > 1 ? h("div", { class: "field" }, h("label", {}, "Enviar desde"),
     h("div", { id: "lt-line", class: "chips" }, sims.map((s) => h("button", { class: s.subId === subId ? "on" : null, onclick: (e) => {
       subId = s.subId;
       for (const b of e.currentTarget.parentNode.children) b.classList.toggle("on", b === e.currentTarget);
@@ -88,10 +88,10 @@ export function renderLineTransfer(ctx, r) {
     const balance = known(ctx.store.state.mobileBalances[subId]);
     const notes = [];
     if (n && balance !== null && balance < n + MIN_BALANCE) notes.push(`El saldo que Ajé conoce de esta línea (${balance} CUP) no alcanza para ${n} CUP más el costo.`);
-    if (ctx.workflow.transfersToday(subId) >= 3) notes.push("Hoy ya pasaste saldo 3 veces desde esta línea; Cubacel puede rechazar más.");
+    if (ctx.workflow.transfersToday(subId) >= 3) notes.push("Hoy ya enviaste saldo 3 veces desde esta línea; Cubacel puede rechazar más.");
     warn.textContent = notes.join(" ");
     warn.hidden = !notes.length;
-    button.textContent = dest && n ? `Pasar ${n} CUP` : "Pasar saldo";
+    button.textContent = dest && n ? `Enviar ${n} CUP` : "Enviar saldo";
   }
 
   async function submit() {
@@ -115,7 +115,7 @@ export function renderLineTransfer(ctx, r) {
       const saved = await ctx.workflow.savedLineKey(subId);
       return keySheet(ctx, { subId, saved, send: (k, rem) => pay(n, k, rem) });
     }
-    resultSheet(ctx, r, `Pasar saldo · ${n} CUP`, subId, key === null);
+    resultSheet(ctx, r, `Enviar saldo · ${n} CUP`, subId, key === null);
   }
 
   // A scanned charge (the QR tab) arrives as to, m and a: the form is filled, nothing is sent.
@@ -129,7 +129,7 @@ export function renderLineTransfer(ctx, r) {
   return h("div", { id: "line-transfer" },
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
-      h("div", {}, h("h2", {}, "Pasar saldo"), h("div", { class: "sub" }, "De tu línea a otro móvil Cubacel"))),
+      h("div", {}, h("h2", {}, "Enviar saldo"), h("div", { class: "sub" }, "De tu línea a otro móvil Cubacel"))),
     tabs, paneNum, paneCon, toLine, recentRow,
     h("div", { class: "field" }, h("label", { for: "lt-amount" }, "Monto en CUP"), amount,
       h("div", { class: "hint" }, "Un número entero, sin decimales.")),
@@ -142,7 +142,7 @@ export function renderLineTransfer(ctx, r) {
 
 /**
  * Asks for the line's transfer key, offers to remember it, and explains the factory key. The promise
- * settles once the send it starts has finished, or the sheet closes unused, so Pasar stays off meanwhile.
+ * settles once the send it starts has finished, or the sheet closes unused, so Enviar stays off meanwhile.
  */
 function keySheet(ctx, { subId, saved, send }) {
   let settle;
@@ -178,9 +178,9 @@ function keySheet(ctx, { subId, saved, send }) {
       h("span", {}, h("b", {}, "Recordarla en este teléfono"), "180 días; cada uso pide tu huella o el bloqueo del teléfono.")) : null;
     const parts = [
       h("h3", {}, "Clave de transferencia"),
-      h("p", { class: "lead" }, `La clave de 4 dígitos con que Cubacel autoriza pasar saldo.${saved.available ? "" : " Ajé no la guarda."}`),
+      h("p", { class: "lead" }, `La clave de 4 dígitos con que Cubacel autoriza enviar saldo.${saved.available ? "" : " Ajé no la guarda."}`),
       h("div", { class: "field" }, key), h("div", { class: "err" }, error ?? ""), keep,
-      h("button", { id: "key-submit", class: "btn gold", onclick: submit }, "Pasar saldo"),
+      h("button", { id: "key-submit", class: "btn gold", onclick: submit }, "Enviar saldo"),
       h("button", { id: "key-help", class: "btn ghost", onclick: () => { help = !help; sheet.redraw(); } }, "¿No sabes tu clave?"),
     ];
     if (help) parts.push(changeForm(ctx, subId, (msg) => { changed = msg; sheet.redraw(); }), changed ? h("div", { id: "key-changed", class: "hint" }, changed) : null);
@@ -197,13 +197,13 @@ function changeForm(ctx, subId, done) {
   const next = input("key-new", "Clave nueva");
   const again = input("key-new2", "Repite la clave nueva");
   return h("div", { class: "sheet-like" },
-    h("p", { class: "lead" }, "Si nunca la cambiaste, es 1234. Cámbiala antes de pasar saldo: cualquiera que tenga tu teléfono podría usar la de fábrica."),
+    h("p", { class: "lead" }, "Si nunca la cambiaste, es 1234. Cámbiala antes de enviar saldo: cualquiera que tenga tu teléfono podría usar la de fábrica."),
     h("div", { class: "field" }, old), h("div", { class: "field" }, next), h("div", { class: "field" }, again),
     h("button", { id: "key-change", class: "btn ghost", onclick: async () => {
       if (![old, next, again].every((i) => validKey(i.value))) return done("Cada clave tiene 4 dígitos.");
       if (next.value !== again.value) return done("Las dos claves nuevas no coinciden.");
       const r = await ctx.workflow.changeLineKey(subId, old.value, next.value);
-      done(r.ok ? "Clave cambiada. Escríbela arriba para pasar saldo."
+      done(r.ok ? "Clave cambiada. Escríbela arriba para enviar saldo."
         : r.dialed ? "Termina en el marcador: escribe 1 para confirmar. Luego escribe la clave nueva arriba."
         : r.reply ? `Respuesta de Cubacel: ${r.reply}` : "El teléfono no pudo mandar el código.");
     } }, "Cambiar la clave"));
@@ -220,6 +220,7 @@ function resultSheet(ctx, r, title, subId, usedSaved) {
     const a = ctx.store.state.attempts.find((x) => x.id === id) ?? r.attempt;
     const verified = a?.state === "verified";
     const waiting = r.ok && !verified;
+    if (verified) queueMicrotask(() => sheet.closeSoon());
     return [
       h("h3", {}, title),
       h("div", { class: `reply${waiting ? " pending" : ""}`, id: "lt-result", "data-outcome": r.outcome },

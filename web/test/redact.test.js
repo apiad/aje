@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { VOCAB, fold, redact, redactMenu, reduceStack } from "../core/redact.js";
-import { SMS, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
+import { BILL_ELECTRICITY, SMS, PREPAID_REPLY, POSTPAID_REPLY } from "./helpers.js";
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const VECTORS = JSON.parse(read("redact-vectors.json"));
@@ -18,6 +18,13 @@ test("the known templates leave no digit and no word outside the vocabulary", ()
     assert.doesNotMatch(out, /\p{Nd}/u);
     assert.doesNotMatch(out, /‹w›/u, `a template word is missing from the vocabulary: ${out}`);
   }
+});
+
+test("a paid bill's SMS keeps its words and hides the owner's name", () => {
+  const out = redact(BILL_ELECTRICITY, VOCAB);
+  assert.doesNotMatch(out, /\p{Nd}|ANA|PEREZ|GARCIA/u);
+  assert.match(out, /Propietario: ‹w› ‹w› ‹w› \n/);
+  assert.equal(out.match(/‹w›/gu).length, 3);
 });
 
 test("no vocabulary word is a common given name or surname", () => {

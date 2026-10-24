@@ -8,6 +8,7 @@ import { balanceFor } from "../core/accounts.js";
 import { fakeBridge, SMS, PLAN_BOUGHT, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
 import { balance as balanceCode, link as linkCode } from "../core/ops.js";
 import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
+import { fnv1a } from "../core/notice.js";
 
 const MIN = 60_000;
 const METRO_CARD = { alias: "Metro CUP", pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" };
@@ -42,7 +43,7 @@ test("a balance query goes out on the chosen SIM and the SMS verifies it", async
   w.clock.t += 30_000;
   await w.sms(SMS.BALANCE);
   assert.equal(w.store.state.attempts[0].state, "verified");
-  assert.equal(balanceFor(w.store.state.attempts, w.card.id), "1200.06 CUP");
+  assert.equal(balanceFor(w.store.state, w.card.id), "1200.06 CUP");
 });
 
 test("'debe autenticarse' asks for login, and the auth SMS reruns the balance", async () => {
@@ -89,6 +90,29 @@ test("a transfer is dialed and the bank's SMS verifies it", async () => {
   await w.sms(SMS.TRANSFER);
   assert.equal(w.store.state.attempts[0].state, "verified");
   assert.equal(w.store.state.attempts[0].transactionId, "AB0000XYZ0001");
+});
+
+test("a transfer's SMS leaves the balance it reports on the card that paid", async () => {
+  const w = await world();
+  const a = await w.wf.transfer(w.card.id, "9200950000000001", 100);
+  w.clock.t += 30_000;
+  await w.sms(SMS.TRANSFER);
+  const card = w.store.state.cards.find((c) => c.id === w.card.id);
+  assert.deepEqual(card.balance, { available: "1134.56 CUP", at: w.clock.t, op: "45", attemptId: a.id });
+  assert.equal(balanceFor(w.store.state, w.card.id), "1134.56 CUP");
+});
+
+test("an SMS read back later does not overwrite a newer balance", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" }]);
+  const sent = w.clock.t;
+  await w.wf.transfer(w.card.id, "9200950000000001", 100);
+  w.clock.t += 2 * MIN;
+  await w.wf.balance(w.card.id);
+  w.clock.t += 30_000;
+  await w.sms(SMS.BALANCE);
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: sent + MIN });
+  assert.equal(w.store.state.attempts.find((a) => a.op === "45").state, "verified");
+  assert.equal(balanceFor(w.store.state, w.card.id), "1200.06 CUP");
 });
 
 test("a transfer whose dial fails is marked failed, not left pending", async () => {
@@ -860,4 +884,217 @@ test("'ya se encuentra autenticado' with no recent login, or from a person, open
   w.clock.t += 60 * 60_000;
   await w.sms(SMS.ALREADY_AUTH);
   assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null, "the login is too old");
+});
+
+test("payBill sends the saved bill on the chosen SIM and keeps the bill number out of telemetry", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un sms con los datos de la transaccion." }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  const r = await w.wf.payBill(bill.id);
+  assert.equal(w.bridge.calls.length, 1);
+  assert.equal(w.bridge.calls[0].method, "sendUssd");
+  assert.equal(w.bridge.calls[0].args.subId, 3);
+  assert.match(w.bridge.calls[0].args.code, /^\*444\*41\*61/);
+  assert.equal(r.needsLogin, false);
+  const a = r.attempt;
+  assert.deepEqual([a.op, a.state, a.billId, a.kind, a.alias, a.cardId], ["41", "replied", bill.id, "electricity", "Casa", w.card.id]);
+  assert.match(a.reply, /procesada/);
+  await w.telemetry.idle();
+  const sent = JSON.stringify([w.telemetryBackend.saved, w.posted]);
+  assert.ok(sent.includes('"op":"41"') && sent.includes('"kind":"electricity"') && sent.includes('"via":"api"'));
+  assert.ok(!sent.includes("1234567890123"));
+});
+
+test("payBill goes to the dialer when the API cannot follow the bank's menu", async () => {
+  const w = await world([{ ok: false, failureCode: -1, error: null }]);
+  const bill = await w.store.saveBill({ kind: "gas", alias: "Gas", number: "123456789012", cardId: w.card.id });
+  const r = await w.wf.payBill(bill.id);
+  assert.deepEqual(w.bridge.calls.map((c) => c.method), ["sendUssd", "dial"]);
+  assert.equal(r.attempt.state, "dialer");
+});
+
+test("payBill reports a lost session and a failure the phone gave", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }, { ok: false, failureCode: -2, error: null }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana", nautaType: 2, amount: 100, cardId: w.card.id });
+  const lost = await w.wf.payBill(bill.id);
+  assert.deepEqual([lost.needsLogin, lost.attempt.state], [true, "failed"]);
+  const failed = await w.wf.payBill(bill.id);
+  assert.deepEqual([failed.needsLogin, failed.attempt.state, failed.attempt.failureCode], [false, "failed", -2]);
+});
+
+test("the bank's Nauta SMS verifies the recharge to that account for that amount", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  const { attempt } = await w.wf.payBill(bill.id);
+  w.clock.t += 30_000;
+  await w.sms("Banco Metropolitano:  La cuenta :otra@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4567. Saldo Restante: DB 1000.00 CUP.");
+  assert.equal(w.store.state.attempts.find((a) => a.id === attempt.id).state, "replied", "another account");
+  await w.sms("Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4568. \r\n Importe Pagado: 95.00 \r\n Saldo Restante: DB 1000.00 CUP. \r\n Se aplico un descuento del 05% al pago realizado. Gracias por utilizar nuestros servicios, ETECSA.");
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.transactionId, a.available], ["verified", "AB123CD4568", "1000.00 CUP"]);
+  assert.equal(balanceFor(w.store.state, w.card.id), "1000.00 CUP");
+});
+
+test("saveBill adds, edits and refuses a duplicate; removeBill drops it", async () => {
+  const w = await world();
+  const b = await w.store.saveBill({ kind: "gas", alias: "Gas", number: "123456789012", cardId: w.card.id });
+  await w.store.saveBill({ ...b, alias: "Gas casa" });
+  assert.deepEqual(w.store.state.bills.map((x) => x.alias), ["Gas casa"]);
+  await assert.rejects(w.store.saveBill({ kind: "gas", alias: "Otro", number: "123456789012", cardId: w.card.id }), /ya está guardada/);
+  await w.store.removeBill(b.id);
+  assert.deepEqual(w.store.state.bills, []);
+});
+
+test("debtQuery asks the bank by API and keeps its reply on the attempt", async () => {
+  const w = await world([{ ok: true, reply: "La deuda de la factura es 85.40 CUP" }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  const r = await w.wf.debtQuery(bill.id);
+  assert.match(w.bridge.calls[0].args.code, /^\*444\*47\*61/);
+  assert.deepEqual([r.attempt.op, r.attempt.debt, r.attempt.state, r.attempt.reply], ["47", true, "replied", "La deuda de la factura es 85.40 CUP"]);
+});
+
+const NAUTA_SMS = "Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4568. Saldo Restante: DB 1000.00 CUP.";
+const DEBT_SMS = "Su factura del mes tiene un importe de 85.40 CUP. Id 0001";
+const inboxed = (w, body, at, sender = "PAGOxMOVIL") => w.bridge.inbox.push({ sender, body, sentAt: at - 1000, receivedAt: at });
+
+test("settle reads 72 hours of the inbox and verifies a recharge whose SMS Ajé missed, once", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  const { attempt } = await w.wf.payBill(bill.id);
+  inboxed(w, NAUTA_SMS, w.clock.t + 30_000);
+  w.clock.t += 5 * 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "readSms", args: { since: w.clock.t - 72 * 60 * MIN } });
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.transactionId], ["verified", "AB123CD4568"]);
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+});
+
+test("settle adds no row for an old SMS and never matches an operation started after it", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  inboxed(w, SMS.BALANCE, w.clock.t - MIN);
+  inboxed(w, NAUTA_SMS, w.clock.t - MIN);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  const { attempt } = await w.wf.payBill(bill.id);
+  const rows = w.store.state.attempts.length;
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 0 });
+  assert.equal(w.store.state.attempts.length, rows);
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "replied");
+});
+
+test("settle reports an unknown service SMS to telemetry once, and never a person's", async () => {
+  const w = await world();
+  inboxed(w, DEBT_SMS, w.clock.t - MIN);
+  inboxed(w, "Hola, te paso el saldo luego", w.clock.t - MIN, "+5351234567");
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 1 });
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 0 });
+  await w.telemetry.idle();
+  const events = w.posted.map((b) => JSON.parse(b)).filter((e) => e.event === "sms");
+  assert.deepEqual(events.map((e) => [e.kind, e.via, e.sender]), [["unparsed_bank", "inbox", "PAGOxMOVIL"]]);
+  assert.ok(!JSON.stringify(w.posted).includes("85.40"));
+});
+
+test("an unknown SMS from a service sender is reported live, and settle does not report it again", async () => {
+  const w = await world();
+  const at = w.clock.t;
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: DEBT_SMS, sentAt: at - 1000, receivedAt: at });
+  inboxed(w, DEBT_SMS, at);
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+  await w.telemetry.idle();
+  const events = w.posted.map((b) => JSON.parse(b)).filter((e) => e.kind === "unparsed_bank");
+  assert.equal(events.length, 1);
+});
+
+test("settle without telemetry marks nothing, so turning it on later still reports", async () => {
+  const w = await world();
+  await w.store.update({ telemetry: false });
+  inboxed(w, DEBT_SMS, w.clock.t - MIN);
+  assert.equal((await w.wf.settle()).reported, 0);
+  await w.store.update({ telemetry: true });
+  assert.equal((await w.wf.settle()).reported, 1);
+});
+
+const NO_DEBT_SMS = "Consulta de servicio completada. \r\n La Factura: 01234567890 no tiene deudas ";
+
+test("the bank's service SMS answers the debt query: no debt", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un sms con los datos" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms(NO_DEBT_SMS);
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.debtCents], ["verified", 0]);
+  await w.telemetry.idle();
+  assert.ok(!JSON.stringify(w.posted).includes("unparsed_bank"));
+});
+
+test("a debt SMS with an amount keeps it, and one for another saved bill verifies nothing", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  await w.store.saveBill({ kind: "electricity", alias: "Mamá", number: "9999999999999", cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms("Consulta de servicio completada. \r\n La Factura: 9999999999999 tiene una deuda de 85.40 CUP");
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "replied");
+  await w.sms("Consulta de servicio completada. \r\n La Factura: 1234567890123 tiene una deuda de 85.40 CUP");
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.debtCents], ["verified", 8540]);
+});
+
+test("settle verifies a debt query whose SMS Ajé missed", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  inboxed(w, NO_DEBT_SMS, w.clock.t + 20_000);
+  w.clock.t += 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).debtCents, 0);
+});
+
+test("a debt SMS naming no saved bill answers the only pending debt query", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "555", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms(NO_DEBT_SMS);
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "verified");
+});
+
+test("settle verifies with an SMS an older build reported as unknown, never with one twice", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const refused = (await w.wf.debtQuery(bill.id)).attempt;
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  const at = w.clock.t + 20_000;
+  inboxed(w, NO_DEBT_SMS, at);
+  await w.store.seen(`${at - 1000}:${fnv1a(NO_DEBT_SMS)}`);
+  w.clock.t += 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "verified");
+  assert.equal(w.store.state.attempts.find((x) => x.id === refused.id).state, "failed");
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+});
+
+test("a debt check and a payment leave what Servicios shows on the bill", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "phone", alias: "Fijo", number: "123456789012345", cardId: w.card.id });
+  await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms("Consulta de servicio completada. \r\n Factura: 123456789012345 \r\n Importe de la factura: 5.40 CUP \r\n ");
+  const checked = { at: w.clock.t, cents: 540 };
+  assert.deepEqual(w.store.state.bills[0].checked, checked);
+  w.clock.t += MIN;
+  await w.wf.payBill(bill.id);
+  assert.deepEqual(w.store.state.bills[0].paid, { at: w.clock.t, cents: 540, verified: false });
+  assert.deepEqual(w.store.state.bills[0].checked, checked);
+});
+
+test("a refused payment leaves no paid mark, and the Nauta SMS verifies the recharge's mark", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  await w.wf.payBill(bill.id);
+  assert.equal(w.store.state.bills[0].paid, undefined);
+  await w.wf.payBill(bill.id);
+  w.clock.t += 30_000;
+  await w.sms(NAUTA_SMS);
+  assert.deepEqual(w.store.state.bills[0].paid, { at: w.clock.t - 30_000, cents: 10000, verified: true });
 });
