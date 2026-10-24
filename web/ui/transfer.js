@@ -2,6 +2,7 @@
 // last menu asks the person to type 1, and the bank's SMS verifies it afterwards.
 import { BANKS, parseAmount, parsePan } from "../core/money.js";
 import { h } from "./dom.js";
+import { openScanner } from "./scanner.js";
 import { transferSheet } from "./sheets.js";
 
 export function renderTransfer(ctx, r) {
@@ -43,6 +44,23 @@ export function renderTransfer(ctx, r) {
     }
   }
 
+  // The destination card's number read by the camera, as in Añadir tarjeta; the person checks it before sending.
+  const scanbox = h("div", { class: "scanbox", id: "tr-scanbox", hidden: true });
+  const scan = h("button", { id: "tr-scan", class: "btn ghost", onclick: () => {
+    error.hidden = true;
+    scan.hidden = true;
+    scanbox.hidden = false;
+    const done = (pan) => {
+      stop();
+      scanbox.hidden = true;
+      scan.hidden = false;
+      if (pan) to.value = pan.replace(/(\d{4})(?=\d)/g, "$1 ");
+      else fail("No se pudo leer la tarjeta. Escribe el número.");
+      to.focus();
+    };
+    const stop = openScanner(scanbox, { onPan: done, onFallback: done });
+  } }, "Escanear tarjeta");
+
   const button = h("button", { id: "tr-submit", class: "btn gold", onclick: (e) => !e.currentTarget.disabled && submit() }, "Transferir");
 
   return h("div", { id: "transfer" },
@@ -50,6 +68,7 @@ export function renderTransfer(ctx, r) {
       h("button", { class: "back", "aria-label": "Volver", onclick: () => history.back() }, "‹"),
       h("div", {}, h("h2", {}, "Transferir"), h("div", { class: "sub" }, `Desde ${card.alias} · ${bank}`))),
     h("div", { class: "field" }, h("label", { for: "tr-to" }, clasica ? "Cuenta del número de destino" : "Tarjeta de destino"), to),
+    clasica ? null : [scan, scanbox],
     h("div", { class: "field" }, h("label", { for: "tr-amount" }, `Monto en ${currency}`), amount,
       h("div", { class: "hint" }, "Un número entero, sin decimales.")),
     error,

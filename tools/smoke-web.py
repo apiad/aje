@@ -334,6 +334,15 @@ def scan_reads_card(p, base, out, errors):
     expect(page.locator("#add-pan")).to_have_value("9227959900000001", timeout=60_000)
     expect(page.locator("#add-facts")).to_contain_text("Banco Metropolitano")
     page.screenshot(path=out / "scan_reads_card.png", full_page=True)
+    # Transferir reads the destination card the same way, and leaves it to check before sending.
+    page.goto(base + "/index.html#/home")
+    seed_card(page)
+    page.goto(base + "/index.html#/transfer")
+    page.click("#tr-scan")
+    expect(page.locator("#tr-to")).to_have_value("9227 9599 0000 0001", timeout=60_000)
+    expect(page.locator("#tr-scanbox")).to_be_hidden()
+    expect(page.locator("#tr-scan")).to_be_visible()
+    page.screenshot(path=out / "transfer_scans_card.png", full_page=True)
     browser.close()
 
 
