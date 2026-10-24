@@ -12,6 +12,7 @@ writeFileSync(process.argv[2], makeBackup(tables({
     card("9227069900000013", "Ahorro"),
     card("9760040000000014", "Empresa"),
     card("9227959900000001", "Metro CUP"),
+    { id: 6, cuenta: "AAAA", alias: "Ilegible" },
   ],
   CuentaBanco: [
     { id: 1, cuenta: encField("9227959900000021"), descripcion: "Ana", movil: "51234567" },

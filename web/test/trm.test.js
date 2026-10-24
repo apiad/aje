@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { aesEcbDecrypt, openEnvelope, readBackup } from "../core/trm.js";
+import { aesEcbDecrypt, MAX_BYTES, openEnvelope, readBackup, readFile } from "../core/trm.js";
 import { ecbEncrypt, encField, makeBackup, tables } from "./trm-fixture.js";
 
 test("the envelope opens with its own key", async () => {
@@ -122,4 +122,22 @@ test("an unknown table is skipped", async () => {
 test("a JSON that is not a backup is 'format'", async () => {
   await assert.rejects(readBackup(makeBackup([1, 2])), { code: "format" });
   await assert.rejects(readBackup(makeBackup({ datos: "x" })), { code: "format" });
+});
+
+const picked = (text, size = text.length) => ({ size, text: async () => text });
+
+test("readFile: a backup reads, a file over MAX_BYTES is 'format' without being read", async () => {
+  const ok = await readFile(picked(makeBackup(tables({ TeflMovil: [{ number: "51234567" }] }))));
+  assert.equal(ok.backup.phones.length, 1);
+  let read = false;
+  const big = { size: MAX_BYTES + 1, text: async () => { read = true; return ""; } };
+  assert.deepEqual(await readFile(big), { code: "format" });
+  assert.equal(read, false);
+  assert.equal(MAX_BYTES, 5 * 1024 * 1024);
+});
+
+test("readFile: a file that cannot be read is 'read'; a backup error keeps its code", async () => {
+  const broken = { size: 10, text: async () => { throw new DOMException("gone", "NotReadableError"); } };
+  assert.deepEqual(await readFile(broken), { code: "read" });
+  assert.deepEqual(await readFile(picked("hola")), { code: "format" });
 });

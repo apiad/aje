@@ -7,6 +7,8 @@ import { BANKS, classifyPan, last4 } from "./money.js";
 
 export const FIELD_KEY = "708091521823824654864548452244";
 
+/** A real backup is about 150 KB; anything far larger was picked by mistake and is not read. */
+export const MAX_BYTES = 5 * 1024 * 1024;
 const KEY_LENGTH = 128;
 const HASH_END = 256;
 const BLOCK = 16;
@@ -141,4 +143,24 @@ export async function readBackup(text) {
   const backup = { exportedAt: str(json.fecha_exp) || null, cards, recipients, bills, onat, phones, landlines, nauta, unreadable };
   if (![cards, recipients, bills, onat, phones, landlines, nauta].some((l) => l.length)) throw new BackupError("empty");
   return backup;
+}
+
+/**
+ * A picked file's backup, as `{ backup }`, or `{ code }`: a BackupError's code, or "read" when the
+ * file itself could not be read (a cloud file not on the phone, access revoked).
+ */
+export async function readFile(file) {
+  if (file.size > MAX_BYTES) return { code: "format" };
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    return { code: "read" };
+  }
+  try {
+    return { backup: await readBackup(text) };
+  } catch (e) {
+    if (e instanceof BackupError) return { code: e.code };
+    throw e;
+  }
 }

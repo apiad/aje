@@ -1,6 +1,6 @@
 // Importing a Transfermóvil backup: how to export it, pick the .trm, tick the cards to add, keep
 // the rest. The file is read here, on the phone; nothing of it is sent anywhere.
-import { BackupError, readBackup } from "../core/trm.js";
+import { readFile } from "../core/trm.js";
 import { BANKS, last4 } from "../core/money.js";
 import { h } from "./dom.js";
 
@@ -8,6 +8,7 @@ const ERRORS = {
   format: "Este archivo no es un respaldo de Transfermóvil.",
   hash: "El respaldo está dañado.",
   empty: "Este respaldo no trae nada que importar.",
+  read: "No se pudo leer el archivo.",
 };
 const KEPT = [
   ["recipients", "Destinatarios"], ["bills", "Contratos de luz, agua, gas y teléfono"], ["onat", "ONAT"],
@@ -18,7 +19,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 export function renderImport(ctx) {
   const { store, telemetry } = ctx;
   const root = h("div", { id: "import" });
-  const s = { step: "intro", backup: null, ticked: new Set(), error: null, added: [], busy: false };
+  const s = { step: "intro", backup: null, ticked: new Set(), error: null, added: [], busy: false, reading: false };
   const event = (fields) => telemetry.event("import", fields);
 
   const file = h("input", { type: "file", id: "import-file", class: "sr", tabindex: "-1", "aria-hidden": "true" });
@@ -26,16 +27,18 @@ export function renderImport(ctx) {
   file.addEventListener("change", async () => {
     const f = file.files[0];
     file.value = "";
-    if (!f) return;
-    try {
-      s.backup = await readBackup(await f.text());
+    if (!f || s.busy || s.reading) return;
+    s.reading = true;
+    draw();
+    const { backup, code } = await readFile(f);
+    s.reading = false;
+    if (backup) {
       const have = new Set(store.state.cards.map((c) => c.pan));
-      s.ticked = new Set(s.backup.cards.filter((c) => !c.reason && !have.has(c.pan)).map((c) => c.pan));
-      Object.assign(s, { step: "review", error: null });
-    } catch (e) {
-      if (!(e instanceof BackupError)) throw e;
-      event({ ok: false, failure_code: e.code });
-      Object.assign(s, { step: "intro", error: ERRORS[e.code] });
+      s.ticked = new Set(backup.cards.filter((c) => !c.reason && !have.has(c.pan)).map((c) => c.pan));
+      Object.assign(s, { step: "review", backup, error: null });
+    } else {
+      event({ ok: false, failure_code: code });
+      Object.assign(s, { step: "intro", error: ERRORS[code] });
     }
     draw();
   });
@@ -71,7 +74,7 @@ export function renderImport(ctx) {
         h("li", {}, "Vuelve aquí y elige ese archivo.")),
       h("div", { class: "empty" }, "Ajé lee el archivo en este teléfono. No sale de aquí."),
       s.error ? h("div", { class: "err", id: "import-error" }, s.error) : null,
-      h("button", { id: "import-pick", class: "btn gold", onclick: () => file.click() }, "Elegir el archivo"),
+      h("button", { id: "import-pick", class: "btn gold", disabled: s.reading ? "" : null, onclick: () => file.click() }, s.reading ? "Leyendo…" : "Elegir el archivo"),
     ],
     review: () => {
       const b = s.backup;
@@ -92,6 +95,8 @@ export function renderImport(ctx) {
         b.cards.length ? [h("div", { class: "group" }, "Tarjetas"), h("div", { id: "import-cards", class: "box" }, b.cards.map(row))] : null,
         kept.length ? [h("div", { class: "group" }, "Se guarda para más adelante"),
           h("div", { id: "import-kept", class: "box" }, kept.map(([k, label]) => h("div", { class: "kept" }, h("span", {}, label), h("b", {}, String(b[k].length)))))] : null,
+        b.unreadable ? h("div", { class: "empty", id: "import-unreadable" },
+          b.unreadable === 1 ? "1 fila no se pudo leer." : `${b.unreadable} filas no se pudieron leer.`) : null,
         h("button", { id: "import-go", class: "btn gold", disabled: n || kept.length ? null : "", onclick: save },
           n ? `Importar ${plural(n, "tarjeta", "tarjetas")}` : "Guardar"),
         h("button", { class: "btn ghost", onclick: () => file.click() }, "Elegir otro archivo"),

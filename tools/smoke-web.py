@@ -272,6 +272,7 @@ def import_backup(page):
     expect(page.locator('#import-cards label[data-pan-last4="0001"]')).to_contain_text("ya está en Ajé")
     expect(page.locator('#import-cards label[data-pan-last4="0014"]')).to_contain_text("Clásica empresarial")
     expect(page.locator("#import-kept")).to_contain_text("Destinatarios")
+    expect(page.locator("#import-unreadable")).to_have_text("1 fila no se pudo leer.")
     expect(page.locator("#import-go")).to_have_text("Importar 3 tarjetas")
     page.locator('#import-cards label[data-pan-last4="0013"] input').uncheck()
     expect(page.locator("#import-go")).to_have_text("Importar 2 tarjetas")
