@@ -53,6 +53,13 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     state.cards = state.cards.map((c) => (c.id === cardId && c.unverified ? { ...c, unverified: false } : c));
   }
   const current = (id) => state.attempts.find((a) => a.id === id) ?? null;
+  // Keeps the balance a bank SMS reported on the card that paid, with the row it came from, unless
+  // the card already holds one from a later SMS (settle reads old SMS back).
+  function keepBalance(cardId, available, at, attempt) {
+    if (!available) return;
+    state.cards = state.cards.map((c) => (c.id === cardId && !(c.balance?.at > at)
+      ? { ...c, balance: { available, at, op: attempt.op, attemptId: attempt.id } } : c));
+  }
 
   async function commit() {
     await backend.save(state);
@@ -111,6 +118,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         return null;
       }
       confirmCard(pending.cardId);
+      keepBalance(pending.cardId, available, at, pending);
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", accounting, available, verifiedAt: at }));
       return at - pending.startedAt;
     },
@@ -129,10 +137,9 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       const pending = pendingWhere(at, (a) => a.op === "45" && a.to && a.amount && transferMatches(sms, a.to, a.amount * 100));
       if (!pending) return null;
       confirmCard(pending.cardId);
-      await store.patch(pending.id, (a) => ({
-        ...a, state: "verified", transactionId: sms.transactionId,
-        available: sms.remaining ? formatMoney(sms.remaining) : null, verifiedAt: at,
-      }));
+      const available = sms.remaining ? formatMoney(sms.remaining) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at }));
       return at - pending.startedAt;
     },
 
@@ -141,7 +148,9 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       const pending = pendingWhere(at, (a) => a.kind === "nauta" && a.billId && a.to === sms.user && a.amount * 100 === sms.amount.cents);
       if (!pending) return null;
       confirmCard(pending.cardId);
-      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, verifiedAt: at }));
+      const available = sms.remaining ? formatMoney(sms.remaining) : null;
+      keepBalance(pending.cardId, available, at, pending);
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at }));
       const bill = state.bills.find((b) => b.id === pending.billId);
       if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, verified: true } });
       return at - pending.startedAt;

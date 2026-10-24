@@ -117,7 +117,8 @@ test("a refused balance query is 'balance-failed'", () => {
 
 test("a Nauta recharge and a Nauta Hogar payment", () => {
   assert.deepEqual(parseBankSms("Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4567. Saldo Restante: DB 1000.00 CUP."),
-    { kind: "nauta", bank: "METROPOLITANO", user: "ana.perez", hogar: false, amount: { cents: 10000, currency: "CUP" }, transactionId: "AB123CD4567" });
+    { kind: "nauta", bank: "METROPOLITANO", user: "ana.perez", hogar: false, amount: { cents: 10000, currency: "CUP" }, transactionId: "AB123CD4567",
+      remaining: { cents: 100000, currency: "CUP" } });
   const hogar = parseBankSms("Banco Metropolitano:  La cuenta Nauta Hogar: ana@nauta.com.cu ha sido pagada con 300.00 CUP. Monto Pagado: 300 CUP. \n Id Transaccion: AB123CD4569. \n Saldo Restante: DB 1000.00 CUP.");
   assert.deepEqual([hogar.kind, hogar.user, hogar.hogar, hogar.amount.cents, hogar.transactionId], ["nauta", "ana", true, 30000, "AB123CD4569"]);
 });
