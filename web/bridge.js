@@ -1,7 +1,7 @@
 // The native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"readSms"|"installUpdate"|"wakeAt"|"notify"|"done", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"readSms"|"installUpdate"|"wakeAt"|"notify"|"done"|"share", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
 //   | {"event": "open", "route": "inbox/<id>"}, when a tapped notification opens the app
 //   | {"event": "wake", "at": ms}, when the shell wakes the open page for its background jobs (web/core/jobs.js)
@@ -91,6 +91,8 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     installUpdate: (url, sha256, onProgress = null) => call("installUpdate", { url, sha256 }, null, onProgress),
     // Background work: the time to wake Ajé next (null cancels it), a notification a job posts as
     // {id, channel, title, text, route}, and done, which tells the shell this wake-up is over.
+    // Android's share sheet with this text; it waits on the person, so no timeout.
+    share: (text) => call("share", { text }),
     wakeAt: (at) => call("wakeAt", { at }),
     notify: (n) => call("notify", n),
     done: () => call("done"),

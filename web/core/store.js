@@ -142,7 +142,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       confirmCard(pending.cardId);
       const available = sms.remaining ? formatMoney(sms.remaining) : null;
       keepBalance(pending.cardId, available, at, pending);
-      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at }));
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
       return at - pending.startedAt;
     },
 
@@ -153,7 +153,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       confirmCard(pending.cardId);
       const available = sms.remaining ? formatMoney(sms.remaining) : null;
       keepBalance(pending.cardId, available, at, pending);
-      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at }));
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, available, verifiedAt: at, sms: sms.body ?? null }));
       const bill = state.bills.find((b) => b.id === pending.billId);
       if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, verified: true } });
       return at - pending.startedAt;
@@ -180,7 +180,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     async verifyLineTransfer(sms, at = now()) {
       const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);
       if (!pending) return null;
-      await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at }));
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", verifiedAt: at, sms: sms.body ?? null }));
       return { latencyMs: at - pending.startedAt, subId: pending.subId };
     },
 
@@ -194,7 +194,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         (sms.subId === null || sms.subId === undefined || a.subId === sms.subId)).sort((x, y) => y.startedAt - x.startedAt);
       const p = waiting.find((a) => Math.round((a.plan?.price ?? -1) * 100) === sms.price.cents) ?? (waiting.length === 1 ? waiting[0] : null);
       if (!p) return null;
-      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance }));
+      await store.patch(p.id, (a) => ({ ...a, state: "verified", verifiedAt: at, balance: sms.balance, sms: sms.body ?? null }));
       return { latencyMs: at - p.startedAt, subId: p.subId };
     },
 

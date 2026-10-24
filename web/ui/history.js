@@ -4,6 +4,7 @@ import { KINDS, titleOf } from "../core/bills.js";
 import { last4 } from "../core/money.js";
 import { debtText } from "./pay.js";
 import { formatMoney } from "../core/sms.js";
+import { maskSms, money, receipt, receiptText, visibleFields } from "../core/receipt.js";
 import { CHARGE_MS } from "../core/store.js";
 import { h, icon, when } from "./dom.js";
 
@@ -73,12 +74,73 @@ function settleButton(ctx, a = null) {
   return [btn, note];
 }
 
+// The one receipt whose discreet mode the person turned off; any redraw, or another receipt, keeps it on otherwise.
+let revealed = null;
+
+/** Copies `text`: the Clipboard API, or the older copy command where the WebView refuses it. */
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = h("textarea", { style: "position:fixed;opacity:0" }, text);
+    document.body.append(t);
+    t.select();
+    const ok = document.execCommand("copy");
+    t.remove();
+    if (!ok) throw new Error("copy refused");
+  }
+}
+
+/** "Mostrar": the receipt full screen and large, for the person across the counter. Never the balance. */
+function showFull(r) {
+  const close = () => { layer.remove(); removeEventListener("hashchange", close); };
+  const layer = h("div", { class: "rshow", id: "receipt-show" },
+    h("button", { class: "close", onclick: close }, "Cerrar"),
+    h("div", { class: "ok" }, h("i", {}, "✓"), r.what),
+    h("div", { class: "bank" }, `${r.from} · verificada por SMS`),
+    h("div", { class: "amt" }, money(r.amount), h("small", {}, r.currency)),
+    h("div", { class: "big" }, r.show.map(([k, v]) => h("div", {}, h("span", {}, k), h("b", {}, v)))));
+  addEventListener("hashchange", close);
+  document.body.append(layer);
+}
+
+/** The confirmation SMS as a receipt: discreet mode, Mostrar, Compartir, Copiar and the original text. */
+function receiptView(ctx, a, r) {
+  const discreet = revealed !== a.id;
+  const note = h("div", { class: "hint", id: "receipt-note" });
+  const say = (t) => { note.textContent = t; };
+  const fields = discreet ? r.fields : visibleFields(r, false);
+  const view = h("div", { class: "receipt" },
+    h("div", { class: "rc", id: "receipt" },
+      h("div", { class: "from" }, r.from, h("span", { class: "vtag" }, "✓ verificada por SMS")),
+      h("div", { class: "what" }, r.what),
+      h("div", { class: "amt" }, money(r.amount), h("small", {}, r.currency)),
+      h("div", { class: "kvs" }, fields.map((f) => discreet && f.private
+        ? h("div", { class: "kv hid" }, h("span", {}, f.label), h("b", {}, "oculto"))
+        : h("div", { class: "kv" }, h("span", {}, f.label), h("b", {}, discreet && f.short ? f.short : f.value))))),
+    h("button", { class: `disc${discreet ? " on" : ""}`, id: "receipt-discreet", "aria-pressed": String(discreet),
+      onclick: () => { revealed = discreet ? a.id : null; view.replaceWith(receiptView(ctx, a, r)); } },
+      h("span", { class: "t" }, h("b", {}, "Discreto"),
+        h("span", {}, discreet ? "Oculta tu saldo y lo que te identifica" : "Se ve todo, también tu saldo")),
+      h("span", { class: "sw" })),
+    h("div", { class: "racts" },
+      h("button", { class: "main", id: "receipt-show-btn", onclick: () => showFull(r) }, icon("plan"), "Mostrar"),
+      h("button", { id: "receipt-share", onclick: () => ctx.bridge.share(receiptText(r, discreet)).catch(() => say("No se pudo abrir la lista de apps.")) }, icon("share"), "Compartir"),
+      h("button", { id: "receipt-copy", onclick: () => copy(receiptText(r, discreet)).then(() => say("Copiado."), () => say("No se pudo copiar.")) }, icon("copy"), "Copiar")),
+    note,
+    r.sms ? h("details", { class: "codefold" }, h("summary", {}, "Ver el SMS original"),
+      h("div", { class: "rsms", id: "receipt-sms" }, discreet ? maskSms(r.sms) : r.sms)) : null);
+  return view;
+}
+
 function detail(ctx, a) {
   const kv = (k, v) => (v === null || v === undefined || v === "" ? null : h("div", { class: "kv" }, h("span", {}, k), h("b", {}, v)));
+  const r = receipt(a, { cards: ctx.store.state.cards });
   return h("div", { id: "detail" },
     h("div", { class: "sbar" },
       h("button", { class: "back", "aria-label": "Volver", onclick: () => ctx.go("history") }, "‹"),
       h("div", {}, h("h2", {}, title(ctx, a)), h("div", { class: "sub" }, when(a.startedAt)))),
+    r ? receiptView(ctx, a, r) : null,
     h("div", { class: "sheet-like" },
       kv("Solicitada", when(a.startedAt)),
       kv("Verificada por SMS", a.verifiedAt ? when(a.verifiedAt) : null),
@@ -87,12 +149,13 @@ function detail(ctx, a) {
       // A charge keeps this line's own number in `to`; who paid is `from`.
       a.op === "234-charge" ? kv("Desde", a.from) : kv(INCOMING.has(a.op) ? "Desde" : "Destino", a.to ? (a.op.startsWith("234") || INCOMING.has(a.op) ? a.to : `····${last4(a.to)}`) : null),
       kv("A la cuenta", a.account ? `····${last4(a.account)}` : null),
-      kv("Desde", a.billId ? card(ctx, a)?.alias : null),
+      kv("Desde", a.billId && !r ? card(ctx, a)?.alias : null),
       kv("Tarjeta", a.cardId && INCOMING.has(a.op) ? ctx.store.state.cards.find((c) => c.id === a.cardId)?.alias : null),
       kv("Transacción", a.transactionId),
       kv("Deuda", a.debt && a.state === "verified" ? debtText(a.debtCents) : null),
       kv("Saldo contable", a.accounting),
-      kv("Saldo disponible", a.available)),
+      // The receipt shows the balance a verified operation left, under discreet mode.
+      r ? null : kv("Saldo disponible", a.available)),
     a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") || a.op === "133" ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,
     a.state === "verified" || INCOMING.has(a.op) ? null : h("div", { class: "settle" }, ...settleButton(ctx, a)),
     a.code ? h("details", { class: "codefold" }, h("summary", {}, "Ver el código que marcó Ajé"), h("div", { class: "cc" }, a.code)) : null,

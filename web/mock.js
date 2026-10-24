@@ -185,6 +185,9 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
       calls.push({ method: "notify", args: n });
       mock.onBackground?.();
     },
+    async share(text) {
+      calls.push({ method: "share", args: { text } });
+    },
     async done() {
       calls.push({ method: "done", args: {} });
     },

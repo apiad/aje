@@ -143,6 +143,32 @@ def history_and_verified_transfer(page):
     expect(page.locator("#detail")).to_contain_text("AB0000XYZ0001")
 
 
+def receipt_discreet(page):
+    """A verified transfer's detail shows its receipt without the balance; turning discreet off shows it,
+    sharing sends what the screen shows, and Mostrar never shows the balance."""
+    history_and_verified_transfer(page)
+    rc = page.locator("#receipt")
+    expect(rc).to_contain_text("Transferencia completada")
+    expect(rc).to_contain_text("oculto")
+    expect(rc).not_to_contain_text("1 134,56")
+    page.locator("details.codefold summary", has_text="SMS original").click()
+    expect(page.locator("#receipt-sms")).not_to_contain_text("1134.56")
+    page.click("#receipt-share")
+    shared = page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'share').args.text")
+    assert "AB0000XYZ0001" in shared and "1134" not in shared and "1 134" not in shared, shared
+    page.click("#receipt-discreet")
+    expect(page.locator("#receipt")).to_contain_text("1 134,56 CUP")
+    page.click("#receipt-share")
+    assert "Saldo restante: 1 134,56 CUP" in page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'share').args.text")
+    page.click("#receipt-show-btn")
+    show = page.locator("#receipt-show")
+    expect(show).to_contain_text("AB0000XYZ0001")
+    expect(show).not_to_contain_text("1 134")
+    page.screenshot(path="/tmp/aje-smoke/receipt_show.png")
+    show.locator(".close").click()
+    expect(show).to_have_count(0)
+
+
 def settle_history(page):
     """"Revisar SMS" reads the inbox back 72 hours and says what it found; a second run adds nothing."""
     page.goto(page.url.split("#")[0] + "#/history")
@@ -864,7 +890,7 @@ def inbox_from_sms(page):
     expect(page.locator("#bell .count")).to_have_count(0)
 
 
-STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer, settle_history,
+STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer, receipt_discreet, settle_history,
          double_tap_transfers_once, inbox_from_sms,
          line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 
