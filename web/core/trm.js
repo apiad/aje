@@ -3,6 +3,8 @@
 // base64 of AES-256-ECB under the SHA-256 of those 128 characters. Card and account numbers inside
 // are encrypted again the same way, under the SHA-256 of FIELD_KEY.
 
+import { BANKS, classifyPan, last4 } from "./money.js";
+
 export const FIELD_KEY = "708091521823824654864548452244";
 
 const KEY_LENGTH = 128;
@@ -67,4 +69,76 @@ export async function openEnvelope(text) {
   } catch {
     throw new BackupError("format");
   }
+}
+
+const BILL_KINDS = ["phone", "electricity", "water", "gas"];
+const CURRENCY = { CUP: "CUP", USD: "USD", MLC: "USD" };
+const str = (v) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
+
+/**
+ * What a backup holds, as plain lists. Reads only the tables below: the backup also carries the
+ * person's secrets (tables Pin and AOperKey), whose rows are never touched. A row missing what it
+ * needs, or whose number does not decrypt, is counted in `unreadable` and skipped.
+ */
+export async function readBackup(text) {
+  const json = await openEnvelope(text);
+  if (!json || typeof json !== "object" || !Array.isArray(json.datos)) throw new BackupError("format");
+  const rows = (name) => {
+    const t = json.datos.find((d) => d && d.tabla === name);
+    return Array.isArray(t?.dataJSON) ? t.dataJSON.filter((r) => r && typeof r === "object") : [];
+  };
+  const fieldKey = await sha256(FIELD_KEY);
+  let unreadable = 0;
+  const skip = () => { unreadable++; return null; };
+  async function number(value) {
+    try {
+      const plain = new TextDecoder("utf-8", { fatal: true }).decode(await aesEcbDecrypt(fieldKey, fromBase64(String(value))));
+      return /^[0-9]{8,20}$/.test(plain) ? plain : null;
+    } catch {
+      return null;
+    }
+  }
+  const compact = (list) => list.filter((x) => x !== null);
+
+  const cards = [];
+  function addCard(pan, alias, currency) {
+    if (cards.some((c) => c.pan === pan)) return;
+    const c = classifyPan(pan);
+    const reason = c.bank === "CLASICAEMP" ? "Clásica empresarial"
+      : c.error ? "Banco desconocido" : c.bank === null ? "Número de cuenta, no de tarjeta" : null;
+    const bank = reason ? null : c.bank;
+    cards.push({
+      pan, bank, reason,
+      alias: str(alias) || `${BANKS[bank]?.name ?? "Tarjeta"} ····${last4(pan)}`,
+      currency: CURRENCY[str(currency).toUpperCase()] ?? c.currency ?? null,
+    });
+  }
+  for (const r of rows("MCBank")) {
+    const pan = await number(r.cuenta);
+    if (pan?.length === 16) addCard(pan, r.alias, r.tipo_moneda); else skip();
+  }
+  for (const r of rows("TarjetaPropia")) {
+    const pan = str(r.serie).replace(/[-\s]/g, "");
+    if (/^[0-9]{16}$/.test(pan)) addCard(pan, r.descripcion, r.tipo_moneda); else skip();
+  }
+
+  const recipients = compact(await Promise.all(rows("CuentaBanco").map(async (r) => {
+    const account = await number(r.cuenta);
+    return account ? { name: str(r.descripcion), account, phone: str(r.movil) } : skip();
+  })));
+  const bills = compact(rows("Factura").map((r) => {
+    const contract = str(r.factura);
+    if (!contract) return skip();
+    const type = Number.isInteger(r.tipo_factura) ? r.tipo_factura : null;
+    return { kind: BILL_KINDS[type] ?? null, type, contract, code: str(r.cod_factura) };
+  }));
+  const onat = compact(rows("ServicioPublico").map((r) => (str(r.valor) ? { nit: str(r.valor) } : skip())));
+  const numbers = (name) => compact(rows(name).map((r) => (str(r.number) ? { number: str(r.number) } : skip())));
+  const phones = numbers("TeflMovil");
+  const landlines = numbers("TelfFijo");
+  const nauta = compact(rows("Nauta").map((r) => (str(r.cuenta) ? { user: str(r.cuenta), type: r.tipo_cuenta ?? null } : skip())));
+
+  const backup = { exportedAt: str(json.fecha_exp) || null, cards, recipients, bills, onat, phones, landlines, nauta, unreadable };
+  if (![cards, recipients, bills, onat, phones, landlines, nauta].some((l) => l.length)) throw new BackupError("empty");
+  return backup;
 }
