@@ -1,5 +1,7 @@
 // Importing a Transfermóvil backup: how to export it, pick the .trm, tick the cards to add, keep
-// the rest. The file is read here, on the phone; nothing of it is sent anywhere.
+// the rest. The file is read here, on the phone; nothing of it is sent anywhere. Cards from a backup
+// of this phone were linked to this line by the bank already: they come in linked, on trust, and the
+// workflow sends one back to pending if the bank refuses its first balance query.
 import { readFile } from "../core/trm.js";
 import { BANKS, last4 } from "../core/money.js";
 import { h } from "./dom.js";
@@ -19,7 +21,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 export function renderImport(ctx) {
   const { store, telemetry } = ctx;
   const root = h("div", { id: "import" });
-  const s = { step: "intro", backup: null, ticked: new Set(), error: null, added: [], busy: false, reading: false };
+  const s = { step: "intro", backup: null, ticked: new Set(), error: null, added: [], busy: false, reading: false, samePhone: true };
   const event = (fields) => telemetry.event("import", fields);
 
   const file = h("input", { type: "file", id: "import-file", class: "sr", tabindex: "-1", "aria-hidden": "true" });
@@ -49,7 +51,12 @@ export function renderImport(ctx) {
     const b = s.backup;
     for (const c of b.cards.filter((x) => s.ticked.has(x.pan))) {
       try {
-        s.added.push(await store.addCard({ alias: c.alias, pan: c.pan, bank: c.bank, currency: c.currency }));
+        const card = await store.addCard({ alias: c.alias, pan: c.pan, bank: c.bank, currency: c.currency });
+        if (s.samePhone) {
+          await store.updateCard(card.id, { state: c.bank === "CLASICA" ? "associated" : "linked", step: 5, unverified: true });
+          await store.setBank(BANKS[c.bank].session ?? c.bank, { registered: true });
+        }
+        s.added.push(card);
       } catch {
         // Already in Ajé: added since the review was drawn.
       }
@@ -95,6 +102,11 @@ export function renderImport(ctx) {
         b.cards.length ? [h("div", { class: "group" }, "Tarjetas"), h("div", { id: "import-cards", class: "box" }, b.cards.map(row))] : null,
         kept.length ? [h("div", { class: "group" }, "Se guarda para más adelante"),
           h("div", { id: "import-kept", class: "box" }, kept.map(([k, label]) => h("div", { class: "kept" }, h("span", {}, label), h("b", {}, String(b[k].length)))))] : null,
+        n ? h("label", { class: "chk same" },
+          h("input", { type: "checkbox", id: "import-same-phone", checked: s.samePhone ? "" : null,
+            onchange: (e) => { s.samePhone = e.target.checked; } }),
+          h("span", { class: "t" }, "Este respaldo es de este teléfono",
+            h("small", {}, "Sus tarjetas ya están asociadas a tu línea y entran listas para usar."))) : null,
         b.unreadable ? h("div", { class: "empty", id: "import-unreadable" },
           b.unreadable === 1 ? "1 fila no se pudo leer." : `${b.unreadable} filas no se pudieron leer.`) : null,
         h("button", { id: "import-go", class: "btn gold", disabled: n || kept.length ? null : "", onclick: save },
@@ -104,8 +116,10 @@ export function renderImport(ctx) {
     },
     done: () => [
       h("div", { class: "reply", id: "import-done" }, h("div", { class: "m" },
-        s.added.length ? `${plural(s.added.length, "tarjeta añadida", "tarjetas añadidas")}, pendientes de autenticar con su banco. Lo demás quedó guardado.` : "Quedó guardado.")),
-      s.added.length ? h("button", { id: "import-first", class: "btn gold", onclick: () => ctx.go(`add/${s.added[0].id}`) }, `Autenticar ${s.added[0].alias}`) : null,
+        !s.added.length ? "Quedó guardado."
+          : s.samePhone ? `${plural(s.added.length, "tarjeta lista", "tarjetas listas")} para usar. Si el banco no reconoce alguna en tu línea al consultar su saldo, Ajé te pedirá asociarla. Lo demás quedó guardado.`
+          : `${plural(s.added.length, "tarjeta añadida", "tarjetas añadidas")}, pendientes de autenticar con su banco. Lo demás quedó guardado.`)),
+      s.added.length && !s.samePhone ? h("button", { id: "import-first", class: "btn gold", onclick: () => ctx.go(`add/${s.added[0].id}`) }, `Autenticar ${s.added[0].alias}`) : null,
       h("button", { class: "btn ghost", onclick: () => ctx.go("home") }, "Ir a Inicio"),
     ],
   };

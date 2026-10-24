@@ -47,6 +47,11 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   // Levels of the *133 menu read over the API, which the plan catalog replaced.
   delete state.planMenus;
   const listeners = new Set();
+  // An imported card is linked on trust until the bank serves it once (see trm.js and import.js).
+  function confirmCard(cardId) {
+    state.cards = state.cards.map((c) => (c.id === cardId && c.unverified ? { ...c, unverified: false } : c));
+  }
+  const current = (id) => state.attempts.find((a) => a.id === id) ?? null;
 
   async function commit() {
     await backend.save(state);
@@ -98,14 +103,25 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         await store.add({ startedAt: at, state: "verified", op: "46", accounting, available, verifiedAt: at });
         return null;
       }
+      confirmCard(pending.cardId);
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", accounting, available, verifiedAt: at }));
       return at - pending.startedAt;
+    },
+
+    /** Fails the latest pending balance query of this bank, which the bank refused. Returns it, or null. */
+    async failBalance(sms, at = now()) {
+      const bankOf = (cardId) => state.cards.find((c) => c.id === cardId)?.bank;
+      const pending = pendingWhere(at, (a) => a.op === "46" && bankOf(a.cardId) === sms.bank);
+      if (!pending) return null;
+      await store.patch(pending.id, (a) => ({ ...a, state: "failed" }));
+      return current(pending.id);
     },
 
     /** Verifies the pending transfer this SMS confirms, by card and amount. Returns the latency, or null. */
     async verifyTransfer(sms, at = now()) {
       const pending = pendingWhere(at, (a) => a.op === "45" && a.to && a.amount && transferMatches(sms, a.to, a.amount * 100));
       if (!pending) return null;
+      confirmCard(pending.cardId);
       await store.patch(pending.id, (a) => ({
         ...a, state: "verified", transactionId: sms.transactionId,
         available: sms.remaining ? formatMoney(sms.remaining) : null, verifiedAt: at,
