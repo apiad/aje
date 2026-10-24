@@ -11,6 +11,8 @@ export const SMS = {
     " Monto: 100.00 CUP \n" +
     " Nro. Transaccion: AB0000XYZ0001 \n" +
     " Saldo restante: CR 1134.56 CUP ",
+  // A balance query the bank refused, as Banco Metropolitano words it for a card this line cannot operate.
+  BALANCE_FAILED: "Banco Metropolitano Fallo la consulta de saldo. Banco Metropolitano: No tiene cuenta con la moneda o la cuenta no puede ser operada para Banca Movil.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
   // MiTransfer's login SMS, from PAGOxMOVIL; telemetry brought it with the wallet's name hidden, and

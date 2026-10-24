@@ -15,6 +15,7 @@ export function parseBankSms(body) {
     const available = money(text, "Saldo Disponible");
     return accounting && available ? { kind: "balance", bank, accounting, available } : null;
   }
+  if (/fall[oó] la consulta de saldo/i.test(text)) return { kind: "balance-failed", bank };
   if (/transferencia fue completada/i.test(text)) {
     const date = field(text, "Fecha");
     const beneficiary = field(text, "Beneficiario");

@@ -793,3 +793,37 @@ test("MiTransfer's login SMS is not reported as an unknown bank text", async () 
   await w.telemetry.idle();
   assert.ok(!JSON.stringify(w.posted).includes("unparsed_bank"));
 });
+
+test("an imported card the bank refuses goes back to pending; one it serves is confirmed", async () => {
+  const w = await world([
+    { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" },
+    { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" },
+  ]);
+  await w.store.updateCard(w.card.id, { state: "linked", step: 5, unverified: true });
+  await w.wf.balance(w.card.id);
+  w.clock.t += 20_000;
+  await w.sms(SMS.BALANCE_FAILED);
+  let card = w.store.state.cards[0];
+  assert.equal(card.state, "pending");
+  assert.equal(card.unverified, false);
+  assert.equal(w.store.state.attempts[0].state, "failed");
+
+  await w.store.updateCard(w.card.id, { state: "linked", step: 5, unverified: true });
+  w.clock.t += 60_000;
+  await w.wf.balance(w.card.id);
+  w.clock.t += 20_000;
+  await w.sms(SMS.BALANCE);
+  card = w.store.state.cards[0];
+  assert.equal(card.state, "linked");
+  assert.equal(card.unverified, false);
+});
+
+test("a card added by hand stays linked when the bank refuses a balance query", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" }]);
+  await w.store.updateCard(w.card.id, { state: "linked", step: 5 });
+  await w.wf.balance(w.card.id);
+  w.clock.t += 20_000;
+  await w.sms(SMS.BALANCE_FAILED);
+  assert.equal(w.store.state.cards[0].state, "linked");
+  assert.equal(w.store.state.attempts[0].state, "failed");
+});

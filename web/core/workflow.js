@@ -359,6 +359,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         telemetry.event("sms", { kind: "balance", ...base, latency_ms: latency });
         break;
       }
+      case "balance-failed": {
+        const failed = await store.failBalance(sms, receivedAt);
+        telemetry.event("sms", { kind: "balance_failed", ...base, ok: failed !== null });
+        // An imported card the bank refuses is not linked to this line after all: it links again.
+        const card = failed && store.state.cards.find((c) => c.id === failed.cardId);
+        if (card?.unverified) await store.updateCard(card.id, { state: "pending", unverified: false });
+        break;
+      }
       case "transfer": {
         const latency = await store.verifyTransfer(sms, receivedAt);
         telemetry.event("sms", { kind: "transfer", ...base, ok: latency !== null, latency_ms: latency });

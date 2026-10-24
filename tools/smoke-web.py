@@ -265,7 +265,7 @@ def write_backup(path):
 
 
 def import_backup(page):
-    """A sample backup: three new cards ticked, one already in Ajé, one Ajé cannot operate; the rest is kept."""
+    """A sample backup from this phone: the ticked cards come in linked, on trust until the bank serves them."""
     path = write_backup(Path("/tmp/aje-smoke-sample.trm"))
     page.click("#import-tm")
     expect(page.locator("#import-pick")).to_be_visible()
@@ -279,18 +279,20 @@ def import_backup(page):
     expect(page.locator("#import-go")).to_have_text("Importar 3 tarjetas")
     page.locator('#import-cards label[data-pan-last4="0013"] input').uncheck()
     expect(page.locator("#import-go")).to_have_text("Importar 2 tarjetas")
+    expect(page.locator("#import-same-phone")).to_be_checked()
     page.click("#import-go")
-    expect(page.locator("#import-done")).to_contain_text("2 tarjetas")
+    expect(page.locator("#import-done")).to_contain_text("2 tarjetas listas")
+    expect(page.locator("#import-first")).to_have_count(0)
     state = page.evaluate("""() => ({
-        pending: ajeDev.store.state.cards.filter((c) => ["9227959900000011", "9760030000000012"].includes(c.pan) && c.state === "pending").length,
+        ready: ajeDev.store.state.cards.filter((c) => ["9227959900000011", "9760030000000012"].includes(c.pan)
+            && ["linked", "associated"].includes(c.state) && c.unverified === true).length,
+        banks: [ajeDev.store.state.banks.METROPOLITANO?.registered, ajeDev.store.state.banks.MITRANSFER?.registered],
         skipped: ajeDev.store.state.cards.some((c) => c.pan === "9227069900000013"),
         clasica: ajeDev.store.state.cards.find((c) => c.pan === "9760030000000012")?.currency,
         recipients: ajeDev.store.state.imported?.recipients.length,
         secret: JSON.stringify(ajeDev.store.state).includes('"pin"'),
     })""")
-    assert state == {"pending": 2, "skipped": False, "clasica": "USD", "recipients": 2, "secret": False}, state
-    page.click("#import-first")
-    expect(page.locator("#addcard")).to_be_visible()
+    assert state == {"ready": 2, "banks": [True, True], "skipped": False, "clasica": "USD", "recipients": 2, "secret": False}, state
 
 
 def import_not_a_backup(page):

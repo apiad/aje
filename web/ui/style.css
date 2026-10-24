@@ -251,3 +251,4 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 #import .kept{display:flex;justify-content:space-between;font-size:12.5px;padding:9px 0;color:var(--muted);border-bottom:1px solid var(--line-soft)}
 #import .kept b{color:var(--bone);font-weight:500}
 #import .btn:disabled{opacity:.45;cursor:default}
+#import .chk.same{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:12px}

@@ -110,3 +110,7 @@ test("parsePlanSms reads Cubacel's 2025 format", () => {
   assert.equal(parsePlanSms("Ha comprado un plan de 3GB +15MIN +20SMS valido por 30 dias, se activara con el primer uso."), null);
   assert.equal(parsePlanSms("Ha recibido un plan de 3GB valido por 30 dias, se activara con el primer uso."), null);
 });
+
+test("a refused balance query is 'balance-failed'", () => {
+  assert.deepEqual(parseBankSms(SMS.BALANCE_FAILED), { kind: "balance-failed", bank: "METROPOLITANO" });
+});
