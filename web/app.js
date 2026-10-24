@@ -1,9 +1,11 @@
 // Boot: config, bridge, store, telemetry and workflow, then a hash router over the screens.
 import { connect } from "./bridge.js";
+import { loadConfig } from "./config.js";
 import { idbBackend } from "./core/idb.js";
 import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
+import { nextWake, wake } from "./core/jobs.js";
 import { renderAddCard } from "./ui/addcard.js";
 import { renderImport } from "./ui/import.js";
 import { askTelemetry } from "./ui/consent.js";
@@ -56,16 +58,6 @@ function enter(view, from, to) {
   const sameTab = tabOf(from) === tabOf(to);
   const dx = sameTab ? (DEPTH(to) >= DEPTH(from) ? 36 : -36) : (TABS.indexOf(tabOf(to)) > TABS.indexOf(tabOf(from)) ? 16 : -16);
   view.animate([{ opacity: 0, transform: `translateX(${dx}px)` }, { opacity: 1, transform: "none" }], { duration: 360, easing: EASE });
-}
-
-async function loadConfig() {
-  try {
-    const res = await fetch("./config.json");
-    if (res.ok) return await res.json();
-  } catch {
-    // Served without a build: the browser during development.
-  }
-  return { app: "dev", commit: "", telemetryUrl: "", telemetryToken: "" };
 }
 
 function route() {
@@ -147,11 +139,32 @@ async function boot() {
   });
   store.subscribe(() => current?.live && draw());
 
+  // Background work (web/core/jobs.js): the shell wakes Ajé when the next job is due. While this page
+  // is alive the shell sends it the wake-up instead of opening a page without a window.
+  const jobs = { bridge, store, telemetry, config, fetch: (url, init) => globalThis.fetch(url, init) };
+  let asked;
+  const schedule = () => {
+    const at = nextWake(store.state, Date.now());
+    if (at !== asked) bridge.wakeAt((asked = at)).catch(() => {});
+  };
+  let waking = false;
+  bridge.onWake((at) => {
+    if (waking) return;
+    waking = true;
+    wake(jobs, at).catch(crash).finally(() => { waking = false; });
+  });
+  store.subscribe(schedule);
+
   telemetry.event("app_start");
   shown = draw();
   autoCheck(ctx);
+  schedule();
   // Android keeps the WebView alive in the background, so a return to the app checks again too.
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && autoCheck(ctx));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    autoCheck(ctx);
+    schedule();
+  });
   askTelemetry(ctx);
 }
 

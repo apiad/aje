@@ -43,6 +43,7 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   // The last balance transfer, so the panel's SMS can confirm it.
   let lastTransfer = { to: "55555555", amount: 25 };
   let balance = 185; // the prepaid line's CUP, lowered by a plan purchase
+  let wakeHandler = null;
 
   // The phone's inbox, which readSms reads back: a text Ajé never saw, then every SMS emitted.
   const missedAt = Date.now() - 2 * 60 * 60 * 1000;
@@ -175,6 +176,20 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     },
     // The browser has no notifications to tap.
     onOpen() {},
+    // Background work: the panel shows the asked wake-up and the last notification; "Despertar ahora" wakes the page.
+    async wakeAt(at) {
+      calls.push({ method: "wakeAt", args: { at } });
+      mock.onBackground?.();
+    },
+    async notify(n) {
+      calls.push({ method: "notify", args: n });
+      mock.onBackground?.();
+    },
+    async done() {
+      calls.push({ method: "done", args: {} });
+    },
+    onWake(fn) { wakeHandler = fn; },
+    wake: () => wakeHandler?.(Date.now()),
     injectSms: (sender, body) => emit(sender, body),
     // Incoming money and plans, as PAGOxMOVIL, ETECSA and Cubacel send them.
     cardReceived: () => emit(BANK, `El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW${Date.now() % 1e9}`),
@@ -203,6 +218,8 @@ function panel(mock) {
     '<div style="display:flex;gap:6px;margin:6px 0"><button id="mock-card-received">Dinero a tarjeta</button>' +
     '<button id="mock-recharge-intl">Recarga int.</button><button id="mock-plan-gift">Plan regalado</button></div>' +
     '<button id="mock-logout">Cerrar la sesión del banco</button>' +
+    '<div style="display:flex;gap:6px;margin:6px 0;align-items:center"><button id="mock-wake">Despertar ahora</button>' +
+    '<span id="mock-wake-info"></span></div>' +
     '<textarea id="mock-sms" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
     '<button id="mock-send" style="margin-top:6px">Inyectar SMS</button>';
   box.addEventListener("toggle", () => (box.style.width = box.open ? "280px" : ""));
@@ -217,6 +234,14 @@ function panel(mock) {
   box.querySelector("#mock-qr").onclick = () => {
     box.open = false;
     dispatchEvent(new CustomEvent("aje-qr", { detail: "aje:saldo?v=1&n=56666666&m=150&a=Ana" }));
+  };
+  box.querySelector("#mock-wake").onclick = () => { mock.wake(); box.open = false; };
+  const info = box.querySelector("#mock-wake-info");
+  const hhmm = (t) => new Date(t).toLocaleString("es", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  mock.onBackground = () => {
+    const at = mock.calls.findLast((c) => c.method === "wakeAt")?.args.at;
+    const n = mock.calls.findLast((c) => c.method === "notify")?.args;
+    info.textContent = [at ? `próximo: ${hhmm(at)}` : "", n ? `aviso: ${n.title}` : ""].filter(Boolean).join(" · ");
   };
   box.querySelector("#mock-logout").onclick = () => {
     mock.endSession();

@@ -1,9 +1,10 @@
 // The native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"readSms"|"installUpdate", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"readSms"|"installUpdate"|"wakeAt"|"notify"|"done", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
 //   | {"event": "open", "route": "inbox/<id>"}, when a tapped notification opens the app
+//   | {"event": "wake", "at": ms}, when the shell wakes the open page for its background jobs (web/core/jobs.js)
 
 /** How long a USSD may go unanswered; some phones never call back. */
 const USSD_TIMEOUT_MS = 60_000;
@@ -20,12 +21,19 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
   let handler = null;
   const opens = [];
   let openHandler = null;
+  const wakes = [];
+  let wakeHandler = null;
 
   native.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.event === "open") {
       if (openHandler) openHandler(msg.route);
       else opens.push(msg.route);
+      return;
+    }
+    if (msg.event === "wake") {
+      if (wakeHandler) wakeHandler(msg.at);
+      else wakes.push(msg.at);
       return;
     }
     if (msg.event === "sms") {
@@ -81,6 +89,11 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     // installer. A download can take minutes on a mobile line, so it has no timeout.
     // Downloads, verifies and opens the installer; `onProgress(received, total)` follows the download.
     installUpdate: (url, sha256, onProgress = null) => call("installUpdate", { url, sha256 }, null, onProgress),
+    // Background work: the time to wake Ajé next (null cancels it), a notification a job posts as
+    // {id, channel, title, text, route}, and done, which tells the shell this wake-up is over.
+    wakeAt: (at) => call("wakeAt", { at }),
+    notify: (n) => call("notify", n),
+    done: () => call("done"),
     /**
      * The first handler sends `ready`, which opens the push channel and makes the shell deliver,
      * then delete, the SMS it queued while no page was alive: so only a page that can save them
@@ -91,6 +104,11 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
       handler = fn;
       for (const sms of buffered.splice(0)) fn(sms);
       if (first) call("ready").catch(() => {});
+    },
+    /** A wake-up the shell sends the open page: `fn(at)`, `at` the time it was asked for. */
+    onWake(fn) {
+      wakeHandler = fn;
+      for (const at of wakes.splice(0)) fn(at);
     },
     /** The route a tapped notification opens; one pushed before a handler is delivered to it. */
     onOpen(fn) {
