@@ -43,7 +43,7 @@ test("a balance query goes out on the chosen SIM and the SMS verifies it", async
   w.clock.t += 30_000;
   await w.sms(SMS.BALANCE);
   assert.equal(w.store.state.attempts[0].state, "verified");
-  assert.equal(balanceFor(w.store.state.attempts, w.card.id), "1200.06 CUP");
+  assert.equal(balanceFor(w.store.state, w.card.id), "1200.06 CUP");
 });
 
 test("'debe autenticarse' asks for login, and the auth SMS reruns the balance", async () => {
@@ -90,6 +90,29 @@ test("a transfer is dialed and the bank's SMS verifies it", async () => {
   await w.sms(SMS.TRANSFER);
   assert.equal(w.store.state.attempts[0].state, "verified");
   assert.equal(w.store.state.attempts[0].transactionId, "AB0000XYZ0001");
+});
+
+test("a transfer's SMS leaves the balance it reports on the card that paid", async () => {
+  const w = await world();
+  const a = await w.wf.transfer(w.card.id, "9200950000000001", 100);
+  w.clock.t += 30_000;
+  await w.sms(SMS.TRANSFER);
+  const card = w.store.state.cards.find((c) => c.id === w.card.id);
+  assert.deepEqual(card.balance, { available: "1134.56 CUP", at: w.clock.t, op: "45", attemptId: a.id });
+  assert.equal(balanceFor(w.store.state, w.card.id), "1134.56 CUP");
+});
+
+test("an SMS read back later does not overwrite a newer balance", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" }]);
+  const sent = w.clock.t;
+  await w.wf.transfer(w.card.id, "9200950000000001", 100);
+  w.clock.t += 2 * MIN;
+  await w.wf.balance(w.card.id);
+  w.clock.t += 30_000;
+  await w.sms(SMS.BALANCE);
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: SMS.TRANSFER, receivedAt: sent + MIN });
+  assert.equal(w.store.state.attempts.find((a) => a.op === "45").state, "verified");
+  assert.equal(balanceFor(w.store.state, w.card.id), "1200.06 CUP");
 });
 
 test("a transfer whose dial fails is marked failed, not left pending", async () => {
@@ -907,7 +930,8 @@ test("the bank's Nauta SMS verifies the recharge to that account for that amount
   assert.equal(w.store.state.attempts.find((a) => a.id === attempt.id).state, "replied", "another account");
   await w.sms("Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4568. \r\n Importe Pagado: 95.00 \r\n Saldo Restante: DB 1000.00 CUP. \r\n Se aplico un descuento del 05% al pago realizado. Gracias por utilizar nuestros servicios, ETECSA.");
   const a = w.store.state.attempts.find((x) => x.id === attempt.id);
-  assert.deepEqual([a.state, a.transactionId], ["verified", "AB123CD4568"]);
+  assert.deepEqual([a.state, a.transactionId, a.available], ["verified", "AB123CD4568", "1000.00 CUP"]);
+  assert.equal(balanceFor(w.store.state, w.card.id), "1000.00 CUP");
 });
 
 test("saveBill adds, edits and refuses a duplicate; removeBill drops it", async () => {
