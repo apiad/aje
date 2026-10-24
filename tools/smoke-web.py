@@ -203,7 +203,7 @@ def already_authenticated_login(page):
 
 
 def pay_bills(page):
-    """Pagar: a saved electricity bill is paid with one tap through the dialer; Nauta keeps its amount."""
+    """Servicios: a saved electricity bill is checked, shows its debt, and is paid with one tap; Nauta keeps its amount."""
     page.goto(page.url.split("#")[0].split("?")[0] + "#/pay")
     # The sample backup's electricity contract and Nauta account are offered.
     expect(page.locator("#bill-offers .row")).to_have_count(2)
@@ -218,25 +218,34 @@ def pay_bills(page):
     expect(page.locator('#bills [data-bill]')).to_have_count(1)
     expect(page.locator("#bills")).to_contain_text("Casa")
     expect(page.locator("#bills")).to_contain_text("····0123")
-    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
-    page.locator("#bills [data-pay]").click()
-    expect(page.locator("#sheet")).to_contain_text("Luz · Casa")
+    # A new account is unchecked: it offers Revisar, not Pagar.
+    expect(page.locator("#bills [data-bill]")).to_have_attribute("data-status", "never")
+    expect(page.locator("#bills [data-pay]")).to_have_count(0)
+    page.locator("#bills [data-debt]").click()
+    expect(page.locator("#sheet h3")).to_have_text("Deuda · Luz · Casa")
     # The reload dropped the mock's session: the bank asks for one first.
     expect(page.locator('#pin, #bill-result:not([data-state="sent"])').first).to_be_visible(timeout=10_000)
     if page.locator("#pin").count():
         page.fill("#pin", "1234")
         page.click("#pin-submit")
+    expect(page.locator("#bill-result")).to_contain_text("Debe 85.40 CUP.", timeout=10_000)
+    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
+    page.keyboard.press("Escape")
+    row = page.locator("#bills [data-bill]")
+    expect(row).to_have_attribute("data-status", "owe")
+    expect(row).to_contain_text("Debe 85.40 CUP")
+    dials = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length")
+    page.locator("#bills [data-pay]").click()
+    expect(page.locator("#sheet")).to_contain_text("Luz · Casa")
     expect(page.locator("#bill-result")).to_contain_text("procesada", timeout=10_000)
     sent = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
     assert sent[-1].startswith("*444*41*"), sent[-1:]
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
     page.keyboard.press("Escape")
-    # The debt query waits for the bank's SMS and shows the debt it names.
-    page.locator("#bills [data-debt]").click()
-    expect(page.locator("#sheet h3")).to_have_text("Deuda · Luz · Casa")
-    expect(page.locator("#bill-result")).to_contain_text("Debe 85.40 CUP.", timeout=10_000)
-    assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
-    page.keyboard.press("Escape")
+    # Paid after the check: the row says so and asks to check again to confirm.
+    expect(row).to_have_attribute("data-status", "paid")
+    expect(row).to_contain_text("Pagado 85.40 CUP")
+    expect(row.locator("[data-debt]")).to_have_class("checkbtn due")
     # Nauta from the backup's offer: the user comes filled in, the amount is asked.
     page.locator("#bill-offers .row", has_text="ana.perez").locator("button").click()
     expect(page.locator('#bill-kind button.on')).to_have_text("Nauta")

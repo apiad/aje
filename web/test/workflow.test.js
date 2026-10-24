@@ -8,6 +8,7 @@ import { balanceFor } from "../core/accounts.js";
 import { fakeBridge, SMS, PLAN_BOUGHT, POSTPAID_REPLY, PREPAID_REPLY } from "./helpers.js";
 import { balance as balanceCode, link as linkCode } from "../core/ops.js";
 import { DEFAULT_CONFIG, dial } from "../core/ussd.js";
+import { fnv1a } from "../core/notice.js";
 
 const MIN = 60_000;
 const METRO_CARD = { alias: "Metro CUP", pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" };
@@ -1032,4 +1033,44 @@ test("a debt SMS naming no saved bill answers the only pending debt query", asyn
   w.clock.t += 20_000;
   await w.sms(NO_DEBT_SMS);
   assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "verified");
+});
+
+test("settle verifies with an SMS an older build reported as unknown, never with one twice", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const refused = (await w.wf.debtQuery(bill.id)).attempt;
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  const at = w.clock.t + 20_000;
+  inboxed(w, NO_DEBT_SMS, at);
+  await w.store.seen(`${at - 1000}:${fnv1a(NO_DEBT_SMS)}`);
+  w.clock.t += 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "verified");
+  assert.equal(w.store.state.attempts.find((x) => x.id === refused.id).state, "failed");
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+});
+
+test("a debt check and a payment leave what Servicios shows on the bill", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "phone", alias: "Fijo", number: "123456789012345", cardId: w.card.id });
+  await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms("Consulta de servicio completada. \r\n Factura: 123456789012345 \r\n Importe de la factura: 5.40 CUP \r\n ");
+  const checked = { at: w.clock.t, cents: 540 };
+  assert.deepEqual(w.store.state.bills[0].checked, checked);
+  w.clock.t += MIN;
+  await w.wf.payBill(bill.id);
+  assert.deepEqual(w.store.state.bills[0].paid, { at: w.clock.t, cents: 540, verified: false });
+  assert.deepEqual(w.store.state.bills[0].checked, checked);
+});
+
+test("a refused payment leaves no paid mark, and the Nauta SMS verifies the recharge's mark", async () => {
+  const w = await world([{ ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  await w.wf.payBill(bill.id);
+  assert.equal(w.store.state.bills[0].paid, undefined);
+  await w.wf.payBill(bill.id);
+  w.clock.t += 30_000;
+  await w.sms(NAUTA_SMS);
+  assert.deepEqual(w.store.state.bills[0].paid, { at: w.clock.t - 30_000, cents: 10000, verified: true });
 });

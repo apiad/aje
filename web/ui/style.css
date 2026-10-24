@@ -260,3 +260,12 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 #settle-note:empty{display:none}
 #history #settle-note{padding:0 4px 10px}
 .settle{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:14px}
+#pay .row.bill{display:block;cursor:default}
+#pay .row.bill .top{display:flex;align-items:center;gap:11px;cursor:pointer}
+#pay .row.bill .state{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line-soft)}
+#pay .row.bill .s{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.35;color:var(--bone)}
+#pay .row.bill .s small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+#pay .row.bill .s.ok{color:var(--river)} #pay .row.bill .s.owe{color:var(--clay)}
+.checkbtn{border:1px solid var(--line);background:none;color:var(--muted);border-radius:999px;padding:8px 14px;min-height:38px;font:600 12.5px var(--sans);cursor:pointer}
+.checkbtn.due{border-color:var(--gold-deep);color:var(--gold)}
+.checkbtn:disabled,.paybtn:disabled{opacity:.45;cursor:default}

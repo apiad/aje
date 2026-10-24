@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkNumber, debtQuery, digitsOf, opOf, payBill, titleOf } from "../core/bills.js";
+import { checkNumber, debtQuery, digitsOf, opOf, payBill, titleOf, billStatus } from "../core/bills.js";
 import { dial, DEFAULT_CONFIG } from "../core/ussd.js";
 
 const card = { bank: "METROPOLITANO", currency: "CUP", pan: "9227959900000001" };
@@ -55,4 +55,19 @@ test("the debt query sends Metropolitano's type for each kind and the bill numbe
 test("a bill's title skips an alias that repeats its kind", () => {
   assert.equal(titleOf({ kind: "electricity", alias: "Casa" }), "Luz · Casa");
   assert.equal(titleOf({ kind: "electricity", alias: "Luz" }), "Luz");
+});
+
+test("billStatus: never checked, no debt, debt, stale after 72 hours, paid after the last check", () => {
+  const H = 3_600_000;
+  const now = 1_000 * H;
+  assert.deepEqual(billStatus({ kind: "water" }, now), { kind: "never" });
+  assert.deepEqual(billStatus({ kind: "water", checked: { at: now - 2 * H, cents: 0 } }, now), { kind: "none", at: now - 2 * H, cents: 0, stale: false });
+  assert.deepEqual(billStatus({ kind: "phone", checked: { at: now - H, cents: 8540 } }, now), { kind: "owe", at: now - H, cents: 8540, stale: false });
+  assert.equal(billStatus({ kind: "gas", checked: { at: now - 73 * H, cents: 0 } }, now).stale, true);
+  assert.equal(billStatus({ kind: "gas", checked: { at: now - H, cents: null } }, now).kind, "unknown");
+  const paid = { kind: "electricity", checked: { at: now - 5 * H, cents: 8540 }, paid: { at: now - 4 * H, cents: 8540, verified: false } };
+  assert.deepEqual(billStatus(paid, now), { kind: "paid", at: now - 4 * H, cents: 8540, verified: false, stale: false });
+  assert.equal(billStatus({ ...paid, checked: { at: now - H, cents: 0 } }, now).kind, "none");
+  assert.deepEqual(billStatus({ kind: "nauta" }, now), { kind: "never" });
+  assert.equal(billStatus({ kind: "nauta", paid: { at: now - H, cents: 10000, verified: true } }, now).kind, "paid");
 });

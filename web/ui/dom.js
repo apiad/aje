@@ -46,6 +46,15 @@ export function icon(name, cls = "") {
   return span.firstChild;
 }
 
+/** How long ago, as the person says it: "hace unos minutos", "hace 3 h", "hace 2 días". */
+export function ago(ms, now = Date.now()) {
+  const hours = (now - ms) / 3_600_000;
+  if (hours < 1) return "hace unos minutos";
+  if (hours < 24) return `hace ${Math.floor(hours)} h`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "hace 1 día" : `hace ${days} días`;
+}
+
 /** Local date and time as the person reads it: "hoy 9:41", "ayer 18:05", or "3/10 9:41". */
 export function when(ms, now = Date.now()) {
   const d = new Date(ms);

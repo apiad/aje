@@ -82,4 +82,20 @@ export function debtQuery(bill) {
 export const opOf = (bill) => (bill.kind === "water" ? WATER_REGIONS[bill.region]?.op : { electricity: "41", phone: "42", gas: "67", nauta: "59" }[bill.kind]);
 
 /** "Luz · Casa", or just "Luz" when the account is named after its kind. */
+/** After this long a debt check may no longer hold: Servicios asks to check again. */
+export const STALE_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * What Servicios shows for a saved bill, from the marks the debt check and the payment leave on it
+ * (`checked: {at, cents}`, `paid: {at, cents, verified}`): "never" checked, "none", "owe", "unknown"
+ * when the bank's SMS gave no figure, or "paid" when a payment came after the last check.
+ */
+export function billStatus(bill, now) {
+  const { checked = null, paid = null } = bill;
+  if (paid && (!checked || paid.at > checked.at)) return { kind: "paid", ...paid, stale: now - paid.at > STALE_MS };
+  if (!checked) return { kind: "never" };
+  const kind = checked.cents === 0 ? "none" : checked.cents ? "owe" : "unknown";
+  return { kind, at: checked.at, cents: checked.cents, stale: now - checked.at > STALE_MS };
+}
+
 export const titleOf = ({ kind, alias }) => (alias && alias !== KINDS[kind]?.label ? `${KINDS[kind]?.label ?? "Pago"} · ${alias}` : KINDS[kind]?.label ?? "Pago");

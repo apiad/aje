@@ -1,10 +1,10 @@
-// Pagar: the saved bill and service accounts, each paid with one tap, and the form that adds or
-// edits one. A payment is dialed: the bank's menu shows the debt and the person confirms with 1.
-import { checkNumber, digitsOf, KINDS, NAUTA_TYPES, titleOf, WATER_REGIONS } from "../core/bills.js";
+// Servicios: the saved bill and service accounts, each with what its last debt check or payment
+// said and the one action that follows (check, pay or recharge), and the form that adds or edits one.
+import { billStatus, checkNumber, digitsOf, KINDS, NAUTA_TYPES, titleOf, WATER_REGIONS } from "../core/bills.js";
 import { BANKS, last4, parseAmount } from "../core/money.js";
 import { billNumberFromText } from "../core/ocr.js";
 import { formatMoney } from "../core/sms.js";
-import { h, icon } from "./dom.js";
+import { ago, h, icon } from "./dom.js";
 import { openScanner, paperFrame } from "./scanner.js";
 import { mark, openSheet } from "./sheets.js";
 
@@ -29,6 +29,26 @@ function suggestions(ctx) {
 }
 
 const inFlight = new Set();
+
+/**
+ * What a saved account's row says and the action it offers: `[cls, head, sub, action]`, where action
+ * is "pay" (filled), "check-due" (gold outline: never checked, stale or unconfirmed) or "check".
+ */
+function statusLine(bill, now = Date.now()) {
+  const s = billStatus(bill, now);
+  const money = (cents) => formatMoney({ cents, currency: "CUP" });
+  const when = s.at ? ago(s.at, now) : "";
+  const old = s.stale ? " · puede haber cambiado" : "";
+  if (bill.kind === "nauta") {
+    if (s.kind !== "paid") return ["", "Sin recargas", "Recarga con un toque", "pay"];
+    return [s.verified ? "ok" : "", `${s.verified ? "✓ " : ""}Recargado ${money(s.cents)}`, `${when} · ${s.verified ? "verificado por SMS" : "sin verificar"}`, "pay"];
+  }
+  if (s.kind === "never") return ["", "Sin revisar", "Revisa para saber si debes", "check-due"];
+  if (s.kind === "paid") return ["", s.cents ? `Pagado ${money(s.cents)}` : "Pago enviado", `${when} · revisa para confirmar`, "check-due"];
+  if (s.kind === "owe") return ["owe", `Debe ${money(s.cents)}`, `revisado ${when}${old}`, "pay"];
+  if (s.kind === "unknown") return ["", "El banco respondió", `revisado ${when} · mira su SMS`, "check-due"];
+  return [s.stale ? "" : "ok", "✓ Sin deuda", `revisado ${when}${old}`, s.stale ? "check-due" : "check"];
+}
 
 /**
  * Pays a bill and follows it: the bank's reply, then its SMS for Nauta. When the bank wants a session,
@@ -138,7 +158,7 @@ async function billSheet(ctx, bill, { debt = false } = {}) {
 export function renderPay(ctx) {
   const cards = payingCards(ctx);
   const { bills } = ctx.store.state;
-  const top = h("div", { class: "topbar" }, h("div", { class: "t" }, "Pagar"));
+  const top = h("div", { class: "topbar" }, h("div", { class: "t" }, "Servicios"));
   if (!cards.length) return h("div", { id: "pay" }, top, h("div", { class: "empty" }, "Añade y asocia una tarjeta para pagar la luz, el agua, el gas, el teléfono o Nauta."));
 
   async function pay(bill, debt = false) {
@@ -153,17 +173,21 @@ export function renderPay(ctx) {
 
   const rows = bills.map((b) => {
     const card = ctx.store.state.cards.find((c) => c.id === b.cardId);
-    return h("div", { class: "row bill", "data-bill": b.id },
-      icon(KINDS[b.kind].icon, "ic"),
-      h("div", { class: "tx", onclick: () => ctx.go(`bill/${b.id}`) }, h("b", {}, b.alias),
-        h("span", {}, `${KINDS[b.kind].label} · ${describe(b)}${card ? ` · ${card.alias}` : " · sin tarjeta"}`)),
-      b.kind === "nauta" ? null : h("button", { class: "addchip", "data-debt": b.id, disabled: !card || null, onclick: () => pay(b, true) }, "Deuda"),
-      h("button", { class: "paybtn", "data-pay": b.id, disabled: !card || null, onclick: () => pay(b) }, "Pagar"));
+    const [cls, head, sub, action] = statusLine(b);
+    const button = action === "pay"
+      ? h("button", { class: "paybtn", "data-pay": b.id, disabled: !card || null, onclick: () => pay(b) }, b.kind === "nauta" ? "Recargar" : "Pagar")
+      : h("button", { class: `checkbtn${action === "check-due" ? " due" : ""}`, "data-debt": b.id, disabled: !card || null, onclick: () => pay(b, true) }, "Revisar");
+    return h("div", { class: "row bill", "data-bill": b.id, "data-status": billStatus(b, Date.now()).kind },
+      h("div", { class: "top", onclick: () => ctx.go(`bill/${b.id}`) }, icon(KINDS[b.kind].icon, "ic"),
+        h("div", { class: "tx" }, h("b", {}, b.alias),
+          h("span", {}, `${KINDS[b.kind].label} · ${describe(b)}${card ? ` · ${card.alias}` : " · sin tarjeta"}`)),
+        h("span", { class: "chev" }, "›")),
+      h("div", { class: "state" }, h("div", { class: `s ${cls}` }, head, h("small", {}, sub)), button));
   });
   const offered = suggestions(ctx);
   return h("div", { id: "pay" }, top,
     bills.length ? h("div", { class: "list", id: "bills" }, rows)
-      : h("p", { class: "lead" }, "Guarda una vez cada cuenta: la luz de la casa, el agua, el gas, el teléfono fijo o tu cuenta Nauta. Después se paga con un toque."),
+      : h("p", { class: "lead" }, "Guarda una vez cada cuenta: la luz de la casa, el agua, el gas, el teléfono fijo o tu cuenta Nauta. Ajé te dice si debes y pagas con un toque."),
     h("button", { id: "bill-add", class: "btn gold", onclick: () => ctx.go("bill") }, "Añadir una cuenta"),
     offered.length ? [h("div", { class: "group" }, "De tu respaldo de Transfermóvil"),
       h("div", { class: "list", id: "bill-offers" }, offered.map((o) => h("div", { class: "row" }, icon(KINDS[o.kind].icon, "ic"),

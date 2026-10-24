@@ -13,14 +13,14 @@ const ACTIONS = {
   card: [
     ["balance", "Ver saldo", "card"],
     ["transfer", "Transferir", "send"],
-    ["pay", "Pagar servicio", "bolt"],
+    ["pay", "Servicios", "bolt"],
     ["soon", "Cobrar o pagar con QR", "qr"],
   ],
   clasica: [
     ["balance", "Ver saldo", "card"],
     ["movements", "Últimas operaciones", "history"],
     ["transfer", "Transferir", "send"],
-    ["soon", "Pagar servicio", "bolt"],
+    ["soon", "Servicios", "bolt"],
   ],
   line: [
     ["mobile-balance", "Saldo móvil", "phone"],
