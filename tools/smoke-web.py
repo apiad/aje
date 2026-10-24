@@ -230,7 +230,8 @@ def pay_bills(page):
         page.click("#pin-submit")
     expect(page.locator("#bill-result")).to_contain_text("Debe 85.40 CUP.", timeout=10_000)
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
-    page.keyboard.press("Escape")
+    # A check that ended well closes its sheet; the row keeps the answer.
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
     row = page.locator("#bills [data-bill]")
     expect(row).to_have_attribute("data-status", "owe")
     expect(row).to_contain_text("Debe 85.40 CUP")
@@ -241,7 +242,7 @@ def pay_bills(page):
     sent = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').map((c) => c.args.code)")
     assert sent[-1].startswith("*444*41*"), sent[-1:]
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
-    page.keyboard.press("Escape")
+    expect(page.locator("#sheet")).to_have_count(0, timeout=5_000)
     # Paid after the check: the row says so and asks to check again to confirm.
     expect(row).to_have_attribute("data-status", "paid")
     expect(row).to_contain_text("Pagado 85.40 CUP")

@@ -220,6 +220,7 @@ function resultSheet(ctx, r, title, subId, usedSaved) {
     const a = ctx.store.state.attempts.find((x) => x.id === id) ?? r.attempt;
     const verified = a?.state === "verified";
     const waiting = r.ok && !verified;
+    if (verified) queueMicrotask(() => sheet.closeSoon());
     return [
       h("h3", {}, title),
       h("div", { class: `reply${waiting ? " pending" : ""}`, id: "lt-result", "data-outcome": r.outcome },

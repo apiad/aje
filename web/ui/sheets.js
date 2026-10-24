@@ -29,7 +29,12 @@ export function openSheet(ctx, build, onClose = null) {
   };
   document.getElementById("app").append(scrim, sheet);
   draw();
-  return { redraw: draw, close: () => close?.() };
+  let soon = null;
+  const mine = close;
+  // An operation that ended well stays in the app (a card, a row, the history): its sheet shows the
+  // result for a moment and goes. One that failed or needs the person keeps its sheet open.
+  const closeSoon = () => { soon ??= setTimeout(() => close === mine && close(), AUTO_CLOSE_MS); };
+  return { redraw: draw, close: () => close?.(), closeSoon };
 }
 
 /** How long a sheet shows a settled result before closing by itself. */
@@ -173,11 +178,12 @@ export async function balanceSheet(ctx, account) {
 
 /** Follows a dialed transfer until the bank's SMS verifies it. */
 export function transferSheet(ctx, attempt, title) {
-  return openSheet(ctx, () => [
-    h("h3", {}, title),
-    ...attemptView(ctx.store.state.attempts.find((a) => a.id === attempt.id)),
-    h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar"),
-  ]);
+  const sheet = openSheet(ctx, () => {
+    const a = ctx.store.state.attempts.find((x) => x.id === attempt.id);
+    if (a?.state === "verified") queueMicrotask(() => sheet.closeSoon());
+    return [h("h3", {}, title), ...attemptView(a), h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar")];
+  });
+  return sheet;
 }
 
 /** A Clásica's last operations: a waiting sheet that shows the service's reply as it comes. */
