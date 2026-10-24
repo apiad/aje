@@ -24,14 +24,16 @@ test("the deck lists the stored cards in order, then a line per SIM", () => {
   assert.equal(list[3].plan, "POSPAGO");
 });
 
-test("a card's balance is its latest verified query", () => {
+test("a card's balance is the one kept on it, else its latest verified query", () => {
   const attempts = [
     { op: "46", state: "replied", cardId: "a", available: null },
     { op: "46", state: "verified", cardId: "a", available: "1200.06 CUP" },
     { op: "46", state: "verified", cardId: "a", available: "900.00 CUP" },
   ];
-  assert.equal(balanceFor(attempts, "a"), "1200.06 CUP");
-  assert.equal(balanceFor(attempts, "b"), null);
+  const cards = [{ id: "a" }, { id: "b" }, { id: "c", balance: { available: "75.00 CUP", at: 5, op: "45", attemptId: 9 } }];
+  assert.equal(balanceFor({ cards, attempts }, "a"), "1200.06 CUP");
+  assert.equal(balanceFor({ cards, attempts }, "b"), null);
+  assert.equal(balanceFor({ cards, attempts }, "c"), "75.00 CUP");
 });
 
 test("the deck leaves out removed cards and hidden lines, and names a line by its alias", () => {

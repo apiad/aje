@@ -31,7 +31,10 @@ export function parseBankSms(body) {
     const cents = centsOf(nauta[3]);
     const transactionId = /Transacci[oó]n\s*:\s*([A-Z0-9]+)/i.exec(text)?.[1] ?? null;
     if (cents === null) return null;
-    return { kind: "nauta", bank, user: nauta[2].toLowerCase(), hogar: Boolean(nauta[1]), amount: { cents, currency: "CUP" }, transactionId };
+    // The bank marks this balance DB, though it is what the card has left, never a debt.
+    const left = money(text, "Saldo Restante");
+    const remaining = left && { cents: Math.abs(left.cents), currency: left.currency };
+    return { kind: "nauta", bank, user: nauta[2].toLowerCase(), hogar: Boolean(nauta[1]), amount: { cents, currency: "CUP" }, transactionId, remaining };
   }
   return null;
 }
