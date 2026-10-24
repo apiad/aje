@@ -253,3 +253,7 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 #import .kept b{color:var(--bone);font-weight:500}
 #import .btn:disabled{opacity:.45;cursor:default}
 #import .chk.same{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:12px}
+#pay .list{margin-top:6px}
+.paybtn{border:0;border-radius:999px;background:var(--gold);color:var(--on-gold);font:600 13px var(--sans);padding:9px 16px;min-height:38px;cursor:pointer}
+.paybtn:disabled{opacity:.45;cursor:default}
+#pay .group{margin-top:18px}

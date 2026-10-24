@@ -18,13 +18,11 @@ import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
 import { renderLineCharge } from "./ui/charge.js";
 import { renderQrScan } from "./ui/qrscan.js";
+import { renderBill, renderPay } from "./ui/pay.js";
 import { autoCheck } from "./ui/updates.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
-const soon = (title) => () => h("div", {},
-  h("div", { class: "topbar" }, h("div", { class: "t" }, title)),
-  h("div", { class: "empty" }, "Próximamente."));
 
 // `live` screens redraw when the store changes; forms do not, so typing is never lost.
 const SCREENS = {
@@ -38,14 +36,15 @@ const SCREENS = {
   import: { render: renderImport },
   history: { render: renderHistory, live: true },
   inbox: { render: renderInbox, live: true },
-  pay: { render: soon("Pagar un servicio") },
+  pay: { render: renderPay, live: true },
+  bill: { render: renderBill },
   qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox", "bill"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
-const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
+const tabOf = (r) => (r.name === "bill" ? "pay" : FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
 const EASE = "cubic-bezier(.2,0,0,1)";
 
@@ -106,6 +105,7 @@ async function boot() {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
+      if (action === "pay") return ctx.go("pay");
       if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
       if (action === "line-transfer") return ctx.go(`line-transfer?sub=${account.subId}`);
       if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);

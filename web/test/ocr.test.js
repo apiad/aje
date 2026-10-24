@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createVote, panFromText } from "../core/ocr.js";
+import { createVote, panFromText, billNumberFromText } from "../core/ocr.js";
 
 test("panFromText finds 16 digits in groups of four and checks the bank", () => {
   assert.equal(panFromText("BANCO\n9227 9599 0000 0001\nVALID 10/29"), "9227959900000001");
@@ -31,4 +31,11 @@ test("scanner without camera", async () => {
     });
     assert.equal(called, "none");
   }
+});
+
+test("billNumberFromText takes the first digit run of an accepted length", () => {
+  assert.equal(billNumberFromText("Cliente 1234 5678 90123 Ruta 12", [13]), "1234567890123");
+  assert.equal(billNumberFromText("Factura 123-456-789-012 total 85", [12]), "123456789012");
+  assert.equal(billNumberFromText("12 345 6789", [13]), null);
+  assert.equal(billNumberFromText("", [11]), null);
 });

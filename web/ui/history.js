@@ -1,5 +1,6 @@
 // History: every operation, logged when sent and verified when the bank's SMS arrives.
 // The code shown is the display form, with any key masked; the dialed form is never kept.
+import { KINDS } from "../core/bills.js";
 import { last4 } from "../core/money.js";
 import { formatMoney } from "../core/sms.js";
 import { CHARGE_MS } from "../core/store.js";
@@ -14,8 +15,11 @@ const stateOf = (a) => (a.op === "234-charge" && a.state === "waiting" && Date.n
 const plus = (a) => `+${formatMoney({ cents: Math.round(a.amount * 100), currency: a.currency })}`;
 const INCOMING = new Set(["234-in", "in-card", "in-recharge", "in-plan"]);
 
+const card = (ctx, a) => ctx.store.state.cards.find((c) => c.id === a.cardId);
+
 function title(ctx, a) {
   const card = ctx.store.state.cards.find((c) => c.id === a.cardId);
+  if (a.billId) return `${KINDS[a.kind]?.label ?? "Pago"} · ${a.alias}${a.amount ? ` · ${a.amount} CUP` : ""}`;
   if (a.op === "45") return `Transferencia · ${a.amount} ${card?.currency ?? ""}`.trim();
   if (a.op === "234") return `Saldo a ${a.to} · −${a.amount} CUP`;
   if (a.op === "234-in") return `Saldo de ${a.to} · +${a.amount} CUP`;
@@ -30,9 +34,9 @@ function title(ctx, a) {
 /** One history row; the home screen's recent activity uses it too. */
 export function row(ctx, a) {
   const [label, cls] = STATE[stateOf(a)] ?? ["○ sin verificar", "pend"];
-  const detail = a.op === "45" ? `a ····${last4(a.to)}` : a.op === "in-card" ? `de ${a.to}` : a.op.startsWith("234") || a.op === "133" || INCOMING.has(a.op) ? "" : (a.available ?? a.reply ?? "");
+  const detail = a.billId ? (card(ctx, a)?.alias ?? "") : a.op === "45" ? `a ····${last4(a.to)}` : a.op === "in-card" ? `de ${a.to}` : a.op.startsWith("234") || a.op === "133" || INCOMING.has(a.op) ? "" : (a.available ?? a.reply ?? "");
   return h("div", { class: "row", "data-state": a.state, "data-id": a.id, onclick: () => ctx.go(`history/${a.id}`) },
-    icon(a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" || a.op === "234-charge" || a.op === "in-recharge" ? "phone" : a.op === "133" || a.op === "in-plan" ? "plan" : "card", "ic"),
+    icon(a.billId ? KINDS[a.kind]?.icon ?? "bolt" : a.op === "45" || a.op === "234" ? "send" : a.op === "234-in" || a.op === "234-charge" || a.op === "in-recharge" ? "phone" : a.op === "133" || a.op === "in-plan" ? "plan" : "card", "ic"),
     h("div", { class: "tx" }, h("b", {}, title(ctx, a)), h("span", {}, `${when(a.startedAt)}${detail ? ` · ${detail}` : ""}`)),
     h("span", { class: `st ${cls}` }, label),
     h("span", { class: "chev" }, "›"),
@@ -53,6 +57,7 @@ function detail(ctx, a) {
       // A charge keeps this line's own number in `to`; who paid is `from`.
       a.op === "234-charge" ? kv("Desde", a.from) : kv(INCOMING.has(a.op) ? "Desde" : "Destino", a.to ? (a.op.startsWith("234") || INCOMING.has(a.op) ? a.to : `····${last4(a.to)}`) : null),
       kv("A la cuenta", a.account ? `····${last4(a.account)}` : null),
+      kv("Desde", a.billId ? card(ctx, a)?.alias : null),
       kv("Tarjeta", a.cardId && INCOMING.has(a.op) ? ctx.store.state.cards.find((c) => c.id === a.cardId)?.alias : null),
       kv("Transacción", a.transactionId),
       kv("Saldo contable", a.accounting),

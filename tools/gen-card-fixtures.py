@@ -55,6 +55,17 @@ def main():
     buf = io.BytesIO()
     frame.save(buf, "JPEG", quality=90)
     (out / "camera.mjpeg").write_bytes(buf.getvalue() * 30)
+    # A printed electricity bill for the bill scanner: dark ink on white paper, filling the frame.
+    bill = Image.new("RGB", (1280, 720), (12, 10, 8))
+    paper = Image.new("RGB", (1101, 518), (246, 244, 238))
+    d = ImageDraw.Draw(paper)
+    d.text((40, 40), "FACTURA ELECTRICA", font=ImageFont.truetype(FONTS[0], 40), fill=(30, 30, 30))
+    d.text((40, 200), "Cliente: 1234 5678 90123", font=ImageFont.truetype(FONTS[0], 52), fill=(20, 20, 20))
+    d.text((40, 360), "Importe: 85.40 CUP", font=ImageFont.truetype(FONTS[0], 34), fill=(40, 40, 40))
+    bill.paste(paper, (90, 101))
+    buf = io.BytesIO()
+    bill.save(buf, "JPEG", quality=90)
+    (out / "bill.mjpeg").write_bytes(buf.getvalue() * 30)
     (out / "cases.json").write_text(json.dumps(cases, indent=1))
     print(f"{len(cases)} cards and camera.mjpeg in {out}")
 
