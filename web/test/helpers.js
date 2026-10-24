@@ -15,6 +15,8 @@ export const SMS = {
   BALANCE_FAILED: "Banco Metropolitano Fallo la consulta de saldo. Banco Metropolitano: No tiene cuenta con la moneda o la cuenta no puede ser operada para Banca Movil.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
+  // The answer to a login while the session is still open. It names no bank.
+  ALREADY_AUTH: "Usted ya se encuentra autenticado en el sistema.",
   // MiTransfer's login SMS, from PAGOxMOVIL; telemetry brought it with the wallet's name hidden, and
   // its length (160) fits "Mi Transfer".
   MITRANSFER_AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Monedero Mi Transfer. " +
