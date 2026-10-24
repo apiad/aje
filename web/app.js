@@ -13,6 +13,7 @@ import { renderInbox } from "./ui/inbox.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
+import { editSheet } from "./ui/edit.js";
 import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
@@ -111,6 +112,7 @@ async function boot() {
       if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);
       if (action === "line-charge") return ctx.go(`line-charge?sub=${account.subId}`);
       if (action === "resume") return ctx.go(`add/${account.cardId}`);
+      if (action === "edit") return editSheet(ctx, account);
       const run = { balance: balanceSheet, movements: movementsSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.
       const key = `${action}:${account.id}`;

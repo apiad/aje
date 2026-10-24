@@ -61,7 +61,8 @@ function stats(d) {
 }
 
 function cardFace(a, ctx) {
-  const kind = a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`;
+  const kind = (a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`) +
+    (a.isDefault ? " · por defecto" : "");
   const no = a.kind === "card" ? `${BANKS[a.bank]?.name ?? "Cuenta"} · ···· ${last4(a.pan)}` : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
   const tone = a.kind === "line" ? "line" : a.currency === "USD" ? "usd" : "cup";
   const chips = a.pending ? CHIPS.pending : CHIPS[a.kind];
@@ -69,7 +70,8 @@ function cardFace(a, ctx) {
     h("div", { class: "top" },
       h("div", {}, h("div", { class: "kind" }, kind), h("div", { class: "name" }, a.label)),
       h("div", { class: "acts" }, chips.map(([action, label]) =>
-        h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label))),
+        h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label)),
+        h("button", { class: "more", "data-action": "edit", "aria-label": `Editar ${a.label}`, onclick: () => ctx.act("edit", a) }, "⋯")),
     ),
     h("div", {},
       a.balance ? h("div", { class: "bal" }, ...amount(a.balance))

@@ -1,5 +1,6 @@
 // Servicios: the saved bill and service accounts, each with what its last debt check or payment
 // said and the one action that follows (check, pay or recharge), and the form that adds or edits one.
+import { liveCards } from "../core/accounts.js";
 import { billStatus, checkNumber, digitsOf, KINDS, NAUTA_TYPES, titleOf, WATER_REGIONS } from "../core/bills.js";
 import { BANKS, last4, parseAmount } from "../core/money.js";
 import { billNumberFromText } from "../core/ocr.js";
@@ -9,7 +10,7 @@ import { openScanner, paperFrame } from "./scanner.js";
 import { mark, openSheet } from "./sheets.js";
 
 /** Cards a bill can be paid from: linked bank cards; the Clásica's bills go through MiTransfer, not here. */
-const payingCards = (ctx) => ctx.store.state.cards.filter((c) => c.state === "linked" && c.bank !== "CLASICA");
+const payingCards = (ctx) => liveCards(ctx.store.state).filter((c) => c.state === "linked" && c.bank !== "CLASICA");
 
 function chips(options, isOn, pick, id) {
   return h("div", { class: "chips", id }, options.map(([value, label]) =>

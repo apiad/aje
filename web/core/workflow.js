@@ -554,7 +554,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
 
   /** The one saved card whose last four match the account a received transfer names, else null. */
   function cardOfAccount(account) {
-    const cards = account ? store.state.cards.filter((c) => last4(c.pan) === last4(account)) : [];
+    const cards = account ? store.state.cards.filter((c) => !c.removed && last4(c.pan) === last4(account)) : [];
     return cards.length === 1 ? cards[0].id : null;
   }
 

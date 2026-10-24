@@ -73,6 +73,7 @@
 .btn{width:100%;border:0;border-radius:14px;padding:14px;font:600 15px var(--sans);cursor:pointer;margin-top:16px}
 .btn.gold{background:var(--gold);color:var(--on-gold)}
 .btn.ghost{background:none;border:1px solid var(--line);color:var(--bone)}
+.btn.clay{background:var(--clay);color:#fff}
 .btn.river{background:var(--river);color:#07130f}
 .warn{background:var(--clay-bg);border:1px solid #5a3022;border-left:3px solid var(--clay);border-radius:0 12px 12px 0;padding:11px 13px;font-size:12.5px;margin-top:14px;line-height:1.5}
 .warn b{color:var(--clay)}
@@ -145,12 +146,14 @@ body{background:var(--bg);color:var(--bone);font-family:var(--sans);-webkit-tap-
 .nav a svg{width:20px;height:20px}
 .nav a.on{color:var(--gold)}
 .acct .acts{display:flex;gap:6px}
+.acct .acts .more{padding:5px 9px;letter-spacing:1px}
 .acct .acts button{border:1px solid rgba(255,255,255,.18);background:var(--chip-bg);color:#f1e8d8;border-radius:999px;padding:5px 11px;font:600 11.5px var(--sans);cursor:pointer}
 .acct .bal.none{color:#b49a6f}
 .qa button.soon{opacity:.45}
 .qa button.soon span:after{content:" · Próximamente";display:block;font-size:9.5px;color:var(--faint)}
 .chips{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 8px}
 .chips button{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 12px;font:600 12px var(--sans);cursor:pointer;min-height:36px}
+.chips button:disabled{opacity:.4;cursor:default}
 .chips button.on{background:var(--gold);color:var(--on-gold);border-color:transparent}
 .empty{color:var(--muted);font-size:13px;line-height:1.5;padding:18px 4px}
 .err{color:var(--clay);font-size:12.5px;margin-top:8px}

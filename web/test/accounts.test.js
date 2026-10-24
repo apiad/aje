@@ -33,3 +33,12 @@ test("a card's balance is its latest verified query", () => {
   assert.equal(balanceFor(attempts, "a"), "1200.06 CUP");
   assert.equal(balanceFor(attempts, "b"), null);
 });
+
+test("the deck leaves out removed cards and hidden lines, and names a line by its alias", () => {
+  const state = {
+    settings: { plans: {}, lines: { 3: { alias: "Trabajo" }, 4: { hidden: true } }, defaultCard: "b" },
+    cards: [{ id: "a", alias: "Vieja", removed: true }, { id: "b", alias: "Metro" }], attempts: [], mobileBalances: {},
+  };
+  const list = accounts(state, [{ subId: 3, slot: 0, carrier: "Cubacel" }, { subId: 4, slot: 1, carrier: "Cubacel" }]);
+  assert.deepEqual(list.map((a) => [a.id, a.label, a.isDefault]), [["card:b", "Metro", true], ["line:3", "Trabajo", false]]);
+});

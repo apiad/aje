@@ -2,6 +2,7 @@
 // the rest. The file is read here, on the phone; nothing of it is sent anywhere. Cards from a backup
 // of this phone were linked to this line by the bank already: they come in linked, on trust, and the
 // workflow sends one back to pending if the bank refuses its first balance query.
+import { liveCards } from "../core/accounts.js";
 import { readFile } from "../core/trm.js";
 import { BANKS, last4 } from "../core/money.js";
 import { h } from "./dom.js";
@@ -35,7 +36,7 @@ export function renderImport(ctx) {
     const { backup, code } = await readFile(f);
     s.reading = false;
     if (backup) {
-      const have = new Set(store.state.cards.map((c) => c.pan));
+      const have = new Set(liveCards(store.state).map((c) => c.pan));
       s.ticked = new Set(backup.cards.filter((c) => !c.reason && !have.has(c.pan)).map((c) => c.pan));
       Object.assign(s, { step: "review", backup, error: null });
     } else {
@@ -85,7 +86,7 @@ export function renderImport(ctx) {
     ],
     review: () => {
       const b = s.backup;
-      const have = new Set(store.state.cards.map((c) => c.pan));
+      const have = new Set(liveCards(store.state).map((c) => c.pan));
       const n = s.ticked.size;
       const kept = KEPT.filter(([k]) => b[k].length);
       const row = (c) => {
