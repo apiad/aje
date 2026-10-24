@@ -38,6 +38,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     cards: [], bills: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
     // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
     imported: null,
+    // What each background job last did: `{at, ok, fails, failDay, ...}` by job id (web/core/jobs.js).
+    jobRuns: {},
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -350,6 +352,12 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     /** When the app last asked GitHub for releases, and the update it found, if any. */
     async setUpdate(patch) {
       state.update = { ...state.update, ...patch };
+      await commit();
+    },
+
+    /** Replaces a background job's record of its last run. */
+    async setJobRun(id, run) {
+      state.jobRuns = { ...state.jobRuns, [id]: run };
       await commit();
     },
 

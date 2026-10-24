@@ -1,9 +1,11 @@
 // Boot: config, bridge, store, telemetry and workflow, then a hash router over the screens.
 import { connect } from "./bridge.js";
+import { loadConfig } from "./config.js";
 import { idbBackend } from "./core/idb.js";
 import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
+import { nextWake, wake } from "./core/jobs.js";
 import { renderAddCard } from "./ui/addcard.js";
 import { renderImport } from "./ui/import.js";
 import { askTelemetry } from "./ui/consent.js";
@@ -14,6 +16,7 @@ import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
 import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
 import { editSheet } from "./ui/edit.js";
+import { startShine } from "./ui/shine.js";
 import { renderTransfer } from "./ui/transfer.js";
 import { renderLineTransfer } from "./ui/line.js";
 import { renderPlans } from "./ui/plans.js";
@@ -57,16 +60,6 @@ function enter(view, from, to) {
   view.animate([{ opacity: 0, transform: `translateX(${dx}px)` }, { opacity: 1, transform: "none" }], { duration: 360, easing: EASE });
 }
 
-async function loadConfig() {
-  try {
-    const res = await fetch("./config.json");
-    if (res.ok) return await res.json();
-  } catch {
-    // Served without a build: the browser during development.
-  }
-  return { app: "dev", commit: "", telemetryUrl: "", telemetryToken: "" };
-}
-
 function route() {
   const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const [name, param] = path.split("/");
@@ -102,6 +95,7 @@ async function boot() {
   const inFlight = new Set();
   // The smoke test seeds cards through the store; only under the mock, never in the APK.
   if (bridge.kind === "mock") globalThis.ajeDev = { store, bridge };
+  startShine();
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
@@ -145,11 +139,32 @@ async function boot() {
   });
   store.subscribe(() => current?.live && draw());
 
+  // Background work (web/core/jobs.js): the shell wakes Ajé when the next job is due. While this page
+  // is alive the shell sends it the wake-up instead of opening a page without a window.
+  const jobs = { bridge, store, telemetry, config, fetch: (url, init) => globalThis.fetch(url, init) };
+  let asked;
+  const schedule = () => {
+    const at = nextWake(store.state, Date.now());
+    if (at !== asked) bridge.wakeAt((asked = at)).catch(() => {});
+  };
+  let waking = false;
+  bridge.onWake((at) => {
+    if (waking) return;
+    waking = true;
+    wake(jobs, at).catch(crash).finally(() => { waking = false; });
+  });
+  store.subscribe(schedule);
+
   telemetry.event("app_start");
   shown = draw();
   autoCheck(ctx);
+  schedule();
   // Android keeps the WebView alive in the background, so a return to the app checks again too.
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && autoCheck(ctx));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    autoCheck(ctx);
+    schedule();
+  });
   askTelemetry(ctx);
 }
 

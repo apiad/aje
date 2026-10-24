@@ -86,6 +86,8 @@ dependencies {
     implementation("androidx.webkit:webkit:1.17.1")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment:1.8.5")
+    // Background work: the wake-up that runs the page's jobs with the app closed, and survives a reboot.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     // SmsNoticeTest runs on the JVM, where Android's org.json is a stub.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

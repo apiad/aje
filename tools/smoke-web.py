@@ -5,6 +5,7 @@
 
 import functools
 import json
+import re
 import subprocess
 import http.server
 import sys
@@ -351,7 +352,8 @@ def add_clasica_via_mitransfer(page):
     state = page.evaluate("ajeDev.store.state")
     assert next(c for c in state["cards"] if c["alias"] == "Mi Clásica")["state"] == "associated"
     assert state["banks"]["MITRANSFER"]["registered"] is True
-    assert "00000000000" not in json.dumps(state) and "4321" not in json.dumps(state)
+    # Bounded by non-digits: a timestamp such as 1792864321000 holds "4321" and is no leak.
+    assert not re.search(r"(?<!\d)(00000000000|4321)(?!\d)", json.dumps(state)), "the CI or the PIN was stored"
 
 
 def pending_card_resumes_guide(page):
@@ -545,6 +547,33 @@ def consent_once(p, base, out, errors):
         if on:
             telemetry_history_folds(page)
         ctx.close()
+
+
+def wake_now(p, base, out, errors):
+    """Opening asks the shell for a wake-up; "Despertar ahora" runs the update job, which notifies a new
+    beta once and asks for its next slot. The clock is fixed at 10:00, out of the night hours."""
+    ctx = p.chromium.launch().new_context(viewport={"width": 390, "height": 844})
+    page = ctx.new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.clock.set_fixed_time("2026-10-06T10:00:00")
+    fake_github(page, FAKE_RELEASES)
+    page.goto(base + "/index.html#/home")
+    page.wait_for_function("globalThis.ajeDev && ajeDev.bridge.calls.some((c) => c.method === 'wakeAt')")
+    # Never ran: due at once.
+    assert page.evaluate("ajeDev.bridge.calls.find((c) => c.method === 'wakeAt').args.at === Date.now()")
+    # As Ajustes switches the channel: the last check was the other channel's.
+    page.evaluate("ajeDev.store.update({ channel: 'beta' }).then(() => ajeDev.store.setUpdate({ checkedAt: null, available: null }))")
+    for n in (1, 2):
+        page.click("#mock-panel summary")
+        page.click("#mock-wake")
+        page.wait_for_function(f"ajeDev.bridge.calls.filter((c) => c.method === 'done').length === {n}")
+    notices = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'notify').map((c) => c.args.id)")
+    assert notices == ["update:9.9.0-beta.1"], notices
+    assert page.evaluate("ajeDev.bridge.calls.findLast((c) => c.method === 'wakeAt').args.at === new Date(2026, 9, 6, 13).getTime()")
+    page.click("#mock-panel summary")
+    expect(page.locator("#mock-wake-info")).to_contain_text("aviso: Ajé 9.9.0-beta.1 disponible")
+    page.screenshot(path=out / "wake_now.png")
+    ctx.close()
 
 
 def open_line_transfer(page, sub=3):
@@ -861,9 +890,10 @@ def main():
         scan_reads_card(p, base, out, errors)
         scan_reads_bill(p, base, out, errors)
         consent_once(p, base, out, errors)
+        wake_now(p, base, out, errors)
     assert width <= 390, f"page is {width}px wide on a 390px phone"
     assert not errors, errors
-    print(f"{len(STEPS) + 3} steps passed, 0 errors, {width}px wide")
+    print(f"{len(STEPS) + 4} steps passed, 0 errors, {width}px wide")
 
 
 if __name__ == "__main__":
