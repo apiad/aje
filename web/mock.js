@@ -55,6 +55,8 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     if (code.startsWith("*444*40*")) {
       if (mode === "refuse-login") return "Clave incorrecta";
       session = true;
+      // Seen on a phone: a login while the session is open gets this reply and no SMS.
+      if (mode === "already-auth") return "Usted ya se encuentra autenticado en el sistema.";
       later(() => emit(BANK, SAMPLES.AUTH));
       return "Usted esta siendo autenticado";
     }

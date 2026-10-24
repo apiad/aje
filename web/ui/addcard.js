@@ -194,6 +194,11 @@ export function renderAddCard(ctx, r) {
           s.busy = false;
           return recentLogin() ? go(after) : go("login", { reply: res.reply });
         }
+        // A reply that the session is already open recorded the login before any SMS.
+        if (recentLogin()) {
+          s.busy = false;
+          return go(after);
+        }
         // The bank's "se ha autenticado" SMS records the login; the link step follows it.
         unsubscribe?.();
         unsubscribe = store.subscribe(() => { if (recentLogin()) { unsubscribe(); s.busy = false; go(after); } });

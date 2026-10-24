@@ -162,6 +162,29 @@ def refused_login(page):
     expect(page.locator("#pin-retry")).to_be_visible()
 
 
+def already_authenticated_login(page):
+    """The bank answers the login by USSD that the session is already open, and sends no SMS."""
+    page.goto(page.url.split("#")[0].split("?")[0] + "?mock=already-auth#/home")
+    expect(page.locator("#add-card")).to_be_visible()
+    # Earlier steps left a recent login, which would skip the login step.
+    page.evaluate("ajeDev.store.setBank('METROPOLITANO', { authenticatedAt: null })")
+    page.click("#add-card")
+    type_number(page)
+    page.fill("#add-pan", "9227 9599 0000 0004")
+    page.fill("#add-alias", "Metro tres")
+    page.click("#add-next")
+    expect(page.locator("#add-registered, #add-pin").first).to_be_visible()
+    if page.locator("#add-registered").count():
+        page.click("#add-registered")
+    page.fill("#add-pin", "1234")
+    page.click("#add-pin-submit")
+    expect(page.locator("#add-coord")).to_be_visible(timeout=10_000)
+    page.fill("#add-coord", "12")
+    page.click("#add-link")
+    expect(page.locator("#add-done")).to_contain_text("Metro tres", timeout=10_000)
+    page.goto(page.url.split("#")[0].split("?")[0] + "#/home")
+
+
 def type_number(page):
     """Skips the camera; without one, the scanner already went to the review screen."""
     try:
@@ -686,7 +709,7 @@ def inbox_from_sms(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, import_not_a_backup, update_beta, refused_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 
 
 def main():
