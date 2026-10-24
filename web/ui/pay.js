@@ -100,6 +100,8 @@ async function billSheet(ctx, bill, { debt = false } = {}) {
     } else {
       const a = attempt();
       const [waiting, text] = view(a);
+      // A check or payment that ended well shows on its row in Servicios: the sheet goes.
+      if (a && (a.state === "verified" || (!debt && bill.kind !== "nauta" && a.state === "replied"))) queueMicrotask(() => sheet.closeSoon());
       parts.push(h("div", { class: `reply${waiting ? " pending" : ""}`, id: "bill-result", "data-state": a?.state ?? "sent" },
         h("div", { class: "k status" }, mark(waiting), text), a?.reply ? h("div", { class: "m" }, a.reply) : null),
       a?.transactionId ? h("div", { class: "kv" }, h("span", {}, "Transacción"), h("b", {}, a.transactionId)) : null);
