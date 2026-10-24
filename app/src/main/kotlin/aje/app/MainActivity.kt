@@ -114,19 +114,8 @@ class MainActivity : FragmentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val assets = WebViewAssetLoader.Builder()
-            .setDomain(DOMAIN)
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
-            .build()
         webView = WebView(this)
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = false
-            allowContentAccess = false
-            // Telemetry reports the maker, not the model; the page reads it from here.
-            userAgentString = "$userAgentString AjeMaker/${Build.MANUFACTURER.lowercase().replace(" ", "")}"
-        }
+        val assets = prepare(webView)
         webView.webViewClient = object : WebViewClientCompat() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 assets.shouldInterceptRequest(request.url)
@@ -171,7 +160,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
-        bridge = NativeBridge(this)
+        bridge = NativeBridge(this, this)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(webView, "ajeNative", setOf(ORIGIN), bridge)
         }
@@ -198,11 +187,11 @@ class MainActivity : FragmentActivity() {
         openRoute(intent)
     }
 
-    /** Hands the page the notice a tapped notification names; only an inbox route is taken. */
+    /** Hands the page the route a tapped notification names: an inbox notice, or a screen a job's notice names. */
     private fun openRoute(intent: Intent?) {
         val route = intent?.getStringExtra(ROUTE) ?: return
         intent.removeExtra(ROUTE)
-        if (INBOX_ROUTE.matches(route)) bridge.open(route)
+        if (ROUTES.matches(route)) bridge.open(route)
     }
 
     override fun onResume() {
@@ -225,7 +214,27 @@ class MainActivity : FragmentActivity() {
         const val DOMAIN = "appassets.androidplatform.net"
         const val ORIGIN = "https://$DOMAIN"
         const val ROUTE = "route"
-        private val INBOX_ROUTE = Regex("""^inbox/\d+:[0-9a-f]+$""")
+        val ROUTES = Regex("""^(inbox/\d+:[0-9a-f]+|home|settings)$""")
+
+        /**
+         * The settings both pages share, this one and AjeWorker's with no window, and the loader that
+         * serves the bundled frontend at [ORIGIN].
+         */
+        @SuppressLint("SetJavaScriptEnabled")
+        fun prepare(webView: WebView): WebViewAssetLoader {
+            webView.settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                allowFileAccess = false
+                allowContentAccess = false
+                // Telemetry reports the maker, not the model; the page reads it from here.
+                userAgentString = "$userAgentString AjeMaker/${Build.MANUFACTURER.lowercase().replace(" ", "")}"
+            }
+            return WebViewAssetLoader.Builder()
+                .setDomain(DOMAIN)
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(webView.context))
+                .build()
+        }
 
         /** Whether the page is in front; the SMS receiver then leaves the notice to the page. */
         @Volatile

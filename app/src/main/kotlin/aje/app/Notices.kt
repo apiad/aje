@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.ContactsContract
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import org.json.JSONObject
 
 /**
  * Android notifications for money or balance that came in while the page was not in front. The text
@@ -47,6 +48,43 @@ object Notices {
             .build()
         try {
             NotificationManagerCompat.from(context).notify(tag, notification)
+        } catch (_: SecurityException) {
+            // The permission was taken back between the check and the post.
+        }
+    }
+
+    /** The channels a background job (web/core/jobs.js) may post on: id to the name Android's settings show. */
+    private val JOB_CHANNELS = mapOf("updates" to "Actualizaciones")
+
+    /** A notification a background job asked for, `{id, channel, title, text, route}`; a tap opens Ajé on `route`. */
+    fun job(context: Context, n: JSONObject) {
+        val id = n.getString("id")
+        val channel = n.getString("channel")
+        val name = requireNotNull(JOB_CHANNELS[channel]) { "unknown channel" }
+        val route = n.getString("route")
+        require(MainActivity.ROUTES.matches(route)) { "unknown route" }
+        if (Build.VERSION.SDK_INT >= 33 && !granted(context, Manifest.permission.POST_NOTIFICATIONS)) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (manager.getNotificationChannel(channel) == null) {
+            manager.createNotificationChannel(NotificationChannel(channel, name, NotificationManager.IMPORTANCE_DEFAULT))
+        }
+        val open = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.ROUTE, route)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // A job's id names what it notifies (an update's version), so the same id replaces its notification.
+        val tag = "job:$id".hashCode()
+        val tap = PendingIntent.getActivity(context, tag, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val text = n.getString("text")
+        val notification = NotificationCompat.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_aje)
+            .setContentTitle(n.getString("title"))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify("job", tag, notification)
         } catch (_: SecurityException) {
             // The permission was taken back between the check and the post.
         }
