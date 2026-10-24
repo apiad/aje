@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBankSms, parseLineSms, parsePlanSms, formatMoney, transferMatches, senderTag, BANKISH } from "../core/sms.js";
+import { parseDebtSms, parseBankSms, parseLineSms, parsePlanSms, formatMoney, transferMatches, senderTag, BANKISH } from "../core/sms.js";
 import { SMS, PLAN_BOUGHT } from "./helpers.js";
 
 test("balance report", () => {
@@ -120,4 +120,11 @@ test("a Nauta recharge and a Nauta Hogar payment", () => {
     { kind: "nauta", bank: "METROPOLITANO", user: "ana.perez", hogar: false, amount: { cents: 10000, currency: "CUP" }, transactionId: "AB123CD4567" });
   const hogar = parseBankSms("Banco Metropolitano:  La cuenta Nauta Hogar: ana@nauta.com.cu ha sido pagada con 300.00 CUP. Monto Pagado: 300 CUP. \n Id Transaccion: AB123CD4569. \n Saldo Restante: DB 1000.00 CUP.");
   assert.deepEqual([hogar.kind, hogar.user, hogar.hogar, hogar.amount.cents, hogar.transactionId], ["nauta", "ana", true, 30000, "AB123CD4569"]);
+});
+
+test("parseDebtSms reads the service query's answer", () => {
+  assert.deepEqual(parseDebtSms("Consulta de servicio completada. \r\n La Factura: 01234567890 no tiene deudas "), { kind: "debt", number: "01234567890", cents: 0 });
+  assert.deepEqual(parseDebtSms("Consulta de servicio completada. \r\n La Factura: 1234567890123 tiene una deuda de 85.40 CUP"), { kind: "debt", number: "1234567890123", cents: 8540 });
+  assert.deepEqual(parseDebtSms("Consulta de servicio completada. \r\n La Factura: 1234567890123 debe algo"), { kind: "debt", number: "1234567890123", cents: null });
+  assert.equal(parseDebtSms("Banco Metropolitano:  La consulta de saldo fue completada."), null);
 });

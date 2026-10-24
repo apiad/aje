@@ -84,7 +84,12 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     if (bill?.[1] === "59") later(() => emit(BANK, SAMPLES.NAUTA));
     if (bill) return "Su solicitud esta siendo procesada, espere un sms con los datos de la transaccion.";
     // The debt query's reply has not been captured yet: a guess at its shape.
-    if (code.startsWith("*444*47*")) return session ? "La factura tiene una deuda de 85.40 CUP" : "No es posible realizar la operacion. Debe autenticarse.";
+    // The debt comes by SMS. Only the no-debt form was seen; this one with an amount is a guess.
+    if (code.startsWith("*444*47*") && !session) return "No es posible realizar la operacion. Debe autenticarse.";
+    if (code.startsWith("*444*47*")) {
+      later(() => emit(BANK, "Consulta de servicio completada. \r\n La Factura: 00000000000 tiene una deuda de 85.40 CUP"));
+      return "Su solicitud esta siendo procesada, espere un sms con los datos del servicio y el numero de la transaccion.";
+    }
     if (code.startsWith("*444*48*")) return "Ultimas operaciones:\n 22/10 Pago 150,00 CUP\n 21/10 Recarga 500,00 CUP";
     if (code.startsWith("*444*49*")) return "Su solicitud de registro esta siendo procesada, espere un SMS";
     if (code.startsWith("*444*60*")) return session ? "Su cuenta ha sido asociada satisfactoriamente" : "Debe autenticarse primero";

@@ -7,7 +7,7 @@ import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
 import { fnv1a, noticeOf } from "./notice.js";
-import { BANKISH, formatMoney, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
+import { BANKISH, formatMoney, parseBankSms, parseDebtSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
@@ -398,6 +398,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       await sessionOpened(lastLogin.bank, receivedAt, { sender: tag, bank: lastLogin.bank, text: body });
       return { kind: "auth", bank: lastLogin.bank };
     }
+    const debt = tag !== "number" && parseDebtSms(body);
+    if (debt) {
+      if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return debt;
+      const latency = await store.verifyDebt(debt, receivedAt);
+      telemetry.event("sms", { kind: "debt", sender: tag, ok: latency !== null, latency_ms: latency, text: body });
+      return debt;
+    }
     const sms = parseBankSms(body);
     if (!sms) {
       const notice = noticeOf(sender, body);
@@ -480,6 +487,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (line) return line.kind === "line-sent" && (await store.verifyLineTransfer(line, at)) ? "verified" : "known";
     const plan = parsePlanSms(body);
     if (plan) return (await store.verifyPlan({ ...plan, subId }, at)) ? "verified" : "known";
+    const debt = parseDebtSms(body);
+    if (debt) return (await store.verifyDebt(debt, at)) !== null ? "verified" : "known";
     const sms = parseBankSms(body);
     if (!sms) return noticeOf(sender, body) || ALREADY_AUTH.test(body) ? "known" : "unknown";
     // A refusal closes its query as failed: settled, but not verified.

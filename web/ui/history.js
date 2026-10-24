@@ -2,6 +2,7 @@
 // The code shown is the display form, with any key masked; the dialed form is never kept.
 import { KINDS, titleOf } from "../core/bills.js";
 import { last4 } from "../core/money.js";
+import { debtText } from "./pay.js";
 import { formatMoney } from "../core/sms.js";
 import { CHARGE_MS } from "../core/store.js";
 import { h, icon, when } from "./dom.js";
@@ -88,6 +89,7 @@ function detail(ctx, a) {
       kv("Desde", a.billId ? card(ctx, a)?.alias : null),
       kv("Tarjeta", a.cardId && INCOMING.has(a.op) ? ctx.store.state.cards.find((c) => c.id === a.cardId)?.alias : null),
       kv("Transacción", a.transactionId),
+      kv("Deuda", a.debt && a.state === "verified" ? debtText(a.debtCents) : null),
       kv("Saldo contable", a.accounting),
       kv("Saldo disponible", a.available)),
     a.reply ? h("div", { class: "reply" }, h("div", { class: "k" }, h("span", { class: "dot" }), a.op.startsWith("234") || a.op === "133" ? "Respuesta de Cubacel" : "Respuesta del banco"), h("div", { class: "m" }, a.reply)) : null,

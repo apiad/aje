@@ -144,6 +144,22 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       return at - pending.startedAt;
     },
 
+    /**
+     * Answers the pending debt query of the bill this SMS names, or the only one pending when no saved
+     * bill has that number. Keeps the debt in `debtCents` (0 for none, null when the SMS gave no
+     * figure). Returns the latency, or null.
+     */
+    async verifyDebt(sms, at = now()) {
+      const digits = (n) => String(n).replace(/^0+/, "");
+      const numberOf = (a) => state.bills.find((b) => b.id === a.billId)?.number;
+      const named = (a) => numberOf(a) !== undefined && digits(numberOf(a)) === digits(sms.number);
+      const pending = pendingWhere(at, (a) => a.op === "47" && named(a)) ??
+        (state.bills.some((b) => digits(b.number) === digits(sms.number)) ? null : pendingWhere(at, (a) => a.op === "47"));
+      if (!pending) return null;
+      await store.patch(pending.id, (a) => ({ ...a, state: "verified", debtCents: sms.cents, verifiedAt: at }));
+      return at - pending.startedAt;
+    },
+
     /** Verifies the pending balance transfer to this number for this amount. Returns the latency, or null. */
     async verifyLineTransfer(sms, at = now()) {
       const pending = pendingWhere(at, (a) => a.op === "234" && a.to === sms.number && a.amount * 100 === sms.amount.cents);

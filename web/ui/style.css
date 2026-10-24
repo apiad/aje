@@ -20,8 +20,8 @@
 *{box-sizing:border-box}html,body{margin:0;height:100%}
 .topbar{display:flex;align-items:center;gap:10px;padding:8px 2px 6px}
 .topbar .t{font-size:16px;font-weight:600;flex:1}
-.topbar .mini{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:var(--surface);cursor:pointer}
-.topbar .mini svg{width:14px;height:14px;color:var(--gold)}
+.topbar .mini,.settle .mini{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:var(--surface);cursor:pointer}
+.topbar .mini svg,.settle .mini svg{width:14px;height:14px;color:var(--gold)}
 .sbar{display:flex;align-items:center;gap:10px;padding:8px 2px 12px}
 .sbar .back{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--bone);display:grid;place-items:center;cursor:pointer;font-size:16px}
 .sbar h2{font-size:16px;font-weight:600;margin:0}
