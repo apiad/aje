@@ -259,6 +259,21 @@ def pending_card_resumes_ask(page):
     expect(page.locator("#add-registered")).to_be_visible()
 
 
+def pending_card_already_in_use(page):
+    """A pending card the person already uses in Transfermóvil is ready without login or coordinate."""
+    expect(page.locator("#add-card")).to_be_visible()
+    card_id = page.evaluate("""async () => (await ajeDev.store.addCard(
+        { alias: "Metro dos", pan: "9227959900000031", bank: "METROPOLITANO", currency: "CUP" })).id""")
+    page.reload()
+    page.wait_for_function("globalThis.ajeDev")
+    page.click(f'[data-go-acct="card:{card_id}"]')
+    page.locator(f'#deck .acct[data-id="card:{card_id}"] [data-action="resume"]').click()
+    page.click("#add-trusted")
+    expect(page.locator("#deck")).to_be_visible()
+    card = page.evaluate(f"ajeDev.store.state.cards.find((c) => c.id === '{card_id}')")
+    assert card["state"] == "linked" and card["unverified"] is True, card
+
+
 def write_backup(path):
     subprocess.run(["node", str(WEB / "test" / "write-trm.mjs"), str(path)], check=True)
     return path
@@ -671,7 +686,7 @@ def inbox_from_sms(page):
 
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, import_backup, import_not_a_backup, update_beta, refused_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, import_not_a_backup, update_beta, refused_login, scanner_without_reader]
 
 
 def main():
