@@ -399,7 +399,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (line) return handleLineSms(line, { sender, tag, body, sentAt, receivedAt });
     const plan = parsePlanSms(body);
     // A person's number can write the same text; only Cubacel's sender confirms a purchase.
-    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
+    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId, body }, { tag, body, sentAt, receivedAt });
     // A login while the session is still open: the bank answers that it already is, naming no bank.
     if (tag !== "number" && ALREADY_AUTH.test(body) && lastLogin && receivedAt - lastLogin.at < WINDOW_MS) {
       if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
@@ -443,7 +443,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         break;
       }
       case "transfer": {
-        const latency = await store.verifyTransfer(sms, receivedAt);
+        const latency = await store.verifyTransfer({ ...sms, body }, receivedAt);
         telemetry.event("sms", { kind: "transfer", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
@@ -451,8 +451,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         await sessionOpened(sms.bank, receivedAt, base);
         break;
       case "nauta": {
-        const latency = await store.verifyNauta(sms, receivedAt);
+        const latency = await store.verifyNauta({ ...sms, body }, receivedAt);
         telemetry.event("sms", { kind: "nauta", ...base, ok: latency !== null, latency_ms: latency });
+        break;
+      }
+      case "bill": {
+        const latency = await store.verifyBill({ ...sms, body }, receivedAt);
+        telemetry.event("sms", { kind: "bill", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
     }
@@ -495,9 +500,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   /** "verified" when the SMS confirmed an operation, "known" when the parser knows it, else "unknown". */
   async function settleOne({ sender, body, receivedAt: at, subId }) {
     const line = parseLineSms(body);
-    if (line) return line.kind === "line-sent" && (await store.verifyLineTransfer(line, at)) ? "verified" : "known";
+    if (line) return line.kind === "line-sent" && (await store.verifyLineTransfer({ ...line, body }, at)) ? "verified" : "known";
     const plan = parsePlanSms(body);
-    if (plan) return (await store.verifyPlan({ ...plan, subId }, at)) ? "verified" : "known";
+    if (plan) return (await store.verifyPlan({ ...plan, subId, body }, at)) ? "verified" : "known";
     const debt = parseDebtSms(body);
     if (debt) return (await store.verifyDebt(debt, at)) !== null ? "verified" : "known";
     const sms = parseBankSms(body);
@@ -509,8 +514,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     }
     const verify = {
       balance: () => store.verifyBalance(sms, at, { add: false }),
-      transfer: () => store.verifyTransfer(sms, at),
-      nauta: () => store.verifyNauta(sms, at),
+      transfer: () => store.verifyTransfer({ ...sms, body }, at),
+      nauta: () => store.verifyNauta({ ...sms, body }, at),
+      bill: () => store.verifyBill({ ...sms, body }, at),
     }[sms.kind];
     return verify && (await verify()) !== null ? "verified" : "known";
   }
@@ -571,7 +577,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
     if (await store.seen(id)) return sms;
     if (sms.kind === "line-sent") {
-      const verified = await store.verifyLineTransfer(sms, receivedAt);
+      const verified = await store.verifyLineTransfer({ ...sms, body }, receivedAt);
       telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
       if (verified) await refreshBalance(verified.subId);
     } else {

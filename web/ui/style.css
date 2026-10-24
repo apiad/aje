@@ -330,3 +330,42 @@ progress.dl::-webkit-progress-value{background:linear-gradient(90deg,var(--gold)
   .acct.glint:after,.ripple,.btn.gold:after,.paybtn:after,.reply.pending:after,.reply.settled,.reply.settled:after,.reply.settled .k .dot:before,.reply.settled .k .dot:after,.sheet,.scrim,progress.dl::-webkit-progress-value{animation:none!important}
   .btn:active,.paybtn:active,.checkbtn:active,.qa button:active,.chips button:active,.acct .acts button:active,.addchip:active,.sbtn:active,.back:active,.nav a:active .qrbtn,.qa button:active svg{transform:none}
 }
+/* The receipt of a verified operation (web/core/receipt.js) in the history detail, and "Mostrar". */
+.receipt{margin-bottom:14px}
+.receipt .rc{background:var(--card-grad);border:1px solid var(--line);border-radius:20px;padding:16px 16px 10px}
+.receipt .from{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}
+.receipt .from .vtag{margin-left:auto;padding:2px 9px;font-size:10.5px}
+.receipt .what{font-size:13px;color:var(--muted);margin-top:12px}
+.receipt .amt{font-size:32px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.receipt .amt small{font-size:15px;color:var(--gold);margin-left:6px}
+.receipt .kvs{margin-top:10px;border-top:1px dashed var(--line);padding-top:4px}
+.receipt .kv{display:flex;justify-content:space-between;gap:14px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--line-soft)}
+.receipt .kv:last-child{border-bottom:0}
+.receipt .kv span{color:var(--muted)}
+.receipt .kv b{font:600 13px var(--mono);text-align:right;overflow-wrap:anywhere}
+.receipt .kv.hid b{color:var(--faint);letter-spacing:2px}
+.receipt .disc{display:flex;align-items:center;gap:10px;width:100%;margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;color:var(--bone);font:inherit;text-align:left;cursor:pointer}
+.receipt .disc .t{flex:1;display:flex;flex-direction:column}
+.receipt .disc .t b{font-size:13.5px}
+.receipt .disc .t span{font-size:11.5px;color:var(--muted)}
+.receipt .sw{width:42px;height:24px;border-radius:999px;background:var(--line);position:relative;flex:none;transition:background .2s}
+.receipt .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--bone);transition:transform .2s}
+.receipt .disc.on .sw{background:var(--river)}
+.receipt .disc.on .sw::after{transform:translateX(18px)}
+.receipt .racts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.receipt .racts button{background:var(--surface);border:1px solid var(--line);color:var(--bone);border-radius:14px;padding:10px 4px 8px;font:600 12.5px var(--sans);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:44px}
+.receipt .racts button svg{width:20px;height:20px;color:var(--gold)}
+.receipt .racts button.main{background:var(--gold);color:var(--on-gold);border-color:var(--gold)}
+.receipt .racts button.main svg{color:var(--on-gold)}
+.receipt .codefold{margin-top:10px}
+.receipt .rsms{font:12.5px/1.55 var(--mono);white-space:pre-wrap;padding:0 14px 13px;overflow-wrap:anywhere}
+.rshow{position:fixed;inset:0;z-index:80;background:var(--stage);color:var(--bone);display:flex;flex-direction:column;padding:24px 22px;overflow-y:auto}
+.rshow .close{align-self:flex-end;background:none;border:1px solid var(--line);color:var(--bone);border-radius:999px;padding:7px 14px;font:13px var(--sans);cursor:pointer;min-height:40px}
+.rshow .ok{margin-top:30px;display:flex;align-items:center;gap:10px;color:var(--river);font:600 15px var(--sans)}
+.rshow .ok i{width:30px;height:30px;border-radius:50%;background:var(--river);color:var(--river-bg);display:grid;place-items:center;font-style:normal;font-size:17px}
+.rshow .bank{color:var(--muted);font-size:13px;margin-top:6px}
+.rshow .amt{font-size:52px;font-weight:700;line-height:1;margin-top:28px;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.rshow .amt small{font-size:22px;color:var(--gold);margin-left:6px}
+.rshow .big{margin-top:24px;display:grid;gap:14px}
+.rshow .big span{display:block;font-size:12px;color:var(--muted)}
+.rshow .big b{font:600 22px var(--mono);overflow-wrap:anywhere}

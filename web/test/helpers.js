@@ -86,3 +86,15 @@ export function fakeBridge(replies = [], { dialFails = false, secrets = true, un
     },
   };
 }
+
+// An electricity bill paid from a card, with the layout seen on a phone. The bank takes less than the
+// invoice when a discount applies. Not in SMS: it carries the owner's name, which redaction hides.
+export const BILL_ELECTRICITY = "Banco Metropolitano:  El pago de la factura de electricidad fue completado. \n" +
+    " Nro. Factura Pagada: 1234567890123 \n" +
+    " Propietario: ANA PEREZ GARCIA \n" +
+    " Importe Pagado: 80.10 CUP \n" +
+    " Importe Factura: 85.40 CUP \n" +
+    " Consumo mensual: 120 KW \n" +
+    " Nro. Transaccion: MM000A000X001  \n" +
+    " Saldo disponible: CR 1120.50 CUP \n" +
+    " Periodo Pagado Mes/Año: 10/2026.";

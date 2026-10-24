@@ -3,6 +3,7 @@ package aje.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -38,7 +39,7 @@ private val USSD = Regex("""^\*[0-9*#]+#$""")
  * Nothing here logs a code or a secret: a login code and a saved secret carry the bank key.
  *
  * The page AjeWorker loads with no window has a bridge without [activity]: what needs the person in
- * front (a permission, the fingerprint, a picker, the dialer, the installer) fails with "NoWindow".
+ * front (a permission, the fingerprint, a picker, the dialer, the installer, the share sheet) fails with "NoWindow".
  */
 class NativeBridge(private val context: Context, private val activity: MainActivity?) : WebViewCompat.WebMessageListener {
     private class NoWindow : Exception()
@@ -109,6 +110,11 @@ class NativeBridge(private val context: Context, private val activity: MainActiv
                         post(replyProxy, JSONObject().put("id", id).put("progress", JSONObject().put("received", received).put("total", total)))
                     },
                 ) { reply(replyProxy, id, it) }
+                "share" -> {
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, args.getString("text"))
+                    window().startActivity(Intent.createChooser(send, null))
+                    reply(replyProxy, id, JSONObject.NULL)
+                }
                 "wakeAt" -> {
                     Wake.at(context, if (args.isNull("at")) null else args.getLong("at"))
                     reply(replyProxy, id, JSONObject.NULL)
