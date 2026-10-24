@@ -926,3 +926,64 @@ test("debtQuery asks the bank by API and keeps its reply on the attempt", async 
   assert.match(w.bridge.calls[0].args.code, /^\*444\*47\*61/);
   assert.deepEqual([r.attempt.op, r.attempt.debt, r.attempt.state, r.attempt.reply], ["47", true, "replied", "La deuda de la factura es 85.40 CUP"]);
 });
+
+const NAUTA_SMS = "Banco Metropolitano:  La cuenta :ana.perez@nauta.com.cu ha sido recargada con 100.00 CUP. Id Transaccion: AB123CD4568. Saldo Restante: DB 1000.00 CUP.";
+const DEBT_SMS = "Su factura del mes tiene un importe de 85.40 CUP. Id 0001";
+const inboxed = (w, body, at, sender = "PAGOxMOVIL") => w.bridge.inbox.push({ sender, body, sentAt: at - 1000, receivedAt: at });
+
+test("settle reads 72 hours of the inbox and verifies a recharge whose SMS Ajé missed, once", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  const { attempt } = await w.wf.payBill(bill.id);
+  inboxed(w, NAUTA_SMS, w.clock.t + 30_000);
+  w.clock.t += 5 * 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.deepEqual(w.bridge.calls.at(-1), { method: "readSms", args: { since: w.clock.t - 72 * 60 * MIN } });
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.transactionId], ["verified", "AB123CD4568"]);
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+});
+
+test("settle adds no row for an old SMS and never matches an operation started after it", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  inboxed(w, SMS.BALANCE, w.clock.t - MIN);
+  inboxed(w, NAUTA_SMS, w.clock.t - MIN);
+  const bill = await w.store.saveBill({ kind: "nauta", alias: "Mía", number: "ana.perez", nautaType: 2, amount: 100, cardId: w.card.id });
+  const { attempt } = await w.wf.payBill(bill.id);
+  const rows = w.store.state.attempts.length;
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 0 });
+  assert.equal(w.store.state.attempts.length, rows);
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "replied");
+});
+
+test("settle reports an unknown service SMS to telemetry once, and never a person's", async () => {
+  const w = await world();
+  inboxed(w, DEBT_SMS, w.clock.t - MIN);
+  inboxed(w, "Hola, te paso el saldo luego", w.clock.t - MIN, "+5351234567");
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 1 });
+  assert.deepEqual(await w.wf.settle(), { read: 2, verified: 0, reported: 0 });
+  await w.telemetry.idle();
+  const events = w.posted.map((b) => JSON.parse(b)).filter((e) => e.event === "sms");
+  assert.deepEqual(events.map((e) => [e.kind, e.via, e.sender]), [["unparsed_bank", "inbox", "PAGOxMOVIL"]]);
+  assert.ok(!JSON.stringify(w.posted).includes("85.40"));
+});
+
+test("an unknown SMS from a service sender is reported live, and settle does not report it again", async () => {
+  const w = await world();
+  const at = w.clock.t;
+  await w.wf.handleSms({ sender: "PAGOxMOVIL", body: DEBT_SMS, sentAt: at - 1000, receivedAt: at });
+  inboxed(w, DEBT_SMS, at);
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 0, reported: 0 });
+  await w.telemetry.idle();
+  const events = w.posted.map((b) => JSON.parse(b)).filter((e) => e.kind === "unparsed_bank");
+  assert.equal(events.length, 1);
+});
+
+test("settle without telemetry marks nothing, so turning it on later still reports", async () => {
+  const w = await world();
+  await w.store.update({ telemetry: false });
+  inboxed(w, DEBT_SMS, w.clock.t - MIN);
+  assert.equal((await w.wf.settle()).reported, 0);
+  await w.store.update({ telemetry: true });
+  assert.equal((await w.wf.settle()).reported, 1);
+});

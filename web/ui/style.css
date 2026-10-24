@@ -257,3 +257,6 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 .paybtn{border:0;border-radius:999px;background:var(--gold);color:var(--on-gold);font:600 13px var(--sans);padding:9px 16px;min-height:38px;cursor:pointer}
 .paybtn:disabled{opacity:.45;cursor:default}
 #pay .group{margin-top:18px}
+#settle-note:empty{display:none}
+#history #settle-note{padding:0 4px 10px}
+.settle{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:14px}

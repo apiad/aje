@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <!-- Read the bank's confirmation SMS as it arrives. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Settle the history with service SMS of the last 72 hours, when the person asks. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
     <!-- Notify money or balance that came in while Ajé was closed. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The contact's name in those notices: one lookup of the SMS's number, the contacts are never copied. -->

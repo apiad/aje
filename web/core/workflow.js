@@ -19,6 +19,8 @@ const REGISTERED = /proces|satisfactori|registrad/i;
 const LINKED = /asociad|vinculad|satisfactori/i;
 const REFUSED = /error|incorrect|no se pudo|denegad/i;
 const ALREADY_AUTH = /ya se encuentra autenticad/i;
+/** How far back settle reads the SMS inbox; the shell never reads further. */
+export const SETTLE_MS = 72 * 60 * 60 * 1000;
 
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
@@ -400,8 +402,10 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     if (!sms) {
       const notice = noticeOf(sender, body);
       if (notice) return handleNotice(notice, { body, sentAt, receivedAt });
-      if (BANKISH.test(body)) {
-        telemetry.event("sms", { kind: "unparsed_bank", sender: tag, length: body.length, lines: body.split("\n").length, text: body });
+      // Any service sender's text the parser does not know is reported, once: settle skips it later.
+      if (tag !== "number" || BANKISH.test(body)) {
+        if (tag !== "number" && (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`))) return null;
+        reportUnparsed(tag, body);
       }
       return null;
     }
@@ -438,6 +442,57 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       }
     }
     return sms;
+  }
+
+  function reportUnparsed(tag, body, via = null) {
+    telemetry.event("sms", { kind: "unparsed_bank", sender: tag, via, length: body.length, lines: body.split("\n").length, text: body });
+  }
+
+  /**
+   * Settles the history with the service SMS of the last 72 hours (issue #28). An SMS Ajé already
+   * handled is skipped. Any other one confirms the unverified operation it matches, as if it had
+   * arrived live, but adds no row, opens no session and gives no notice. One the parser does not
+   * know goes to telemetry, redacted, while it is on. Both are remembered, so a second run skips
+   * them. Returns how many SMS it read, verified and reported.
+   */
+  async function settle() {
+    const list = await bridge.readSms(now() - SETTLE_MS);
+    const result = { read: list.length, verified: 0, reported: 0 };
+    for (const { sender, body, sentAt = null, receivedAt, subId = null } of list) {
+      const tag = senderTag(sender);
+      const key = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+      if (tag === "number" || store.state.seenSms.includes(key)) continue;
+      const known = await settleOne({ sender, body, receivedAt, subId });
+      if (known === "verified") result.verified++;
+      if (known === "unknown") {
+        if (!settings().telemetry) continue;
+        reportUnparsed(tag, body, "inbox");
+        result.reported++;
+      }
+      await store.seen(key);
+    }
+    return result;
+  }
+
+  /** "verified" when the SMS confirmed an operation, "known" when the parser knows it, else "unknown". */
+  async function settleOne({ sender, body, receivedAt: at, subId }) {
+    const line = parseLineSms(body);
+    if (line) return line.kind === "line-sent" && (await store.verifyLineTransfer(line, at)) ? "verified" : "known";
+    const plan = parsePlanSms(body);
+    if (plan) return (await store.verifyPlan({ ...plan, subId }, at)) ? "verified" : "known";
+    const sms = parseBankSms(body);
+    if (!sms) return noticeOf(sender, body) || ALREADY_AUTH.test(body) ? "known" : "unknown";
+    // A refusal closes its query as failed: settled, but not verified.
+    if (sms.kind === "balance-failed") {
+      await store.failBalance(sms, at);
+      return "known";
+    }
+    const verify = {
+      balance: () => store.verifyBalance(sms, at, { add: false }),
+      transfer: () => store.verifyTransfer(sms, at),
+      nauta: () => store.verifyNauta(sms, at),
+    }[sms.kind];
+    return verify && (await verify()) !== null ? "verified" : "known";
   }
 
   /** A bank's session is open: note it, and rerun the balance query that asked for the login. */
@@ -510,5 +565,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
 }

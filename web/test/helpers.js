@@ -41,7 +41,7 @@ export const POSTPAID_REPLY =
  * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
  * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
  */
-export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true } = {}) {
+export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true, inbox = [] } = {}) {
   const calls = [];
   const queue = [...replies];
   const vault = new Map();
@@ -68,7 +68,13 @@ export function fakeBridge(replies = [], { dialFails = false, secrets = true, un
   } : {};
   return {
     calls,
+    inbox,
     ...secretStore,
+    // The phone's SMS inbox: `inbox` holds {sender, body, sentAt, receivedAt}, as the shell reads it.
+    async readSms(since) {
+      calls.push({ method: "readSms", args: { since } });
+      return inbox.filter((m) => m.receivedAt >= since);
+    },
     async sendUssd(subId, code) {
       calls.push({ method: "sendUssd", args: { subId, code } });
       const next = queue.shift() ?? { ok: true, reply: "" };

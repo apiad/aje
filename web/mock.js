@@ -1,4 +1,4 @@
-// The six native primitives, fake, for designing in a browser. Not shipped in the APK.
+// The native primitives, fake, for designing in a browser. Not shipped in the APK.
 // The texts follow the layout of real bank and ETECSA texts; every number in them is made up.
 import { BUNDLED } from "./core/plancatalog.js";
 import { findPlan } from "./core/plans.js";
@@ -44,9 +44,13 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
   let lastTransfer = { to: "55555555", amount: 25 };
   let balance = 185; // the prepaid line's CUP, lowered by a plan purchase
 
+  // The phone's inbox, which readSms reads back: a text Ajé never saw, then every SMS emitted.
+  const missedAt = Date.now() - 2 * 60 * 60 * 1000;
+  const inbox = [{ sender: BANK, body: "Su factura del mes tiene un importe de 85.40 CUP.", sentAt: missedAt, receivedAt: missedAt }];
   const emit = (sender, body) => {
     const at = Date.now();
     const sms = { sender, body, sentAt: at, receivedAt: at };
+    inbox.push(sms);
     if (handler) handler(sms);
     else buffered.push(sms);
   };
@@ -158,6 +162,11 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     async contactNames(numbers, ask) {
       calls.push({ method: "contactNames", args: { numbers, ask } });
       return Object.fromEntries(numbers.filter((n) => CONTACTS[n]).map((n) => [n, CONTACTS[n]]));
+    },
+    async readSms(since) {
+      calls.push({ method: "readSms", args: { since } });
+      await wait();
+      return inbox.filter((m) => m.receivedAt >= Math.max(since, Date.now() - 72 * 60 * 60 * 1000) && (/\p{L}/u.test(m.sender) || m.sender.length <= 6));
     },
     // The browser has no notifications to tap.
     onOpen() {},

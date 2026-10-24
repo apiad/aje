@@ -9,7 +9,8 @@ const PLAN_MS = 30 * 60 * 1000;
 /** How long a charge's QR waits for the payment that closes it. */
 export const CHARGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY = 50;
-const SEEN = 50;
+// Every service SMS of the 72 hours settle reads back, with room to spare.
+const SEEN = 500;
 const INBOX = 200;
 /** The history row each incoming kind leaves; an expiring plan leaves none. */
 const RECEIVED_OPS = { "line-received": "234-in", "card-received": "in-card", "recharge-intl": "in-recharge", recharge: "in-recharge", "plan-gift": "in-plan" };
@@ -59,7 +60,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   }
 
   function pendingWhere(at, test) {
-    return state.attempts.find((a) => a.state !== "verified" && at - a.startedAt < WINDOW_MS && test(a));
+    // An SMS read back from the inbox can be older than an operation; it never confirms a later one.
+    return state.attempts.find((a) => a.state !== "verified" && at >= a.startedAt && at - a.startedAt < WINDOW_MS && test(a));
   }
 
   const store = {
@@ -93,13 +95,17 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Verifies the latest pending balance query. Returns the latency, or null if none matched. */
-    async verifyBalance(sms, at = now()) {
+    /**
+     * Verifies the latest pending balance query. Returns the latency, or null if none matched; then a
+     * balance from Transfermóvil gets its own row, unless `add` is false.
+     */
+    async verifyBalance(sms, at = now(), { add = true } = {}) {
       const accounting = formatMoney(sms.accounting);
       const available = formatMoney(sms.available);
       const bankOf = (cardId) => state.cards.find((c) => c.id === cardId)?.bank;
       const pending = pendingWhere(at, (a) => a.op === "46" && bankOf(a.cardId) === sms.bank);
       if (!pending) {
+        if (!add) return null;
         await store.add({ startedAt: at, state: "verified", op: "46", accounting, available, verifiedAt: at });
         return null;
       }
@@ -288,7 +294,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Records a delivery key; true if it was already seen. Keeps the last fifty. */
+    /** Records a delivery key; true if it was already seen. Keeps the last 500. */
     async seen(key) {
       if (state.seenSms.includes(key)) return true;
       state.seenSms = [...state.seenSms, key].slice(-SEEN);
