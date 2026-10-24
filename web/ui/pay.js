@@ -3,6 +3,7 @@
 import { checkNumber, digitsOf, KINDS, NAUTA_TYPES, titleOf, WATER_REGIONS } from "../core/bills.js";
 import { BANKS, last4, parseAmount } from "../core/money.js";
 import { billNumberFromText } from "../core/ocr.js";
+import { formatMoney } from "../core/sms.js";
 import { h, icon } from "./dom.js";
 import { openScanner, paperFrame } from "./scanner.js";
 import { mark, openSheet } from "./sheets.js";
@@ -33,6 +34,9 @@ const inFlight = new Set();
  * Pays a bill and follows it: the bank's reply, then its SMS for Nauta. When the bank wants a session,
  * the sheet asks for the key (or unlocks the saved one), waits for the session, and pays again.
  */
+/** What a debt query's SMS said: none, an amount, or a debt it gave no figure for. */
+export const debtText = (cents) => (cents === 0 ? "No tiene deuda." : cents ? `Debe ${formatMoney({ cents, currency: "CUP" })}.` : "El banco respondió; mira su SMS.");
+
 async function billSheet(ctx, bill, { debt = false } = {}) {
   const card = ctx.store.state.cards.find((c) => c.id === bill.cardId);
   const session = ctx.workflow.sessionOf(card.bank);
@@ -46,7 +50,8 @@ async function billSheet(ctx, bill, { debt = false } = {}) {
 
   function view(a) {
     if (!a || a.state === "sent") return [true, debt ? "Consultando la deuda…" : "Pagando…"];
-    if (debt && a.state === "replied") return [false, "Respuesta del banco"];
+    if (debt && a.state === "verified") return [false, debtText(a.debtCents)];
+    if (debt && a.state === "replied") return [true, "Respuesta del banco; esperando su SMS con la deuda…"];
     if (a.state === "verified") return [false, "Pagado. Verificado por el SMS del banco."];
     if (a.state === "dialer") return [false, "Termina en el marcador: responde al menú del banco. Su SMS lo verificará."];
     if (a.state === "failed") return [false, `El teléfono no lo envió (código ${a.failureCode}).`];

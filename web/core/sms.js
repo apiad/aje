@@ -40,6 +40,21 @@ export function parseBankSms(body) {
 const LINE = new RegExp(String.raw`(transferido|recibido)\s+([0-9][0-9.,]*)\s*CUP\s+(?:al|del)\s+(?:n[uú]mero\s+)?(?:\+?53)?([56]\d{7})`, "i");
 
 /** Reads a Cubacel balance transfer SMS; anything else returns null. */
+/**
+ * The SMS that answers a debt query (op 47): `{kind: "debt", number, cents}`, where cents is 0 for
+ * "no tiene deudas", the first amount after the bill's number otherwise, or null when it names none.
+ * It names no bank. Only the no-debt form has been seen; the amount form is a guess.
+ */
+export function parseDebtSms(body) {
+  const text = body.replaceAll("\u00a0", " ");
+  if (!/Consulta de servicio completada/i.test(text)) return null;
+  const m = /Factura\s*:?\s*([0-9A-Za-z]+)([\s\S]*)/i.exec(text);
+  if (!m) return null;
+  if (/no tiene deuda/i.test(m[2])) return { kind: "debt", number: m[1], cents: 0 };
+  const amount = /(\d+(?:[.,]\d{1,2})?)\s*(?:CUP|pesos)?/i.exec(m[2]);
+  return { kind: "debt", number: m[1], cents: amount ? centsOf(amount[1]) : null };
+}
+
 export function parseLineSms(body) {
   const m = LINE.exec(body.replaceAll("\u00a0", " "));
   if (!m) return null;

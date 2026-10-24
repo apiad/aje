@@ -148,6 +148,11 @@ def settle_history(page):
     rows = page.locator("#history .row").count()
     page.click("#settle")
     expect(page.locator("#settle-note")).to_contain_text("Revisé", timeout=10_000)
+    # The settle pill in a row's detail keeps the top bar's icon size.
+    page.locator('#history .row:not([data-state="verified"])').first.click()
+    width = page.locator("#detail #settle svg").bounding_box()["width"]
+    assert width <= 16, f"settle icon is {width}px wide"
+    page.goto(page.url.split("#")[0] + "#/history")
     assert page.locator("#history .row").count() == rows, "settle added history rows"
     since = page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'readSms').at(-1).args.since")
     age = page.evaluate("Date.now()") - since
@@ -226,10 +231,10 @@ def pay_bills(page):
     assert sent[-1].startswith("*444*41*"), sent[-1:]
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'dial').length") == dials, "paid without the dialer"
     page.keyboard.press("Escape")
-    # The debt query answers in the sheet with the bank's words.
+    # The debt query waits for the bank's SMS and shows the debt it names.
     page.locator("#bills [data-debt]").click()
     expect(page.locator("#sheet h3")).to_have_text("Deuda · Luz · Casa")
-    expect(page.locator("#bill-result")).to_contain_text("deuda de 85.40 CUP", timeout=10_000)
+    expect(page.locator("#bill-result")).to_contain_text("Debe 85.40 CUP.", timeout=10_000)
     assert page.evaluate("ajeDev.bridge.calls.filter((c) => c.method === 'sendUssd').at(-1).args.code").startswith("*444*47*")
     page.keyboard.press("Escape")
     # Nauta from the backup's offer: the user comes filled in, the amount is asked.

@@ -987,3 +987,49 @@ test("settle without telemetry marks nothing, so turning it on later still repor
   await w.store.update({ telemetry: true });
   assert.equal((await w.wf.settle()).reported, 1);
 });
+
+const NO_DEBT_SMS = "Consulta de servicio completada. \r\n La Factura: 01234567890 no tiene deudas ";
+
+test("the bank's service SMS answers the debt query: no debt", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada, espere un sms con los datos" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms(NO_DEBT_SMS);
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.debtCents], ["verified", 0]);
+  await w.telemetry.idle();
+  assert.ok(!JSON.stringify(w.posted).includes("unparsed_bank"));
+});
+
+test("a debt SMS with an amount keeps it, and one for another saved bill verifies nothing", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  await w.store.saveBill({ kind: "electricity", alias: "Mamá", number: "9999999999999", cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms("Consulta de servicio completada. \r\n La Factura: 9999999999999 tiene una deuda de 85.40 CUP");
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "replied");
+  await w.sms("Consulta de servicio completada. \r\n La Factura: 1234567890123 tiene una deuda de 85.40 CUP");
+  const a = w.store.state.attempts.find((x) => x.id === attempt.id);
+  assert.deepEqual([a.state, a.debtCents], ["verified", 8540]);
+});
+
+test("settle verifies a debt query whose SMS Ajé missed", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "01234567890", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  inboxed(w, NO_DEBT_SMS, w.clock.t + 20_000);
+  w.clock.t += 60 * MIN;
+  assert.deepEqual(await w.wf.settle(), { read: 1, verified: 1, reported: 0 });
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).debtCents, 0);
+});
+
+test("a debt SMS naming no saved bill answers the only pending debt query", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const bill = await w.store.saveBill({ kind: "water", alias: "Casa", number: "555", region: 1, cardId: w.card.id });
+  const { attempt } = await w.wf.debtQuery(bill.id);
+  w.clock.t += 20_000;
+  await w.sms(NO_DEBT_SMS);
+  assert.equal(w.store.state.attempts.find((x) => x.id === attempt.id).state, "verified");
+});
