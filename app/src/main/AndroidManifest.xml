@@ -4,13 +4,24 @@
     <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
     <!-- Dial one-shot USSD codes on the chosen SIM. -->
+    <!-- The card scanner reads the number from the camera, in the WebView. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- List the SIMs so the person can pick the one registered with the bank. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- The SIM's own number for Cobrar, when the SIM carries it. -->
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <!-- Read the bank's confirmation SMS as it arrives. -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Notify money or balance that came in while Ajé was closed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The contact's name in those notices: one lookup of the SMS's number, the contacts are never copied. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Dev build only: opt-in telemetry. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Updates: Android's installer, for APKs from the project's GitHub releases. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="Ajé"
@@ -21,6 +32,7 @@
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|fontScale|density|locale"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -36,5 +48,12 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/updates_paths" />
+        </provider>
     </application>
 </manifest>

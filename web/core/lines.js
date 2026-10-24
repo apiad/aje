@@ -1,0 +1,33 @@
+// The codes a Cubacel line answers to, and the rule for a Cubacel mobile number.
+import { field, plain } from "./ussd.js";
+
+/** What the network charges per balance transfer, and the balance it requires, in CUP. */
+export const TRANSFER_FEE = 5;
+export const MIN_BALANCE = 5.25;
+
+/** A Cubacel mobile as 8 digits starting with 5 or 6, from a typed or contact number; null otherwise. */
+export function normalizeNumber(raw) {
+  if (!/^[\s\d+()-]*$/.test(raw)) return null;
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 12 && d.startsWith("0053")) d = d.slice(4);
+  else if (d.length === 10 && d.startsWith("53")) d = d.slice(2);
+  // The old domestic form, 05 and 7 digits, is today's number without its leading 0.
+  else if (d.length === 9 && d.startsWith("0")) d = d.slice(1);
+  return /^[56]\d{7}$/.test(d) ? d : null;
+}
+
+/** The line's own number as Android reports it for the SIM `subId`, when it is a Cubacel mobile; null otherwise. */
+export const simNumber = (sims, subId) => normalizeNumber(sims.find((s) => s.subId === subId)?.number ?? "");
+
+/** The transfer key: 4 digits. */
+export const validKey = (k) => /^\d{4}$/.test(k);
+
+/** `*234*1*número*clave*monto#`: passes `amount` whole CUP of this line's balance to `to`. */
+export const transferBalance = (to, key, amount) =>
+  plain([field("234"), field("1"), field(to), field(key, true), field(String(amount))]);
+
+/** `*234*2*clave*nueva#`: changes the transfer key. */
+export const changeKey = (old, next) => plain([field("234"), field("2"), field(old, true), field(next, true)]);
+
+/** `*133*1*2#`: the plan menu at `path`, a list of option keys; `*133#` for the root. */
+export const planPath = (path) => plain([field("133"), ...path.map((k) => field(k))]);

@@ -11,9 +11,25 @@ export const SMS = {
     " Monto: 100.00 CUP \n" +
     " Nro. Transaccion: AB0000XYZ0001 \n" +
     " Saldo restante: CR 1134.56 CUP ",
+  // A balance query the bank refused, as Banco Metropolitano words it for a card this line cannot operate.
+  BALANCE_FAILED: "Banco Metropolitano Fallo la consulta de saldo. Banco Metropolitano: No tiene cuenta con la moneda o la cuenta no puede ser operada para Banca Movil.",
   AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, " +
     "puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
+  // The answer to a login while the session is still open. It names no bank.
+  ALREADY_AUTH: "Usted ya se encuentra autenticado en el sistema.",
+  // MiTransfer's login SMS, from PAGOxMOVIL; telemetry brought it with the wallet's name hidden, and
+  // its length (160) fits "Mi Transfer".
+  MITRANSFER_AUTH: "Usted se ha autenticado en la plataforma de pagos moviles, en el Monedero Mi Transfer. " +
+    "Puede comenzar a utilizar nuestros servicios de pagos a traves del movil.",
+  // Cubacel balance transfers, from sender ETECSA. LINE_SENT follows a text seen on a phone;
+  // LINE_RECEIVED is still a guess.
+  LINE_SENT: "Usted ha transferido 25 CUP al numero 55555555. Saldo principal 1234.56 CUP, linea activa hasta 2027-01-01, vence 2027-02-01",
+  LINE_RECEIVED: "Usted ha recibido 25.00 CUP del numero 56666666. Su saldo es 300.00 CUP.",
 };
+
+// Cubacel's SMS after a plan purchase. Telemetry brought it redacted: its layout and figures are real,
+// the words it hid are guesses, so it is not one of the templates the vocabulary must cover.
+export const PLAN_BOUGHT = "ETECSA Plan Nacional: Se ha comprado Plan 4GB+35min+40SMS valido por 30 dias, se activa con el primer uso. Se debitaron 240.00 CUP. Saldo actual 1234.56 CUP";
 
 export const PREPAID_REPLY =
   "Saldo: 250.50 CUP. Datos: 3.20 GB. Voz: 01:20:00. SMS: 100. Linea activa hasta 01-01-26 vence 02-02-26.";

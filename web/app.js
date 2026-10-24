@@ -4,12 +4,21 @@ import { idbBackend } from "./core/idb.js";
 import { openStore } from "./core/store.js";
 import { openTelemetry } from "./core/telemetry.js";
 import { createWorkflow } from "./core/workflow.js";
+import { renderAddCard } from "./ui/addcard.js";
+import { renderImport } from "./ui/import.js";
+import { askTelemetry } from "./ui/consent.js";
 import { renderHome } from "./ui/deck.js";
 import { renderHistory } from "./ui/history.js";
+import { renderInbox } from "./ui/inbox.js";
 import { h, icon, mount } from "./ui/dom.js";
 import { renderSettings } from "./ui/settings.js";
-import { balanceSheet, closeSheet, mobileBalanceSheet } from "./ui/sheets.js";
+import { balanceSheet, closeSheet, mobileBalanceSheet, movementsSheet } from "./ui/sheets.js";
 import { renderTransfer } from "./ui/transfer.js";
+import { renderLineTransfer } from "./ui/line.js";
+import { renderPlans } from "./ui/plans.js";
+import { renderLineCharge } from "./ui/charge.js";
+import { renderQrScan } from "./ui/qrscan.js";
+import { autoCheck } from "./ui/updates.js";
 
 const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
@@ -22,14 +31,21 @@ const SCREENS = {
   home: { render: renderHome, live: true },
   settings: { render: renderSettings, live: true },
   transfer: { render: renderTransfer },
+  "line-transfer": { render: renderLineTransfer },
+  plans: { render: renderPlans },
+  "line-charge": { render: renderLineCharge },
+  add: { render: renderAddCard },
+  import: { render: renderImport },
   history: { render: renderHistory, live: true },
+  inbox: { render: renderInbox, live: true },
   pay: { render: soon("Pagar un servicio") },
-  qr: { render: soon("Pagar y cobrar por QR") },
+  qr: { render: renderQrScan },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const DEPTH = (r) => (r.name === "transfer" || (r.name === "history" && r.param) ? 1 : 0);
-const tabOf = (r) => (r.name === "transfer" ? "home" : r.name);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox"]);
+const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
+const tabOf = (r) => (FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
 const EASE = "cubic-bezier(.2,0,0,1)";
 
@@ -48,7 +64,7 @@ async function loadConfig() {
   } catch {
     // Served without a build: the browser during development.
   }
-  return { app: "dev", telemetryUrl: "", telemetryToken: "" };
+  return { app: "dev", commit: "", telemetryUrl: "", telemetryToken: "" };
 }
 
 function route() {
@@ -69,9 +85,11 @@ async function boot() {
   });
   const workflow = createWorkflow({ bridge, store, telemetry });
 
-  const crash = (error) => telemetry.event("crash", { stack: String(error?.stack ?? error).slice(0, 4000) });
+  const crash = (error) => telemetry.event("crash", { error: String(error?.message ?? error).slice(0, 500), stack: String(error?.stack ?? "") });
   window.addEventListener("error", (e) => crash(e.error ?? e.message));
   window.addEventListener("unhandledrejection", (e) => crash(e.reason));
+  // A tapped notification names its notice; registered before onSms, whose ready makes the shell push it.
+  bridge.onOpen((r) => { location.hash = `#/${r}`; });
   bridge.onSms((sms) => workflow.handleSms(sms).catch(crash));
 
   const view = h("main", { id: "view" });
@@ -82,12 +100,18 @@ async function boot() {
   mount(root, h("div", { style: "display:contents" }, view, nav));
 
   const inFlight = new Set();
+  // The smoke test seeds cards through the store; only under the mock, never in the APK.
+  if (bridge.kind === "mock") globalThis.ajeDev = { store, bridge };
   const ctx = {
     config, bridge, store, telemetry, workflow, sims,
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
-      if (action === "transfer") return ctx.go(`transfer?from=${account.currency}`);
-      const run = { balance: balanceSheet, "mobile-balance": mobileBalanceSheet }[action];
+      if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
+      if (action === "line-transfer") return ctx.go(`line-transfer?sub=${account.subId}`);
+      if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);
+      if (action === "line-charge") return ctx.go(`line-charge?sub=${account.subId}`);
+      if (action === "resume") return ctx.go(`add/${account.cardId}`);
+      const run = { balance: balanceSheet, movements: movementsSheet, "mobile-balance": mobileBalanceSheet }[action];
       // A second tap while the USSD is in flight would send it again.
       const key = `${action}:${account.id}`;
       if (!run || inFlight.has(key)) return;
@@ -121,6 +145,10 @@ async function boot() {
 
   telemetry.event("app_start");
   shown = draw();
+  autoCheck(ctx);
+  // Android keeps the WebView alive in the background, so a return to the app checks again too.
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && autoCheck(ctx));
+  askTelemetry(ctx);
 }
 
 boot().catch((e) => {

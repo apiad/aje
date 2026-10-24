@@ -33,3 +33,42 @@ test("the mock keeps a secret until it is forgotten", async () => {
   await m.secretForget("pin:BM");
   assert.equal(await m.secretLoad("pin:BM"), null);
 });
+
+test("op 49 starts a registration and op 60 links a card once logged in", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.match((await m.sendUssd(3, "*444*49*0100*1260416#")).reply, /registro/i);
+  assert.match((await m.sendUssd(3, "*444*60*0100*1260416#")).reply, /autenticarse/i);
+  await m.sendUssd(3, "*444*40*0100*1260416#");
+  assert.match((await m.sendUssd(3, "*444*60*0100*1260416#")).reply, /asociada/i);
+});
+
+test("the mock pretends to install an update", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.deepEqual(await m.installUpdate("https://example.test/aje.apk", "ab".repeat(32)), { ok: true });
+});
+
+test("the mock contact picker answers a sample contact, or what the test sets", async () => {
+  const m = createMock({ delayMs: 0 });
+  assert.deepEqual(await m.pickContact(), { name: "Ben", number: "+53 5100 0001" });
+  m.setNextContact(null);
+  assert.equal(await m.pickContact(), null);
+  m.setNextContact({ name: "Oficina", number: "7 800 0000" });
+  assert.deepEqual(await m.pickContact(), { name: "Oficina", number: "7 800 0000" });
+  assert.deepEqual(await m.pickContact(), { name: "Ben", number: "+53 5100 0001" });
+});
+
+test("the mock update download reports progress up to the total", async () => {
+  const m = createMock({ delayMs: 0 });
+  const seen = [];
+  assert.deepEqual(await m.installUpdate("https://x/a.apk", "ab", (r, t) => seen.push([r, t])), { ok: true });
+  assert.ok(seen.length >= 2);
+  assert.deepEqual(seen.at(-1), [seen.at(-1)[1], seen.at(-1)[1]]);
+});
+
+test("a plan's shortcut in the mock's dialer takes the price off the balance", async () => {
+  const m = createMock({ delayMs: 0 });
+  await m.dial("*133*1*2#");
+  assert.match((await m.sendUssd(3, "*222#")).reply, /Saldo: 160\.00 CUP/);
+  await m.dial("*133*9*9#");
+  assert.match((await m.sendUssd(3, "*222#")).reply, /Saldo: 160\.00 CUP/);
+});

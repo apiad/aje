@@ -9,8 +9,8 @@ export function closeSheet() {
   close?.();
 }
 
-/** Opens a sheet whose body `build()` redraws on every store change until it is closed. */
-export function openSheet(ctx, build) {
+/** Opens a sheet whose body `build()` redraws on every store change until it is closed; `onClose` runs then. */
+export function openSheet(ctx, build, onClose = null) {
   close?.();
   const body = h("div", { class: "sheet-body" });
   const sheet = h("div", { class: "sheet", id: "sheet", role: "dialog", "aria-modal": "true" }, h("div", { class: "grab" }), body);
@@ -25,6 +25,7 @@ export function openSheet(ctx, build) {
     sheet.remove();
     scrim.remove();
     close = null;
+    onClose?.();
   };
   document.getElementById("app").append(scrim, sheet);
   draw();
@@ -62,7 +63,7 @@ function attemptView(a) {
 }
 
 /**
- * Balance query for a card's currency. When the bank asks for a login, the sheet shows the key
+ * Balance query for a card. When the bank asks for a login, the sheet shows the key
  * form; after the login it follows the balance query the bank's auth SMS reruns.
  */
 export async function balanceSheet(ctx, account) {
@@ -74,8 +75,12 @@ export async function balanceSheet(ctx, account) {
   let usedSaved = false;
   let remember = true;
   let closing = null;
+  // A Clásica logs in to MiTransfer, not to a bank of its own.
+  const session = ctx.workflow.sessionOf(account.bank);
+  const mitransfer = session === "MITRANSFER";
+  const asks = mitransfer ? "MiTransfer pide abrir sesión. Escribe tu clave de MiTransfer." : "El banco pide abrir sesión. Escribe la clave de tu tarjeta.";
   // Until this sheet's query is stored, an older verified balance is not its answer.
-  const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.currency === account.currency && a.id >= shownId));
+  const latest = () => (shownId === null ? null : ctx.store.state.attempts.find((a) => a.op === "46" && a.cardId === account.cardId && a.id >= shownId));
 
   // Both login paths end here: the USSD went out, or the phone could not send it.
   function afterLogin(r) {
@@ -108,7 +113,7 @@ export async function balanceSheet(ctx, account) {
         loginError = null;
         usedSaved = false;
         sheet.redraw();
-        afterLogin(await ctx.workflow.login(key, { retryCurrency: account.currency, remember: saved.available && remember }));
+        afterLogin(await ctx.workflow.login(session, key, { retryCardId: account.cardId, remember: saved.available && remember }));
       };
       const keep = saved.available ? h("label", { class: "remember" },
         h("button", { id: "pin-remember", class: `toggle${remember ? " on" : ""}`, "aria-pressed": remember ? "true" : "false", onclick: () => {
@@ -118,9 +123,7 @@ export async function balanceSheet(ctx, account) {
         } }),
         h("span", {}, h("b", {}, "Recordarla en este teléfono"), "180 días; cada uso pide tu huella o el bloqueo del teléfono.")) : null;
       parts.push(
-        h("p", { class: "lead" }, saved.available
-          ? "El banco pide abrir sesión. Escribe la clave de tu tarjeta."
-          : "El banco pide abrir sesión. Escribe la clave de tu tarjeta; Ajé no la guarda."),
+        h("p", { class: "lead" }, `${asks} ${saved.available ? "" : "Ajé no la guarda."}`.trim()),
         h("div", { class: "field" }, pin), err, keep,
         h("button", { id: "pin-submit", class: "btn gold", onclick: submit }, "Autenticarse"),
       );
@@ -128,12 +131,12 @@ export async function balanceSheet(ctx, account) {
     } else if (phase === "waiting" && (!a || a.id === shownId)) {
       // The bank's own words: a wrong key or a blocked card says so here, and no SMS will follow.
       parts.push(h("div", { class: "reply pending" },
-        h("div", { class: "k status" }, mark(true), "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
+        h("div", { class: "k status" }, mark(true), mitransfer ? "Abriendo sesión en MiTransfer…" : "Esperando el SMS del banco; luego Ajé repetirá la consulta."),
         loginReply ? h("div", { class: "m", id: "login-reply" }, `Respuesta del banco: ${loginReply}`) : null));
       if (loginReply) {
         parts.push(h("button", { id: "pin-retry", class: "btn ghost", onclick: () => {
           // The bank turned down the saved key: it is wrong now, so it goes.
-          if (usedSaved) ctx.workflow.forgetPin();
+          if (usedSaved) ctx.workflow.forgetPin(session);
           usedSaved = false;
           phase = "login";
           loginReply = null;
@@ -149,14 +152,14 @@ export async function balanceSheet(ctx, account) {
     return parts;
   });
 
-  const { attempt, needsLogin } = await ctx.workflow.balance(account.currency);
+  const { attempt, needsLogin } = await ctx.workflow.balance(account.cardId);
   shownId = attempt.id;
   if (!needsLogin) return sheet.redraw();
-  saved = await ctx.workflow.savedPin();
+  saved = await ctx.workflow.savedPin(session);
   if (saved.saved) {
     phase = "unlocking";
     sheet.redraw();
-    const r = await ctx.workflow.loginWithSaved({ retryCurrency: account.currency });
+    const r = await ctx.workflow.loginWithSaved(session, { retryCardId: account.cardId });
     if (r) {
       usedSaved = true;
       phase = "waiting";
@@ -175,6 +178,20 @@ export function transferSheet(ctx, attempt, title) {
     ...attemptView(ctx.store.state.attempts.find((a) => a.id === attempt.id)),
     h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar"),
   ]);
+}
+
+/** A Clásica's last operations: a waiting sheet that shows the service's reply as it comes. */
+export async function movementsSheet(ctx, account) {
+  let r = null;
+  const sheet = openSheet(ctx, () => [
+    h("h3", {}, `Últimas operaciones · ${account.label}`),
+    h("div", { class: `reply${r ? "" : " pending"}` }, h("div", { class: "k status" }, mark(!r),
+      !r ? "Consultando…" : r.ok ? "Respuesta del banco" : `El teléfono no la envió (código ${r.failureCode}).`),
+      r?.reply ? h("div", { class: "m" }, r.reply) : null),
+    h("button", { class: "btn ghost", onclick: () => close?.() }, "Cerrar"),
+  ]);
+  r = await ctx.workflow.movements(account.cardId);
+  sheet.redraw();
 }
 
 /** The line balance: a waiting sheet that closes once the figure is on the card, or keeps ETECSA's words. */

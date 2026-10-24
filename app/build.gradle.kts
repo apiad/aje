@@ -19,7 +19,8 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = "0.1.0-dev.$versionCode"
+        // A release passes its version (make release); any other build is a dev build.
+        versionName = (project.findProperty("versionName") as String?) ?: "0.1.0-dev.$versionCode"
     }
 
     signingConfigs {
@@ -68,6 +69,10 @@ abstract class WebAssets : DefaultTask() {
 val webAssets = tasks.register<WebAssets>("webAssets") {
     source.set(rootProject.layout.projectDirectory.dir("web"))
     config.put("app", android.defaultConfig.versionName!!)
+    config.put("versionCode", android.defaultConfig.versionCode!!.toString())
+    config.put("commit", providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }.standardOutput.asText.get().trim())
+    // The public, opt-in collector: every build carries it, off until the person turns it on. The
+    // token ships in the APK and only keeps noise out.
     config.put("telemetryUrl", keystoreProps.getProperty("telemetryUrl", ""))
     config.put("telemetryToken", keystoreProps.getProperty("telemetryToken", ""))
 }
@@ -81,4 +86,7 @@ dependencies {
     implementation("androidx.webkit:webkit:1.17.1")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment:1.8.5")
+    // SmsNoticeTest runs on the JVM, where Android's org.json is a stub.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

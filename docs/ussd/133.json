@@ -1,0 +1,445 @@
+{
+  "root": "*133#",
+  "captured": "2026-10-23",
+  "android": "14",
+  "maker": "Xiaomi",
+  "screens": [
+    {
+      "path": [],
+      "code": "*133#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Datos\n2 SMS\n3 Voz\n4 Plan Amigos\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Datos"
+        },
+        {
+          "key": "2",
+          "label": "SMS"
+        },
+        {
+          "key": "3",
+          "label": "Voz"
+        },
+        {
+          "key": "4",
+          "label": "Plan Amigos"
+        }
+      ]
+    },
+    {
+      "path": [
+        "1"
+      ],
+      "code": "*133*1#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Tarifa por Consumo\n2 Plan toDus\n3 Plan Diario\n4 Planes\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Tarifa por Consumo"
+        },
+        {
+          "key": "2",
+          "label": "Plan toDus"
+        },
+        {
+          "key": "3",
+          "label": "Plan Diario"
+        },
+        {
+          "key": "4",
+          "label": "Planes"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "2"
+      ],
+      "code": "*133*2#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 - 20 SMS x 15.00\n2 - 50 SMS x 30.00\n3 - 90 SMS x 50.00\n4 - 120 SMS x 60.00\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "20 SMS x 15.00"
+        },
+        {
+          "key": "2",
+          "label": "50 SMS x 30.00"
+        },
+        {
+          "key": "3",
+          "label": "90 SMS x 50.00"
+        },
+        {
+          "key": "4",
+          "label": "120 SMS x 60.00"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "3"
+      ],
+      "code": "*133*3#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 -  5 MIN x 37.50\n2 - 10 MIN x 72.50\n3 - 15 MIN x 105.00\n4 - 25 MIN x 162.50\n5 - 40 MIN x 250.00\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "5 MIN x 37.50"
+        },
+        {
+          "key": "2",
+          "label": "10 MIN x 72.50"
+        },
+        {
+          "key": "3",
+          "label": "15 MIN x 105.00"
+        },
+        {
+          "key": "4",
+          "label": "25 MIN x 162.50"
+        },
+        {
+          "key": "5",
+          "label": "40 MIN x 250.00"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "4"
+      ],
+      "code": "*133*4#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Activar/Desactivar Plan\n2 Adicionar/Eliminar numeros\n3 Consultar Plan\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Activar/Desactivar Plan"
+        },
+        {
+          "key": "2",
+          "label": "Adicionar/Eliminar numeros"
+        },
+        {
+          "key": "3",
+          "label": "Consultar Plan"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "1",
+        "1"
+      ],
+      "code": "*133*1*1#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Habilitar\n2 Deshabilitar\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Habilitar"
+        },
+        {
+          "key": "2",
+          "label": "Deshabilitar"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "1",
+        "2"
+      ],
+      "code": "*133*1*2#",
+      "kind": "confirm",
+      "text": "¿Desea comprar un Plan toDus x 25.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "1",
+        "3"
+      ],
+      "code": "*133*1*3#",
+      "kind": "confirm",
+      "text": "¿Desea comprar un Plan Diario de 200 MB  x 25.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "1",
+        "4"
+      ],
+      "code": "*133*1*4#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 - 4.5GB x 240.00\n2 - 2GB +15min +20SMS x 120.00\n3 - 4GB +35min +40SMS x 240.00\n4 - 6GB +60min +70SMS x 360.00\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "4.5GB x 240.00"
+        },
+        {
+          "key": "2",
+          "label": "2GB +15min +20SMS x 120.00"
+        },
+        {
+          "key": "3",
+          "label": "4GB +35min +40SMS x 240.00"
+        },
+        {
+          "key": "4",
+          "label": "6GB +60min +70SMS x 360.00"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "2",
+        "1"
+      ],
+      "code": "*133*2*1#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 20 SMS x 15.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "2",
+        "2"
+      ],
+      "code": "*133*2*2#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 50 SMS x 30.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "2",
+        "3"
+      ],
+      "code": "*133*2*3#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 90 SMS x 50.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "2",
+        "4"
+      ],
+      "code": "*133*2*4#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 120 SMS x 60.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "3",
+        "1"
+      ],
+      "code": "*133*3*1#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 5 MIN x 37.50? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "3",
+        "2"
+      ],
+      "code": "*133*3*2#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 10 MIN x 72.50? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "3",
+        "3"
+      ],
+      "code": "*133*3*3#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 15 MIN x 105.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "3",
+        "4"
+      ],
+      "code": "*133*3*4#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 25 MIN x 162.50? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "3",
+        "5"
+      ],
+      "code": "*133*3*5#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 40 MIN x 250.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "4",
+        "1"
+      ],
+      "code": "*133*4*1#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Activar x 25\n2 Desactivar\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Activar x 25"
+        },
+        {
+          "key": "2",
+          "label": "Desactivar"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "4",
+        "2"
+      ],
+      "code": "*133*4*2#",
+      "kind": "menu",
+      "text": "Seleccione la opcion deseada\n1 Adicionar numero\n2 Eliminar numero\n0 Menu\n",
+      "options": [
+        {
+          "key": "1",
+          "label": "Adicionar numero"
+        },
+        {
+          "key": "2",
+          "label": "Eliminar numero"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "4",
+        "3"
+      ],
+      "code": "*133*4*3#",
+      "kind": "menu",
+      "text": "Menu de Consulta de Servicios Moviles\n1.Plan Amigos\n0 Menu",
+      "options": [
+        {
+          "key": "1",
+          "label": "Plan Amigos"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    },
+    {
+      "path": [
+        "1",
+        "4",
+        "1"
+      ],
+      "code": "*133*1*4*1#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el plan de 4.5GB x 240.00? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "1",
+        "4",
+        "2"
+      ],
+      "code": "*133*1*4*2#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el Plan de 2GB +15min + 20 SMS + bono.cu x 120.00 CUP? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "1",
+        "4",
+        "3"
+      ],
+      "code": "*133*1*4*3#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el Plan de 4GB + 35min + 40 SMS + bono.cu x 240.00 CUP? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "1",
+        "4",
+        "4"
+      ],
+      "code": "*133*1*4*4#",
+      "kind": "confirm",
+      "text": "¿Desea comprar el Plan de 6GB + 60min + 70 SMS + bono.cu x 360.00 CUP? Marque 1 para confirmar.",
+      "options": []
+    },
+    {
+      "path": [
+        "4",
+        "3",
+        "1"
+      ],
+      "code": "*133*4*3*1#",
+      "kind": "menu",
+      "text": "Menu de Consulta de Servicios Moviles\n1.Plan Amigos\n0 Menu",
+      "options": [
+        {
+          "key": "1",
+          "label": "Plan Amigos"
+        },
+        {
+          "key": "0",
+          "label": "Menu"
+        }
+      ]
+    }
+  ]
+}

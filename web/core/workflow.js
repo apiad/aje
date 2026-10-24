@@ -1,21 +1,38 @@
 // The bank operations the app runs, and what each bank SMS does to them.
 import { randomSeed } from "./encoder.js";
-import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails } from "./money.js";
-import { balance as balanceCode, login as loginCode, needsLogin, transfer as transferCode } from "./ops.js";
-import { BANKISH, parseBankSms, senderTag } from "./sms.js";
+import { MOBILE_PLANS, parseMobileBalance, parseMobileDetails, BANKS, last4 } from "./money.js";
+import { associateClasica as associateClasicaCode, balance as balanceCode, clasicaBalance, clasicaMovements, clasicaTransfer, link as linkCode, login as loginCode, needsLogin, register as registerCode, registerMiTransfer as registerMiTransferCode, transfer as transferCode } from "./ops.js";
+import { chargeUri } from "./qr.js";
+import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
+import { planCode } from "./plans.js";
+import { fnv1a, noticeOf } from "./notice.js";
+import { BANKISH, formatMoney, parseBankSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
 /** How long a remembered bank PIN lasts before the app asks for it again. */
 export const PIN_DAYS = 180;
 
+/** A bank reply that confirms op 49 or op 60. Only guesses until real replies are captured. */
+const REGISTERED = /proces|satisfactori|registrad/i;
+const LINKED = /asociad|vinculad|satisfactori/i;
+const REFUSED = /error|incorrect|no se pudo|denegad/i;
+const ALREADY_AUTH = /ya se encuentra autenticad/i;
+
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
-  const card = (currency) => ({ bank: settings().bank, currency, pan: null });
+  const cardOf = (id) => {
+    const c = store.state.cards.find((x) => x.id === id);
+    if (!c) throw new RangeError(`no card ${id}`);
+    return c;
+  };
+  /** The bank whose login a card's operations need: its own, or MiTransfer for a Clásica. */
+  const sessionOf = (bank) => BANKS[bank]?.session ?? bank;
+  const authenticatedAt = (bank) => store.state.banks[bank]?.authenticatedAt ?? null;
   const current = (id) => store.state.attempts.find((a) => a.id === id);
 
   /** Sends a USSD on the chosen SIM and reports the reply; the result is the bridge's. */
-  async function send(op, subId, code) {
+  async function send(op, subId, code, redact = []) {
     const start = now();
     let r;
     try {
@@ -25,20 +42,23 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       r = { ok: false, failureCode: -100, error: e.message };
     }
     if (r.ok) {
-      telemetry.event("ussd_reply", { op, ok: true, length: r.reply.length, latency_ms: now() - start, text: r.reply });
+      // A reply to op 49 may echo the person's name: the names never reach telemetry.
+      const text = redact.filter(Boolean).reduce((s, v) => s.replaceAll(v, "…"), r.reply);
+      telemetry.event("ussd_reply", { op, ok: true, length: r.reply.length, latency_ms: now() - start, text });
     } else {
       telemetry.event("ussd_reply", { op, ok: false, failure_code: r.failureCode, error: r.error });
     }
     return r;
   }
 
-  async function balance(currency, { viaDialer = false } = {}) {
-    const ussd = balanceCode(card(currency));
+  async function balance(cardId, { viaDialer = false } = {}) {
+    const card = cardOf(cardId);
+    const ussd = card.bank === "CLASICA" ? clasicaBalance(card) : balanceCode(card);
     const s = seed();
     const attempt = await store.add({
-      id: null, startedAt: now(), code: display(ussd, config, s), state: viaDialer ? "dialer" : "sent", op: "46", currency,
+      id: null, startedAt: now(), code: display(ussd, config, s), state: viaDialer ? "dialer" : "sent", op: "46", cardId,
     });
-    telemetry.event("ussd_sent", { op: "46", bank: settings().bank, via: viaDialer ? "dialer" : "api" });
+    telemetry.event("ussd_sent", { op: "46", bank: card.bank, via: viaDialer ? "dialer" : "api" });
     if (viaDialer) {
       await bridge.dial(dial(ussd, config, s));
       return { attempt, needsLogin: false };
@@ -52,25 +72,41 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: "replied", reply: r.reply }));
     const lost = needsLogin(r.reply);
     if (lost) {
-      const since = store.state.authenticatedAt;
-      telemetry.event("session_lost", { op: "46", bank: settings().bank, age_ms: since === null ? null : now() - since });
+      const since = authenticatedAt(sessionOf(card.bank));
+      telemetry.event("session_lost", { op: "46", bank: card.bank, age_ms: since === null ? null : now() - since });
     }
     return { attempt: current(attempt.id), needsLogin: lost };
   }
 
   /**
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
-   * With `retryCurrency`, the bank's "se ha autenticado" SMS reruns that balance query.
+   * With `retryCardId`, the bank's "se ha autenticado" SMS reruns that card's balance query.
    */
-  async function login(pin, { retryCurrency = null, remember = false } = {}) {
-    if (retryCurrency) await store.setRetryBalance({ currency: retryCurrency, at: now() });
-    telemetry.event("ussd_sent", { op: "40", bank: settings().bank, via: "api" });
-    const r = await send("40", settings().subId, dial(loginCode(settings().bank, pin), config, seed()));
+  // The bank of the last login sent, for the bank's "ya se encuentra autenticado" SMS, which names none.
+  let lastLogin = null;
+
+  async function login(bank, pin, { retryCardId = null, remember = false } = {}) {
+    lastLogin = { bank, at: now() };
+    if (retryCardId) await store.setRetryBalance({ cardId: retryCardId, at: now() });
+    telemetry.event("ussd_sent", { op: "40", bank, via: "api" });
+    const r = await send("40", settings().subId, dial(loginCode(bank, pin), config, seed()));
     if (!r.ok) {
       await store.setRetryBalance(null);
       return { ok: false, failureCode: r.failureCode };
     }
-    const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(), pin, PIN_DAYS).catch(() => false) : false;
+    const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(bank), pin, PIN_DAYS).catch(() => false) : false;
+    // A MiTransfer reply that does not refuse the login opens the session, unless it says to wait for
+    // the SMS, as phones have seen it do: then that SMS opens it and reruns the balance (handleSms).
+    // Any bank's reply that the session is already open opens it too: no SMS follows that one.
+    const confirms = BANKS[bank]?.replyConfirmsLogin && !REFUSED.test(r.reply) && !/debe autentic|no es posible|espere un sms/i.test(r.reply);
+    if (confirms || ALREADY_AUTH.test(r.reply)) {
+      await store.authenticated(bank, now());
+      const retry = store.state.retryBalance;
+      if (retry) {
+        await store.setRetryBalance(null);
+        await balance(retry.cardId);
+      }
+    }
     return { ok: true, reply: r.reply, remembered };
   }
 
@@ -78,29 +114,74 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * The bank PIN can live in the shell's secret store: encrypted with a device key that needs the
    * fingerprint or the screen lock on every use, and dropped after PIN_DAYS. Nothing else keeps it.
    */
-  const pinName = () => `pin:${settings().bank}`;
-  async function savedPin() {
+  const pinName = (bank) => `pin:${bank}`;
+  async function savedPin(bank) {
     if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
-    return bridge.secretStatus(pinName()).catch(() => ({ available: false, saved: false, expiresAt: null }));
+    return bridge.secretStatus(pinName(bank)).catch(() => ({ available: false, saved: false, expiresAt: null }));
   }
   /** Logs in with the saved PIN once the device unlocks it; null when there is none or the person cancels. */
-  async function loginWithSaved(options = {}) {
-    const pin = bridge.secretLoad ? await bridge.secretLoad(pinName()).catch(() => null) : null;
-    return pin ? login(pin, options) : null;
+  async function loginWithSaved(bank, options = {}) {
+    const pin = bridge.secretLoad ? await bridge.secretLoad(pinName(bank)).catch(() => null) : null;
+    return pin ? login(bank, pin, options) : null;
   }
-  const forgetPin = () => bridge.secretForget?.(pinName());
+  const forgetPin = (bank) => bridge.secretForget?.(pinName(bank));
+
+  /**
+   * Op 49: registers the phone with a bank. Name, surnames and carné go into the dialed string
+   * only; nothing here keeps them. A confirming reply marks the bank registered.
+   */
+  async function registerBank(bank, person) {
+    telemetry.event("ussd_sent", { op: "49", bank, via: "api" });
+    const r = await send("49", settings().subId, dial(registerCode(bank, person), config, seed()),
+      [person.name, person.surname1, person.surname2]);
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.setBank(bank, { registered: true });
+    return { ok, reply: r.reply };
+  }
+
+  /**
+   * Op 49 for MiTransfer: the carné and the chosen key go into the dialed string only; the key is
+   * a secret field, and the carné is kept out of telemetry. A confirming reply marks it registered.
+   */
+  async function registerMiTransfer(ci, pin) {
+    telemetry.event("ussd_sent", { op: "49", bank: "MITRANSFER", via: "api" });
+    const r = await send("49", settings().subId, dial(registerMiTransferCode({ ci, pin }), config, seed()), [ci]);
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.setBank("MITRANSFER", { registered: true });
+    return { ok, reply: r.reply };
+  }
+
+  /**
+   * Op 60: links a card to its bank. The bank applies it to the session the last op 40 opened,
+   * so it is sent only while that login is recent. The coordinate value is dialed, never kept.
+   */
+  async function linkCard(cardId, coordinate, value) {
+    const card = cardOf(cardId);
+    const at = authenticatedAt(card.bank);
+    if (at === null || now() - at > WINDOW_MS) return { ok: false, needsLogin: true };
+    telemetry.event("ussd_sent", { op: "60", bank: card.bank, via: "api" });
+    const r = await send("60", settings().subId, dial(linkCode(card.bank, card.pan, coordinate, value), config, seed()));
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    if (needsLogin(r.reply)) return { ok: false, needsLogin: true, reply: r.reply };
+    const ok = LINKED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.updateCard(cardId, { state: "linked", step: 5 });
+    return { ok, reply: r.reply };
+  }
 
   /**
    * Dials op 45. The transfer ends in the bank's menu, where the person types 1 to confirm,
    * so it goes through the system dialer; the bank's transfer SMS verifies it.
    */
-  async function transfer(currency, toPan, amount) {
-    const ussd = transferCode(card(currency), toPan, amount);
+  async function transfer(cardId, toPan, amount) {
+    const card = cardOf(cardId);
+    const ussd = card.bank === "CLASICA" ? clasicaTransfer(card, toPan, amount) : transferCode(card, toPan, amount);
     const s = seed();
     const attempt = await store.add({
-      id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op: "45", currency, to: toPan, amount,
+      id: null, startedAt: now(), code: display(ussd, config, s), state: "dialer", op: "45", cardId, to: toPan, amount,
     });
-    telemetry.event("ussd_sent", { op: "45", bank: settings().bank, via: "dialer" });
+    telemetry.event("ussd_sent", { op: "45", bank: card.bank, via: "dialer" });
     try {
       await bridge.dial(dial(ussd, config, s));
     } catch (e) {
@@ -109,6 +190,39 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       telemetry.event("ussd_reply", { op: "45", ok: false, failure_code: -100, error: e.message });
     }
     return current(attempt.id);
+  }
+
+  /**
+   * Op 111: associates a Clásica with the authorization number and terminal id from an ATM/POS
+   * receipt. Both are dialed only; nothing here keeps them. A confirming reply marks it associated.
+   */
+  async function associateClasica(cardId, authorization, terminal) {
+    const card = cardOf(cardId);
+    telemetry.event("ussd_sent", { op: "111", bank: card.bank, via: "api" });
+    const r = await send("111", settings().subId, dial(associateClasicaCode(card.pan, authorization, terminal), config, seed()));
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    // 111 runs on a MiTransfer session: without one the service answers "Debe autenticarse".
+    if (needsLogin(r.reply)) return { ok: false, needsLogin: true, reply: r.reply };
+    // 111 is accepted like a registration: the service answers "procesada" and confirms by SMS.
+    const ok = REGISTERED.test(r.reply) && !REFUSED.test(r.reply);
+    if (ok) await store.updateCard(cardId, { state: "associated", step: 5 });
+    return { ok, reply: r.reply };
+  }
+
+  /** Op 48: a Clásica's last operations. The reply is shown as it comes; no SMS verifies it. */
+  async function movements(cardId) {
+    const card = cardOf(cardId);
+    const ussd = clasicaMovements(card);
+    const s = seed();
+    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op: "48", cardId });
+    telemetry.event("ussd_sent", { op: "48", bank: card.bank, via: "api" });
+    const r = await send("48", settings().subId, dial(ussd, config, s));
+    if (!r.ok) {
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: r.failureCode }));
+      return { ok: false, failureCode: r.failureCode };
+    }
+    await store.patch(attempt.id, (a) => ({ ...a, state: "replied", reply: r.reply }));
+    return { ok: true, reply: r.reply };
   }
 
   /** Asks a line for its balance with its plan's code, and keeps the figure for its card. */
@@ -123,11 +237,126 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return { ok: true, value, reply: r.reply };
   }
 
+  /** Reads a line's balance again after an operation that moved it; a failure keeps the old figure. */
+  async function refreshBalance(subId) {
+    try {
+      await mobileBalance(subId);
+    } catch {
+      // The figure on the card stays as it was.
+    }
+  }
+
+  /**
+   * The transfer key of a line lives in the shell's secret store like the bank PIN, one per line,
+   * behind the fingerprint or the screen lock, and lapses after PIN_DAYS.
+   */
+  const lineKeyName = (subId) => `line-key:${subId}`;
+  async function savedLineKey(subId) {
+    if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
+    return bridge.secretStatus(lineKeyName(subId)).catch(() => ({ available: false, saved: false, expiresAt: null }));
+  }
+  const forgetLineKey = (subId) => bridge.secretForget?.(lineKeyName(subId));
+
+  /**
+   * `*234*1`: passes `amount` CUP of line `subId` to `to`. The network answers with a menu that asks
+   * to confirm with 1, which the USSD API cannot follow, so it goes through the dialer; Cubacel's
+   * SMS verifies it. Without a key it unlocks the saved one; with none saved, or the unlock
+   * cancelled, it dials nothing and answers "needs-key". The dialer hides the network's answer, so a
+   * remembered key is kept once dialed, and the result sheet offers to forget it.
+   */
+  async function transferBalance(subId, to, amount, { key = null, remember = false } = {}) {
+    const k = key === null ? (bridge.secretLoad ? await bridge.secretLoad(lineKeyName(subId)).catch(() => null) : null) : key;
+    if (!k) return { ok: false, outcome: "needs-key", attempt: null, remembered: false };
+    const ussd = transferBalanceCode(to, k, amount);
+    const attempt = await store.add({ id: null, startedAt: now(), code: display(ussd, config), state: "dialer", op: "234", subId, to, amount });
+    telemetry.event("ussd_sent", { op: "234*1", via: "dialer" });
+    try {
+      await bridge.dial(dial(ussd, config));
+    } catch (e) {
+      // The dialer never opened (no call permission, no dialer): nothing can have been sent.
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      telemetry.event("ussd_reply", { op: "234*1", ok: false, failure_code: -100, error: e.message });
+      return { ok: false, outcome: "failed", attempt: current(attempt.id), remembered: false };
+    }
+    const remembered = key !== null && remember && bridge.secretSave
+      ? await bridge.secretSave(lineKeyName(subId), k, PIN_DAYS).catch(() => false) : false;
+    return { ok: true, outcome: "dialer", attempt: current(attempt.id), remembered };
+  }
+
+  /**
+   * `*234*2`: changes a line's transfer key, and the saved one with it when one is saved. When the
+   * API cannot follow the network's menu (-1), it goes to the dialer, and the saved key is dropped
+   * since Ajé cannot see whether the change went through.
+   */
+  async function changeLineKey(subId, old, next) {
+    telemetry.event("ussd_sent", { op: "234*2", via: "api" });
+    const code = dial(changeKey(old, next), config);
+    const r = await send("234*2", subId, code);
+    if (!r.ok && r.failureCode === -1) {
+      await forgetLineKey(subId);
+      telemetry.event("ussd_sent", { op: "234*2", via: "dialer" });
+      await bridge.dial(code).catch(() => null);
+      return { ok: false, dialed: true };
+    }
+    if (!r.ok) return { ok: false, failureCode: r.failureCode };
+    const ok = /cambiad|satisfactori|exito|éxito/i.test(r.reply) && !/incorrect/i.test(r.reply);
+    if (ok && (await savedLineKey(subId)).saved) await bridge.secretSave(lineKeyName(subId), next, PIN_DAYS).catch(() => false);
+    return { ok, reply: r.reply };
+  }
+
+  /**
+   * Buys `plan` from the catalog: its shortcut goes to the dialer, which shows Cubacel's confirm, and
+   * the person types 1 there. The API cannot follow these menus (-1); Cubacel's SMS after the
+   * purchase confirms it and carries the line's new balance.
+   */
+  async function buyPlan(subId, plan) {
+    const code = planCode(plan);
+    const attempt = await store.add({
+      id: null, startedAt: now(), code, state: "dialer", op: "133", subId,
+      plan: { path: plan.path, name: plan.name, price: plan.price },
+    });
+    telemetry.event("ussd_sent", { op: "133", via: "dialer" });
+    try {
+      await bridge.dial(code);
+    } catch {
+      await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
+      return { outcome: "failed", attempt: current(attempt.id) };
+    }
+    return { outcome: "dialer", attempt: current(attempt.id) };
+  }
+
+  /** A charge to line `subId`: its QR text and the pending attempt the "recibido" SMS will close. */
+  async function charge(subId, { amount = null, name = null } = {}) {
+    const number = store.state.settings.lineNumbers[subId];
+    if (!number) return { ok: false, reason: "no-number" };
+    const attempt = await store.addCharge({ subId, number, amount, name });
+    return { ok: true, uri: chargeUri({ number, amount, name }), attempt };
+  }
+
+  /** Today's balance transfers from a line that did not fail; the network caps them per day. */
+  function transfersToday(subId) {
+    const midnight = new Date(now()).setHours(0, 0, 0, 0);
+    return store.state.attempts.filter((a) => a.op === "234" && a.subId === subId && a.state !== "failed" && a.startedAt >= midnight).length;
+  }
+
   /** One incoming SMS. Texts the parser does not know are dropped here and never stored. */
-  async function handleSms({ sender, body, sentAt = null, receivedAt = now() }) {
+  async function handleSms({ sender, body, sentAt = null, receivedAt = now(), subId = null }) {
     const tag = senderTag(sender);
+    const line = parseLineSms(body);
+    if (line) return handleLineSms(line, { sender, tag, body, sentAt, receivedAt });
+    const plan = parsePlanSms(body);
+    // A person's number can write the same text; only Cubacel's sender confirms a purchase.
+    if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
+    // A login while the session is still open: the bank answers that it already is, naming no bank.
+    if (tag !== "number" && ALREADY_AUTH.test(body) && lastLogin && receivedAt - lastLogin.at < WINDOW_MS) {
+      if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
+      await sessionOpened(lastLogin.bank, receivedAt, { sender: tag, bank: lastLogin.bank, text: body });
+      return { kind: "auth", bank: lastLogin.bank };
+    }
     const sms = parseBankSms(body);
     if (!sms) {
+      const notice = noticeOf(sender, body);
+      if (notice) return handleNotice(notice, { body, sentAt, receivedAt });
       if (BANKISH.test(body)) {
         telemetry.event("sms", { kind: "unparsed_bank", sender: tag, length: body.length, lines: body.split("\n").length, text: body });
       }
@@ -143,35 +372,95 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         telemetry.event("sms", { kind: "balance", ...base, latency_ms: latency });
         break;
       }
+      case "balance-failed": {
+        const failed = await store.failBalance(sms, receivedAt);
+        telemetry.event("sms", { kind: "balance_failed", ...base, ok: failed !== null });
+        // An imported card the bank refuses is not linked to this line after all: it links again.
+        const card = failed && store.state.cards.find((c) => c.id === failed.cardId);
+        if (card?.unverified) await store.updateCard(card.id, { state: "pending", unverified: false });
+        break;
+      }
       case "transfer": {
         const latency = await store.verifyTransfer(sms, receivedAt);
         telemetry.event("sms", { kind: "transfer", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
-      case "auth": {
-        await store.authenticated(receivedAt);
-        telemetry.event("sms", { kind: "auth", ...base });
-        const retry = store.state.retryBalance;
-        if (retry) {
-          await store.setRetryBalance(null);
-          // A queued SMS can be read hours later: rerun only while the login is recent.
-          if (receivedAt - retry.at < WINDOW_MS && now() - retry.at < WINDOW_MS) await balance(retry.currency);
-        }
+      case "auth":
+        await sessionOpened(sms.bank, receivedAt, base);
         break;
-      }
     }
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, transfer, mobileBalance, handleSms };
-}
-
-/** A 32-bit FNV-1a hash, so the seen list keeps no bank text. */
-function fnv1a(text) {
-  let h = 0x811c9dc5;
-  for (const c of text) {
-    h ^= c.codePointAt(0);
-    h = Math.imul(h, 0x01000193) >>> 0;
+  /** A bank's session is open: note it, and rerun the balance query that asked for the login. */
+  async function sessionOpened(bank, receivedAt, base) {
+    await store.authenticated(bank, receivedAt);
+    telemetry.event("sms", { kind: "auth", ...base });
+    const retry = store.state.retryBalance;
+    if (retry) {
+      await store.setRetryBalance(null);
+      // A queued SMS can be read hours later: rerun only while the login is recent.
+      if (receivedAt - retry.at < WINDOW_MS && now() - retry.at < WINDOW_MS) await balance(retry.cardId);
+    }
   }
-  return h.toString(16);
+
+  async function handlePlanSms(sms, { tag, body, sentAt, receivedAt }) {
+    if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return sms;
+    const verified = await store.verifyPlan(sms, receivedAt);
+    telemetry.event("sms", { kind: "plan", sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
+    if (verified && sms.balance) await store.setMobileBalance(verified.subId, sms.balance);
+    else if (verified) await refreshBalance(verified.subId);
+    return sms;
+  }
+
+  /** The inbox item of a notice; `row` is the history row it opens, if any. Telemetry gets only its kind. */
+  async function addNotice(notice, id, row, at) {
+    const { kind, amount, number, account, plan } = notice;
+    if (await store.addNotice({ id, kind, at, amount, number, account, plan, rowId: row?.id ?? null, state: "pending" })) {
+      telemetry.event("notice", { kind, ok: false });
+    }
+  }
+
+  /** The person opened a notice: it is seen, and telemetry learns a notice of its kind was opened. */
+  async function openNotice(id) {
+    const n = store.state.inbox.find((x) => x.id === id);
+    if (!n || n.state !== "pending") return;
+    await store.setNoticeState(id, "seen");
+    telemetry.event("notice", { kind: n.kind, ok: true });
+  }
+
+  /** The one saved card whose last four match the account a received transfer names, else null. */
+  function cardOfAccount(account) {
+    const cards = account ? store.state.cards.filter((c) => last4(c.pan) === last4(account)) : [];
+    return cards.length === 1 ? cards[0].id : null;
+  }
+
+  /** Money or balance that came in: a history row, unless a plan only expires, and an inbox item. */
+  async function handleNotice(notice, { body, sentAt, receivedAt }) {
+    const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+    if (store.state.inbox.some((n) => n.id === id) || (await store.seen(id))) return notice;
+    const row = notice.kind === "plan-expiry" ? null : await store.addReceived(notice, receivedAt, { cardId: cardOfAccount(notice.account) });
+    await addNotice(notice, id, row, receivedAt);
+    return notice;
+  }
+
+  async function handleLineSms(sms, { sender, tag, body, sentAt, receivedAt }) {
+    const id = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
+    if (await store.seen(id)) return sms;
+    if (sms.kind === "line-sent") {
+      const verified = await store.verifyLineTransfer(sms, receivedAt);
+      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: verified !== null, latency_ms: verified?.latencyMs ?? null, text: body });
+      if (verified) await refreshBalance(verified.subId);
+    } else {
+      // A charge shown as a QR becomes the record of what arrived; otherwise the SMS gets its own row.
+      const received = { kind: "line-received", amount: formatMoney(sms.amount), number: sms.number, account: null, plan: null };
+      const row = (await store.closeCharge(sms, receivedAt)) ?? (await store.addReceived(received, receivedAt));
+      // Only a service's sender gives a notice; a person's number can write the same text.
+      if (noticeOf(sender, body)) await addNotice(received, id, row, receivedAt);
+      telemetry.event("sms", { kind: sms.kind, sender: tag, ok: true, text: body });
+    }
+    return sms;
+  }
+
+  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice };
 }

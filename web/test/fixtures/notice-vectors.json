@@ -1,0 +1,325 @@
+[
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW123ABCDE456",
+    "sentAt": 1792700000000,
+    "id": "1792700000000:71b82c0a",
+    "out": {
+      "kind": "card-received",
+      "amount": "1500.00 CUP",
+      "number": "51234567",
+      "account": "9200XXXXXXXX0001",
+      "plan": null
+    }
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 12500.00 CUP. Nro. Transaccion KW1234ABCD567",
+    "sentAt": 1792700060000,
+    "id": "1792700060000:af8965f4",
+    "out": {
+      "kind": "card-received",
+      "amount": "12500.00 CUP",
+      "number": "51234567",
+      "account": "9200XXXXXXXX0001",
+      "plan": null
+    }
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 2500.00 CUP. Nro. Transaccion KW1234AB5C678. Fecha: 15/9/2026.",
+    "sentAt": 1792700120000,
+    "id": "1792700120000:254aa19b",
+    "out": {
+      "kind": "card-received",
+      "amount": "2500.00 CUP",
+      "number": "51234567",
+      "account": "9200XXXXXXXX0001",
+      "plan": null
+    }
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 25.00 USD. Nro. Transaccion KW1234A5B6789",
+    "sentAt": 1792700180000,
+    "id": "1792700180000:6bd5a091",
+    "out": {
+      "kind": "card-received",
+      "amount": "25.00 USD",
+      "number": "51234567",
+      "account": "9200XXXXXXXX0001",
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Usted ha recibido 250.0 CUP del numero 51234567.Saldo principal 380.00 CUP, linea activa hasta 2027-01-15, vence 2027-02-14",
+    "sentAt": 1792700240000,
+    "id": "1792700240000:d627d92c",
+    "out": {
+      "kind": "line-received",
+      "amount": "250.00 CUP",
+      "number": "51234567",
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "Cubacel",
+    "body": "Usted ha recibido 100.0 CUP del numero 51234567.Saldo principal 130.00 CUP, linea activa hasta 2027-01-15, vence 2027-02-14",
+    "sentAt": 1792700300000,
+    "id": "1792700300000:a0c741e9",
+    "out": {
+      "kind": "line-received",
+      "amount": "100.00 CUP",
+      "number": "51234567",
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Ud. recibio 500 CUP. Transaccion 123456789. Sextuplica Tu Recarga y Datos ilimitados de 12am-7am(validos por 30 dias).Consulte *222#.",
+    "sentAt": 1792700360000,
+    "id": "1792700360000:63bd93bc",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": "500.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Su cuenta ha sido recargada con 600 CUP. Transaccion 123456790. Para consultar saldo *222# Recarga Internacional.",
+    "sentAt": 1792700420000,
+    "id": "1792700420000:5726705a",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": "600.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Transaccion 123456791. Ud. recibio 10GB +100MIN +100SMS validos por 30 dias.Consulte *222*266#.",
+    "sentAt": 1792700480000,
+    "id": "1792700480000:3012f1a1",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "10GB +100MIN +100SMS"
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Usted ha recibido 720 CUP. Transaccion 123456792. Datos ilimitados las 24 Horas (validos por 15 dias).Consulte *222*266#.",
+    "sentAt": 1792700540000,
+    "id": "1792700540000:6a93c48e",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": "720.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Transaccion 123456793. Ud. recibio 5GB +50min +50SMS validos por 30 dias. Se activa con el primer uso.",
+    "sentAt": 1792700600000,
+    "id": "1792700600000:efd7e3e0",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "5GB +50min +50SMS"
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Ud. recibio 840 CUP. Transaccion 123456794. Bonifica con 20 GB y Datos ilimitados de 12am-7am, validos 30 dias. Consulte *222*266#.",
+    "sentAt": 1792700660000,
+    "id": "1792700660000:eead8533",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": "840.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ETECSA: Recarga Internacional. Ud. recibio 960 CUP. Transaccion 123456795. Multiplica Tu Recarga X 10 y Datos ilimitados de 12am-7am (validos por 30 dias). Consulte*222#.",
+    "sentAt": 1792700720000,
+    "id": "1792700720000:d5515864",
+    "out": {
+      "kind": "recharge-intl",
+      "amount": "960.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Usted ha recibido una recarga de saldo movil por un monto de 500 CUP. Para conocer su saldo principal consultelo a traves del *222#",
+    "sentAt": 1792700780000,
+    "id": "1792700780000:42b5c00b",
+    "out": {
+      "kind": "recharge",
+      "amount": "500.00 CUP",
+      "number": null,
+      "account": null,
+      "plan": null
+    }
+  },
+  {
+    "sender": "Cubacel",
+    "body": "Ha recibido un plan de 3GB valido por 30 dias, se activara con el primer uso.",
+    "sentAt": 1792700840000,
+    "id": "1792700840000:b280ada0",
+    "out": {
+      "kind": "plan-gift",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "3GB"
+    }
+  },
+  {
+    "sender": "Cubacel",
+    "body": "Ha recibido un plan de 40 min valido por 30 dias, se activara con el primer uso.",
+    "sentAt": 1792700900000,
+    "id": "1792700900000:f33cc118",
+    "out": {
+      "kind": "plan-gift",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "40 min"
+    }
+  },
+  {
+    "sender": "Cubacel",
+    "body": "Ha recibido un plan de 100 sms valido por 30 dias, se activara con el primer uso.",
+    "sentAt": 1792700960000,
+    "id": "1792700960000:6de75b62",
+    "out": {
+      "kind": "plan-gift",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "100 sms"
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "ALERTA. Su plan de Datos vence el 25-10-26. Para una nueva compra marque *133#",
+    "sentAt": 1792701020000,
+    "id": "1792701020000:d30da339",
+    "out": {
+      "kind": "plan-expiry",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "plan de datos vence el 25-10-26"
+    }
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Su bonificacion de datos vence el 31-10-2026. Su bonificacion de datos ilimitados vence el 31-10-2026.",
+    "sentAt": 1792701080000,
+    "id": "1792701080000:c4a03138",
+    "out": {
+      "kind": "plan-expiry",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "bonificación de datos vence el 31-10-2026"
+    }
+  },
+  {
+    "sender": "Cubacel",
+    "body": "Ha comprado un plan de 3GB +15MIN +20SMS valido por 30 dias, se activara con el primer uso. Se desconto 120.00 de su cuenta principal. Saldo actual  880.00",
+    "sentAt": 1792701140000,
+    "id": "1792701140000:78839f8d",
+    "out": null
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Banco Metropolitano:  La consulta de saldo fue completada. \n Saldo Contable: CR 1234.56 CUP \n Saldo Disponible: CR 1200.06 CUP",
+    "sentAt": 1792701200000,
+    "id": "1792701200000:ec9f748e",
+    "out": null
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Usted se ha autenticado en la plataforma de pagos moviles, en el Banco Metropolitano, puede comenzar a utilizar nuestros servicios de pagos a traves del movil",
+    "sentAt": 1792701260000,
+    "id": "1792701260000:edeb3001",
+    "out": null
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Usted ha recibido Bono Promocional. Transaccion 123456796. Disfrute de 10GB + 50min + 50 SMS, validos por 30 dias a partir de hoy.",
+    "sentAt": 1792701320000,
+    "id": "1792701320000:e7c5816e",
+    "out": null
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Se ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW123ABCDE457",
+    "sentAt": 1792701380000,
+    "id": "1792701380000:961ae518",
+    "out": null
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Usted ha transferido 250 CUP al numero 51234567. Saldo principal 130.00 CUP, linea activa hasta 2027-01-15, vence 2027-02-14",
+    "sentAt": 1792701440000,
+    "id": "1792701440000:3c30cdb3",
+    "out": null
+  },
+  {
+    "sender": "+5355555555",
+    "body": "El titular del telefono 51234567 le ha realizado una transferencia a la cuenta 9200XXXXXXXX0001 de 1500.00 CUP. Nro. Transaccion KW123ABCDE456",
+    "sentAt": 1792701500000,
+    "id": "1792701500000:71b82c0a",
+    "out": null
+  },
+  {
+    "sender": "51234567",
+    "body": "Usted ha recibido 250.0 CUP del numero 51234567.Saldo principal 380.00 CUP, linea activa hasta 2027-01-15, vence 2027-02-14",
+    "sentAt": 1792701560000,
+    "id": "1792701560000:d627d92c",
+    "out": null
+  },
+  {
+    "sender": "PAGOxMOVIL",
+    "body": "Usted ha recibido una recarga de saldo movil por un monto de 99999999999999999999999 CUP.",
+    "sentAt": 1792701620000,
+    "id": "1792701620000:5b4338b9",
+    "out": null
+  },
+  {
+    "sender": "ETECSA",
+    "body": "Su bonificacion de minutos vence el 01-11-2026. Su bonificacion de SMS vence el 01-11-2026. Su bonificacion de datos vence el 05-11-2026.",
+    "sentAt": 1792701680000,
+    "id": "1792701680000:4365c544",
+    "out": {
+      "kind": "plan-expiry",
+      "amount": null,
+      "number": null,
+      "account": null,
+      "plan": "bonificación de datos vence el 05-11-2026"
+    }
+  }
+]

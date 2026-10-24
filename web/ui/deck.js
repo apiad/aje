@@ -1,9 +1,10 @@
 // Home: the account deck (bank cards, then phone lines) and the front account's operations.
 import { accounts } from "../core/accounts.js";
-import { BANKS, MOBILE_PLANS } from "../core/money.js";
+import { BANKS, MOBILE_PLANS, last4 } from "../core/money.js";
 import { h, icon } from "./dom.js";
 import { body, FIRM, FLY, hold, kick, LAND, reduced, set } from "./motion.js";
 import { row } from "./history.js";
+import { updateBanner } from "./updates.js";
 
 // The front account survives re-renders and screen changes.
 let frontId = null;
@@ -15,14 +16,21 @@ const ACTIONS = {
     ["soon", "Pagar servicio", "bolt"],
     ["soon", "Cobrar o pagar con QR", "qr"],
   ],
+  clasica: [
+    ["balance", "Ver saldo", "card"],
+    ["movements", "Últimas operaciones", "history"],
+    ["transfer", "Transferir", "send"],
+    ["soon", "Pagar servicio", "bolt"],
+  ],
   line: [
     ["mobile-balance", "Saldo móvil", "phone"],
     ["soon", "Recargar", "bolt"],
-    ["soon", "Comprar plan", "plan"],
-    ["soon", "Pasar saldo", "send"],
+    ["plans", "Comprar plan", "plan"],
+    ["line-transfer", "Pasar saldo", "send"],
+    ["line-charge", "Cobrar", "qr"],
   ],
 };
-const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], line: [["mobile-balance", "Saldo"]] };
+const CHIPS = { card: [["balance", "Saldo"], ["transfer", "Transferir"]], pending: [["resume", "Continuar"]], line: [["mobile-balance", "Saldo"]] };
 
 /** "1200.06 CUP" as the card shows it: "1 200,06" with the currency small after it. */
 export function amount(text) {
@@ -53,25 +61,38 @@ function stats(d) {
 }
 
 function cardFace(a, ctx) {
-  const kind = a.kind === "card" ? `Tarjeta · ${a.currency}` : `Línea · ${a.carrier || "Cubacel"}`;
-  const no = a.kind === "card" ? BANKS[a.bank].name : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
-  const tone = a.kind === "line" ? "line" : a.currency === "CUP" ? "cup" : "usd";
+  const kind = a.kind === "card" ? `Tarjeta · ${a.currency ?? "—"}${a.pending ? " · pendiente" : ""}` : `Línea · ${a.carrier || "Cubacel"}`;
+  const no = a.kind === "card" ? `${BANKS[a.bank]?.name ?? "Cuenta"} · ···· ${last4(a.pan)}` : `${a.plan === "POSPAGO" ? "Pospago" : "Prepago"} · ${MOBILE_PLANS[a.plan]}`;
+  const tone = a.kind === "line" ? "line" : a.currency === "USD" ? "usd" : "cup";
+  const chips = a.pending ? CHIPS.pending : CHIPS[a.kind];
   return h("div", { class: `acct ${tone}`, "data-id": a.id },
     h("div", { class: "top" },
       h("div", {}, h("div", { class: "kind" }, kind), h("div", { class: "name" }, a.label)),
-      h("div", { class: "acts" }, CHIPS[a.kind].map(([action, label]) =>
+      h("div", { class: "acts" }, chips.map(([action, label]) =>
         h("button", { "data-action": action, onclick: () => ctx.act(action, a) }, label))),
     ),
     h("div", {},
-      a.balance ? h("div", { class: "bal" }, ...amount(a.balance)) : h("div", { class: "bal none" }, "Toca Saldo para consultarlo"),
+      a.balance ? h("div", { class: "bal" }, ...amount(a.balance))
+        : h("div", { class: "bal none" }, a.pending ? "Falta asociarla con el banco" : "Toca Saldo para consultarlo"),
       a.kind === "line" && a.details ? stats(a.details) : h("div", { class: "no" }, no),
     ),
   );
 }
 
+/** The inbox's bell, with the number of pending notices; no count at zero. */
+function bell(ctx) {
+  const n = ctx.store.pendingNotices();
+  return h("button", { id: "bell", class: "bell", "aria-label": n ? `Avisos, ${n} pendientes` : "Avisos", onclick: () => ctx.go("inbox") },
+    icon("bell"), n ? h("span", { class: "count" }, String(n)) : null);
+}
+
 export function renderHome(ctx) {
   const list = accounts(ctx.store.state, ctx.sims);
-  if (list.length === 0) return h("div", { class: "empty" }, "No hay cuentas: activa una moneda en Ajustes.");
+  const add = h("div", { class: "addrow" },
+    h("button", { id: "add-card", class: "addchip", onclick: () => ctx.go("add") }, "＋ Añadir tarjeta"),
+    h("button", { id: "import-tm", class: "addchip", onclick: () => ctx.go("import") }, "Importar de Transfermóvil"));
+  if (list.length === 0) return h("div", { id: "deck" }, updateBanner(ctx), h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas"), bell(ctx)),
+    h("div", { class: "empty" }, "Aún no hay tarjetas. Añade la primera con una foto."), add);
   if (!list.some((a) => a.id === frontId)) frontId = list[0].id;
 
   const cards = list.map((a) => cardFace(a, ctx));
@@ -114,10 +135,11 @@ export function renderHome(ctx) {
     [...dots.children].forEach((b, k) => b.classList.toggle("on", k === i));
     const a = list[i];
     qaLabel.textContent = `Operaciones · ${a.label}`;
-    qa.replaceChildren(...ACTIONS[a.kind].map(([action, label, ic]) =>
+    const actions = a.kind === "card" && a.bank === "CLASICA" ? ACTIONS.clasica : ACTIONS[a.kind];
+    qa.replaceChildren(...actions.map(([action, label, ic]) =>
       h("button", { class: action === "soon" ? "soon" : null, "data-qa": action, onclick: () => action !== "soon" && ctx.act(action, a) },
         icon(ic), h("span", {}, label))));
-    const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.currency === a.currency).slice(0, 3) : [];
+    const mine = a.kind === "card" ? ctx.store.state.attempts.filter((x) => x.cardId === a.cardId).slice(0, 3) : [];
     recent.replaceChildren(...(mine.length ? [
       h("div", { class: "section-label" }, "Actividad reciente", h("a", { onclick: () => ctx.go("history") }, "Ver todo")),
       ...mine.map((x) => row(ctx, x)),
@@ -261,13 +283,15 @@ export function renderHome(ctx) {
   cards.forEach((el, k) => { el.style.zIndex = String(10 - depth(k)); hold(bodies[k], rest(depth(k))); });
   front();
   return h("div", { id: "deck" },
-    h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas")),
+    updateBanner(ctx),
+    h("div", { class: "topbar" }, h("div", { class: "t" }, "Cuentas"), bell(ctx)),
     stack,
     h("div", { class: "stack-ctl" },
       h("button", { class: "sbtn", "aria-label": "Cuenta anterior", onclick: () => step(-1) }, "‹"),
       dots,
       h("button", { class: "sbtn", "aria-label": "Cuenta siguiente", onclick: () => step(1) }, "›"),
     ),
+    add,
     qaLabel,
     qa,
     recent,

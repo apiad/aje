@@ -13,3 +13,10 @@ make apk    # signed APK (needs keystore.properties)
 To work on the frontend in a browser, serve `web/` (for example
 `python3 -m http.server -d web`) and open `index.html`: without the native
 shell it runs against `web/mock.js`.
+
+## Privacy
+
+Ajé keeps everything on the phone. The only thing that can leave it is opt-in error reporting:
+one redacted event per request, with no identifier, published in full at
+<https://aje.apiad.net/data/>. How it works, for users: <https://aje.apiad.net/privacidad>; for
+developers: [docs/telemetry.md](docs/telemetry.md).
