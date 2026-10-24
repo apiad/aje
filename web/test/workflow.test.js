@@ -827,3 +827,29 @@ test("a card added by hand stays linked when the bank refuses a balance query", 
   assert.equal(w.store.state.cards[0].state, "linked");
   assert.equal(w.store.state.attempts[0].state, "failed");
 });
+
+test("'ya se encuentra autenticado' opens the session of the bank just logged into, and reruns the balance", async () => {
+  const w = await world([
+    { ok: true, reply: "Debe autenticarse primero" },
+    { ok: true, reply: "Su solicitud esta siendo procesada" },
+    { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" },
+  ]);
+  assert.equal((await w.wf.balance(w.card.id)).needsLogin, true);
+  await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
+  w.clock.t += 10_000;
+  await w.sms(SMS.ALREADY_AUTH);
+  assert.equal(w.store.state.banks.METROPOLITANO.authenticatedAt, w.clock.t);
+  assert.equal(w.bridge.calls.length, 3, "the balance ran again");
+});
+
+test("'ya se encuentra autenticado' with no recent login, or from a person, opens nothing", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  await w.sms(SMS.ALREADY_AUTH);
+  assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null);
+  await w.wf.login("METROPOLITANO", "1234");
+  await w.sms(SMS.ALREADY_AUTH, "51234567");
+  assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null);
+  w.clock.t += 60 * 60_000;
+  await w.sms(SMS.ALREADY_AUTH);
+  assert.equal(w.store.state.banks.METROPOLITANO?.authenticatedAt ?? null, null, "the login is too old");
+});

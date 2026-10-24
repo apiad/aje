@@ -17,6 +17,7 @@ export const PIN_DAYS = 180;
 const REGISTERED = /proces|satisfactori|registrad/i;
 const LINKED = /asociad|vinculad|satisfactori/i;
 const REFUSED = /error|incorrect|no se pudo|denegad/i;
+const ALREADY_AUTH = /ya se encuentra autenticad/i;
 
 export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed = randomSeed, config = DEFAULT_CONFIG }) {
   const settings = () => store.state.settings;
@@ -81,7 +82,11 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
    * With `retryCardId`, the bank's "se ha autenticado" SMS reruns that card's balance query.
    */
+  // The bank of the last login sent, for the bank's "ya se encuentra autenticado" SMS, which names none.
+  let lastLogin = null;
+
   async function login(bank, pin, { retryCardId = null, remember = false } = {}) {
+    lastLogin = { bank, at: now() };
     if (retryCardId) await store.setRetryBalance({ cardId: retryCardId, at: now() });
     telemetry.event("ussd_sent", { op: "40", bank, via: "api" });
     const r = await send("40", settings().subId, dial(loginCode(bank, pin), config, seed()));
@@ -340,6 +345,12 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const plan = parsePlanSms(body);
     // A person's number can write the same text; only Cubacel's sender confirms a purchase.
     if (plan && tag !== "number") return handlePlanSms({ ...plan, subId }, { tag, body, sentAt, receivedAt });
+    // A login while the session is still open: the bank answers that it already is, naming no bank.
+    if (tag !== "number" && ALREADY_AUTH.test(body) && lastLogin && receivedAt - lastLogin.at < WINDOW_MS) {
+      if (await store.seen(`${sentAt ?? receivedAt}:${fnv1a(body)}`)) return null;
+      await sessionOpened(lastLogin.bank, receivedAt, { sender: tag, bank: lastLogin.bank, text: body });
+      return { kind: "auth", bank: lastLogin.bank };
+    }
     const sms = parseBankSms(body);
     if (!sms) {
       const notice = noticeOf(sender, body);
@@ -372,19 +383,23 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
         telemetry.event("sms", { kind: "transfer", ...base, ok: latency !== null, latency_ms: latency });
         break;
       }
-      case "auth": {
-        await store.authenticated(sms.bank, receivedAt);
-        telemetry.event("sms", { kind: "auth", ...base });
-        const retry = store.state.retryBalance;
-        if (retry) {
-          await store.setRetryBalance(null);
-          // A queued SMS can be read hours later: rerun only while the login is recent.
-          if (receivedAt - retry.at < WINDOW_MS && now() - retry.at < WINDOW_MS) await balance(retry.cardId);
-        }
+      case "auth":
+        await sessionOpened(sms.bank, receivedAt, base);
         break;
-      }
     }
     return sms;
+  }
+
+  /** A bank's session is open: note it, and rerun the balance query that asked for the login. */
+  async function sessionOpened(bank, receivedAt, base) {
+    await store.authenticated(bank, receivedAt);
+    telemetry.event("sms", { kind: "auth", ...base });
+    const retry = store.state.retryBalance;
+    if (retry) {
+      await store.setRetryBalance(null);
+      // A queued SMS can be read hours later: rerun only while the login is recent.
+      if (receivedAt - retry.at < WINDOW_MS && now() - retry.at < WINDOW_MS) await balance(retry.cardId);
+    }
   }
 
   async function handlePlanSms(sms, { tag, body, sentAt, receivedAt }) {
