@@ -842,6 +842,14 @@ test("'ya se encuentra autenticado' opens the session of the bank just logged in
   assert.equal(w.bridge.calls.length, 3, "the balance ran again");
 });
 
+test("a login answered by USSD 'ya se encuentra autenticado' opens the session and reruns the balance", async () => {
+  const w = await world([{ ok: true, reply: "Debe autenticarse" }, { ok: true, reply: SMS.ALREADY_AUTH }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  assert.equal((await w.wf.balance(w.card.id)).needsLogin, true);
+  await w.wf.login("METROPOLITANO", "1234", { retryCardId: w.card.id });
+  assert.equal(w.store.state.banks.METROPOLITANO.authenticatedAt, w.clock.t);
+  assert.equal(w.bridge.calls.length, 3, "the balance ran again");
+});
+
 test("'ya se encuentra autenticado' with no recent login, or from a person, opens nothing", async () => {
   const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
   await w.sms(SMS.ALREADY_AUTH);
