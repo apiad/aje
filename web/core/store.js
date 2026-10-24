@@ -32,7 +32,8 @@ export function memoryBackend(initial = null) {
 export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
   const loaded = await backend.load();
   const defaults = {
-    settings: { subId: -1, plans: {}, lineNumbers: {}, telemetry: false, telemetryAsked: false, channel: "stable" },
+    // `defaultCard` comes first in the deck and in every card choice; `lines` holds each line's alias and whether it is hidden.
+    settings: { subId: -1, plans: {}, lineNumbers: {}, lines: {}, defaultCard: null, telemetry: false, telemetryAsked: false, channel: "stable" },
     update: { checkedAt: null, available: null },
     cards: [], bills: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
     // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
@@ -261,6 +262,13 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
+    /** Sets a line's `alias` or `hidden`; an empty alias or a false `hidden` is dropped. */
+    async setLine(subId, patch) {
+      const line = Object.fromEntries(Object.entries({ ...state.settings.lines[subId], ...patch }).filter(([, v]) => v));
+      state.settings = { ...state.settings, lines: { ...state.settings.lines, [subId]: line } };
+      await commit();
+    },
+
     async setPlan(subId, plan) {
       state.settings = { ...state.settings, plans: { ...state.settings.plans, [subId]: plan } };
       await commit();
@@ -289,9 +297,19 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    /** Adds a card, pending at the first step of its bank's onboarding. A number already stored is refused. */
+    /**
+     * Adds a card, pending at the first step of its bank's onboarding. A number already stored is refused,
+     * unless that card was removed: then it comes back as it was, under the new alias.
+     */
     async addCard({ alias, pan, bank, currency }) {
-      if (state.cards.some((c) => c.pan === pan)) throw new Error("Esta tarjeta ya está en tus cuentas.");
+      const old = state.cards.find((c) => c.pan === pan);
+      if (old && !old.removed) throw new Error("Esta tarjeta ya está en tus cuentas.");
+      if (old) {
+        const back = { ...old, alias, removed: false };
+        state.cards = state.cards.map((c) => (c.id === old.id ? back : c));
+        await commit();
+        return back;
+      }
       const card = { id: newId(), alias, pan, bank, currency, state: "pending", step: 1 };
       state.cards = [...state.cards, card];
       await commit();
@@ -303,8 +321,29 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       await commit();
     },
 
-    async removeCard(id) {
-      state.cards = state.cards.filter((c) => c.id !== id);
+    /**
+     * Removes a card from the deck and every choice, but keeps it, so the history still names it.
+     * Its bills go to `billsTo`, or to no card.
+     */
+    async removeCard(id, { billsTo = null } = {}) {
+      state.cards = state.cards.map((c) => (c.id === id ? { ...c, removed: true } : c));
+      state.bills = state.bills.map((b) => (b.cardId === id ? { ...b, cardId: billsTo } : b));
+      if (state.settings.defaultCard === id) state.settings = { ...state.settings, defaultCard: null };
+      await commit();
+    },
+
+    /**
+     * Swaps a card with the card before it (`by` -1) or after it (1) in the deck, past removed cards and
+     * the default one, which always goes first; at either end it stays.
+     */
+    async moveCard(id, by) {
+      const live = state.cards.filter((c) => !c.removed && c.id !== state.settings.defaultCard);
+      const i = live.findIndex((c) => c.id === id);
+      const other = live[i + by];
+      if (i < 0 || !other) return;
+      const [x, y] = [state.cards.findIndex((c) => c.id === id), state.cards.findIndex((c) => c.id === other.id)];
+      [state.cards[x], state.cards[y]] = [state.cards[y], state.cards[x]];
+      state.cards = [...state.cards];
       await commit();
     },
 

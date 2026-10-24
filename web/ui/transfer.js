@@ -1,12 +1,13 @@
 // Card-to-card transfer from one of the stored cards. It is dialed: the bank's
 // last menu asks the person to type 1, and the bank's SMS verifies it afterwards.
+import { liveCards } from "../core/accounts.js";
 import { BANKS, parseAmount, parsePan } from "../core/money.js";
 import { h } from "./dom.js";
 import { openScanner } from "./scanner.js";
 import { transferSheet } from "./sheets.js";
 
 export function renderTransfer(ctx, r) {
-  const card = ctx.store.state.cards.find((c) => c.id === r.query.get("card")) ?? ctx.store.state.cards[0];
+  const card = liveCards(ctx.store.state).find((c) => c.id === r.query.get("card")) ?? liveCards(ctx.store.state)[0];
   if (!card) return h("div", { class: "empty" }, "Añade una tarjeta para transferir.");
   const { currency } = card;
   const bank = BANKS[card.bank]?.name ?? "";
