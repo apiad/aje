@@ -111,48 +111,49 @@ details p{color:var(--muted);margin:10px 0 0}
 footer{padding:56px 0 40px;color:var(--faint);font-size:15px}
 footer p{max-width:52em;margin:0 0 10px}
 
-/* Qué hace: chapters on the left, a phone running the demo (demo.html) on the right, as aegis's site does */
-.app{width:min(1180px,calc(100vw - 44px));margin-left:calc(50% - min(590px,50vw - 22px));display:grid;grid-template-columns:minmax(0,1fr) auto;gap:64px;align-items:start}
-.steps{max-width:560px;justify-self:end}
-.steps .intro{margin-bottom:0}
-.group{margin:0;padding:22vh 0 0}
-.eyebrow{display:block;font:600 13px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
-.step{padding:14vh 0 0;min-height:46vh}
-.group+.step{padding-top:4vh}
-.step:last-child{min-height:62vh;padding-bottom:8vh}
-.step h4{font:600 25px/1.2 var(--serif);margin:0 0 12px;position:relative;transition:color .3s}
-.step h4::before{content:"";position:absolute;left:-22px;top:.6em;width:10px;height:2px;background:var(--line);transition:background .3s,width .3s}
-.step.on h4::before{background:var(--gold);width:14px}
-.step p{margin:0 0 12px;transition:color .4s}
-.step:not(.on) p,.step:not(.on) h4{color:var(--faint)}
-.step code{font:15px var(--mono);color:var(--gold)}
-.try{font:14px var(--mono);color:var(--gold);background:none;border:1px dashed var(--gold-deep);border-radius:999px;padding:6px 14px;cursor:pointer;margin-top:4px}
-.try::before{content:"▸ "}
-.try:hover{background:var(--surface)}
-.step:not(.on) .try{color:var(--faint);border-color:var(--line)}
-.stage-col{position:sticky;top:max(16px,calc((100vh - var(--ph) - 40px) / 2));display:flex;flex-direction:column;align-items:center;gap:12px}
+/* Qué hace: a sticky stage with a big phone running demo.html. Each beat is one screen of scroll;
+   reaching it shows its caption and plays its animation in the app. */
+.tour{position:relative;margin-top:40px}
+.stage{position:sticky;top:0;height:100vh;height:100svh;width:min(1180px,calc(100vw - 44px));margin-left:calc(50% - min(590px,50vw - 22px));
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:56px}
+.caption{justify-self:end;text-align:right;max-width:330px}
+.caption .eyebrow{display:block;font:600 13px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
+.caption h2{font:600 34px/1.12 var(--serif);margin:10px 0 12px}
+.caption p{margin:0;color:var(--muted)}
+.caption>*{transition:opacity .3s}
+.caption.swap>*:not(.guide){opacity:0}
+.guide{margin-top:22px;font:600 14px var(--sans);color:var(--gold);background:none;border:1px solid var(--gold-deep);border-radius:999px;padding:8px 16px;cursor:pointer}
+.guide.on{background:var(--gold);color:#1d1206;border-color:var(--gold)}
 .phone{--s:.86;width:calc(410px * var(--s));height:calc(884px * var(--s));border-radius:calc(54px * var(--s));padding:calc(10px * var(--s));
-  background:linear-gradient(145deg,#3b2c1f,#120c07 40%,#2b1f15);box-shadow:0 40px 80px -30px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.08),0 0 0 1px #000}
-.screen{width:390px;height:864px;border-radius:44px;overflow:hidden;background:var(--bg);transform:scale(var(--s));transform-origin:0 0;position:relative;display:flex;flex-direction:column}
-.status{height:34px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:4px 30px 0 34px;font:600 14px var(--sans);color:var(--bone);background:#f3e7cf;color:#2c1d0e}
+  background:linear-gradient(145deg,#3b2c1f,#120c07 40%,#2b1f15);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 0 0 1px rgba(0,0,0,.5)}
+.screen{width:390px;height:864px;border-radius:44px;overflow:hidden;transform:scale(var(--s));transform-origin:0 0;position:relative;display:flex;flex-direction:column;background:var(--bg)}
+.status{height:34px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:4px 30px 0 34px;font:600 14px var(--sans);background:#f3e7cf;color:#2c1d0e}
 .status .carrier{display:flex;gap:6px;align-items:center;font-weight:500;font-size:13px}
 .status svg{height:11px}
 @media (prefers-color-scheme:dark){.status{background:#17100a;color:#f1e8d8}}
-.screen iframe{border:0;width:390px;flex:1;display:block;background:var(--bg)}
-.hint{font-size:14px;color:var(--faint);margin:0;text-align:center}
-.reset{font:inherit;color:var(--gold);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+.screen iframe{border:0;width:390px;flex:1;display:block;pointer-events:none}
+.finger{position:absolute;left:0;top:0;width:44px;height:44px;border-radius:50%;pointer-events:none;opacity:0;
+  background:rgba(232,183,101,.32);border:2px solid rgba(232,183,101,.85);transition:transform .45s cubic-bezier(.2,0,0,1),opacity .25s}
+.finger.press{background:rgba(232,183,101,.6);scale:.82}
+.index{list-style:none;margin:0;padding:0;justify-self:start;font-size:14px;counter-reset:b}
+.index li{margin:0}
+.index button{font:inherit;color:var(--faint);background:none;border:0;padding:5px 0;cursor:pointer;text-align:left;display:flex;gap:10px;align-items:center}
+.index button::before{content:"";width:10px;height:2px;background:var(--line);transition:width .3s,background .3s}
+.index .on button{color:var(--bone)}
+.index .on button::before{width:18px;background:var(--gold)}
+.beats{margin-top:-100vh;margin-top:-100svh;pointer-events:none}
+.beat{height:100vh;height:100svh}
+.beat>*{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 @media (max-width:900px){
-  .app{width:auto;margin-left:0;grid-template-columns:1fr;gap:0}
-  .steps{max-width:none;justify-self:stretch}
-  .stage-col{order:-1;top:0;z-index:5;padding:10px 0 8px;background:var(--bg);margin:0 -22px;width:calc(100% + 44px)}
-  .stage-col::after{content:"";position:absolute;left:0;right:0;top:100%;height:28px;background:linear-gradient(var(--bg),transparent);pointer-events:none}
-  .stage-col .hint{display:none}
-  .group{padding-top:10vh}
-  .step{padding-top:8vh;min-height:40vh}
-  .step h4::before{display:none}
+  .stage{width:auto;margin-left:0;grid-template-columns:1fr;grid-template-rows:auto 1fr;gap:10px;align-items:start;padding:14px 0 12px}
+  .caption{justify-self:stretch;text-align:center;max-width:none;height:132px;overflow:hidden}
+  .caption h2{font-size:22px;margin:4px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .caption p{font-size:15px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.8em}
+  .guide{margin-top:8px;padding:5px 12px;font-size:13px}
+  .phone{justify-self:center;align-self:start}
+  .index{display:none}
 }
-@media (prefers-reduced-motion:reduce){.step p,.step h4,.step h4::before{transition:none}}
-
+@media (prefers-reduced-motion:reduce){.finger,.caption>*{transition:none}}
 @media (max-width:820px){
   .hero,.how{grid-template-columns:1fr;gap:30px}
   .features,.channels{grid-template-columns:1fr}
@@ -186,7 +187,7 @@ footer p{max-width:52em;margin:0 0 10px}
     <p class="lede">Ajé consulta el saldo, transfiere y paga la luz, el agua, el gas, el teléfono y Nauta con tus tarjetas de BPA, BANDEC y Banco Metropolitano. Lleva el saldo y los planes de tus líneas Cubacel, y un historial que verifica cada SMS. Todo va por USSD, como Transfermóvil, así que funciona sin datos móviles.</p>
     <div class="ctas">
       <a class="btn gold" href="https://github.com/apiad/aje/releases/latest">Descargar Ajé 1.1</a>
-      <a class="btn ghost" href="#que-hace">Pruébala aquí</a>
+      <a class="btn ghost" id="try-tour" href="#que-hace">Pruébala aquí</a>
     </div>
     <p class="small">Android 8.0 o más reciente. Gratis y de código abierto (MIT).</p>
   </div>
@@ -202,86 +203,37 @@ footer p{max-width:52em;margin:0 0 10px}
   <p><b>Ajé no es una app oficial.</b> No la hacen ni la respaldan ETECSA, Transfermóvil ni ningún banco, y no es un reemplazo de Transfermóvil: hace solo algunas de sus operaciones. Ajé marca los mismos códigos USSD que podrías marcar a mano, desde tu propia línea y con tu propia clave. Úsala bajo tu responsabilidad.</p>
 </div>
 
-<section id="que-hace" class="app">
-  <div class="steps">
-    <h2>Qué hace</h2>
-    <p class="intro">El teléfono de al lado es Ajé, la misma app que instalas, con datos de ejemplo. Cambia con cada párrafo, y puedes tocarlo: nada sale de esta página.</p>
-
-    <h3 class="group"><span class="eyebrow">Tus cuentas</span></h3>
-    <article class="step" data-route="home">
-      <h4>Todas tus cuentas, en una baraja</h4>
-      <p>Tus tarjetas de BPA, BANDEC y Banco Metropolitano, la Tarjeta Clásica y tus líneas Cubacel, una detrás de otra. Ajé sabe por el número de qué banco es cada tarjeta y en qué moneda está. Debajo, las operaciones de la que tienes delante y lo último que hiciste.</p>
-      <p>Añades una tarjeta con una foto: Ajé lee los 16 dígitos en el propio teléfono, y la imagen no se guarda ni se envía.</p>
-      <button class="try" type="button" data-try="next">Pasar a la tarjeta siguiente</button>
-    </article>
-    <article class="step" data-route="home">
-      <h4>Ordena y edita tus cuentas <span class="tag">nuevo en 1.1</span></h4>
-      <p>Cambia el alias de una cuenta, muévela en la baraja, elige cuál va primero y en cada lista de tarjetas, o quítala. A las líneas también les pones nombre, o las escondes.</p>
-      <button class="try" type="button" data-try="edit">Abrir la edición de esta tarjeta</button>
-    </article>
-    <article class="step" data-route="home">
-      <h4>El saldo, sin datos móviles</h4>
-      <p>Tocas Saldo y Ajé marca el código USSD del servicio <code>*444</code>, el mismo que Transfermóvil. Si el banco pide abrir sesión, escribes tu clave; cuando llega el SMS del banco, el saldo aparece en la tarjeta y queda verificado.</p>
-      <p>Si quieres, Ajé recuerda la clave cifrada en el teléfono y pide tu huella cada vez que la usa. Caduca a los 180 días.</p>
-      <button class="try" type="button" data-try="balance">Consultar el saldo (cualquier clave de 4 dígitos sirve aquí)</button>
-    </article>
-
-    <h3 class="group"><span class="eyebrow">Mover dinero</span></h3>
-    <article class="step" data-route="transfer?card={card}">
-      <h4>Transferencias</h4>
-      <p>Escribe la tarjeta de destino o escanéala con la cámara, y el monto. La operación termina en el marcador del teléfono, donde confirmas con 1, como siempre. El SMS del banco la verifica y deja en la tarjeta el saldo que te queda.</p>
-    </article>
-    <article class="step" data-route="plans?sub=3">
-      <h4>Saldo, planes y saldo entre líneas</h4>
-      <p>Saldo, datos, minutos, SMS y vencimiento de cada SIM, prepago o pospago. Compras un plan del catálogo de Cubacel con el saldo de la línea, y pasas saldo a un número o a un contacto. El SMS de Cubacel confirma cada compra y cada envío.</p>
-    </article>
-    <article class="step" data-route="line-charge?sub=4">
-      <h4>Pide saldo con un QR</h4>
-      <p>Ajé dibuja un QR con tu número y el monto. Quien lo escanea con su Ajé te pasa el saldo sin escribir nada, y tu cobro se cierra solo cuando llega el SMS de Cubacel.</p>
-      <button class="try" type="button" data-try="qr">Escanear un QR de ejemplo</button>
-    </article>
-
-    <h3 class="group"><span class="eyebrow">Pagar servicios</span></h3>
-    <article class="step" data-route="pay">
-      <h4>Luz, agua, gas, teléfono y Nauta <span class="tag">nuevo en 1.1</span></h4>
-      <p>Guardas una vez cada cuenta, escribiendo el número o escaneándolo de la factura. Ajé pregunta al banco si debes, te dice cuánto, y pagas con un toque. La pestaña Servicios muestra por cuenta si debes, si pagaste o si toca revisar.</p>
-      <p>El SMS del banco verifica cada pago y dice cuánto se cobró de verdad, con el descuento si lo hubo. Las cuentas de un respaldo de Transfermóvil se ofrecen solas.</p>
-    </article>
-
-    <h3 class="group"><span class="eyebrow">Saber qué pasó</span></h3>
-    <article class="step" data-route="history">
-      <h4>Historial verificado</h4>
-      <p>Cada operación queda anotada, y se marca como verificada cuando llega el SMS que la confirma. Si el teléfono estaba apagado o Ajé cerrada, Revisar SMS lee los SMS de las últimas 72 horas y pone al día el historial. <span class="tag">nuevo en 1.1</span></p>
-    </article>
-    <article class="step" data-route="history/{receipt}">
-      <h4>El SMS, como recibo <span class="tag">nuevo en 1.1</span></h4>
-      <p>Toca una operación verificada y ves su recibo: qué se pagó, a quién, el número de transacción. Es discreto por defecto: esconde tu nombre y tu saldo, para enseñarlo o compartirlo sin más.</p>
-    </article>
-    <article class="step" data-route="inbox">
-      <h4>Te avisa cuando te llega dinero</h4>
-      <p>Una transferencia a tu tarjeta, saldo o una recarga internacional en tu línea, un plan regalado: Ajé lee el SMS, te avisa aunque la app esté cerrada, con el nombre del contacto si lo tienes, y lo anota en el historial.</p>
-      <button class="try" type="button" data-try="received">Simular una transferencia recibida</button>
-    </article>
-
-    <h3 class="group"><span class="eyebrow">Sin empezar de cero</span></h3>
-    <article class="step" data-route="import">
-      <h4>Trae tu Transfermóvil</h4>
-      <p>Abre el respaldo que Transfermóvil guarda en el teléfono y Ajé toma tus tarjetas, tus destinatarios y tus contratos de servicios. Las tarjetas que ya usabas en ese teléfono llegan listas, sin volver a registrarlas.</p>
-    </article>
-    <article class="step" data-route="settings">
-      <h4>Se actualiza, y trabaja aunque no la abras <span class="tag">nuevo en 1.1</span></h4>
-      <p>Ajé busca versiones nuevas en GitHub y te las ofrece tras comprobar que vienen firmadas por el proyecto. Ahora lo hace también en segundo plano: una notificación te avisa de una versión nueva aunque no abras la app. Eliges el canal estable o el beta en Ajustes.</p>
-    </article>
-  </div>
-
-  <div class="stage-col">
-    <div class="phone" id="phone">
-      <div class="screen">
-        <div class="status" aria-hidden="true"><span>9:41</span><span class="carrier">Cubacel <svg viewBox="0 0 18 12"><path d="M1 11h2V8H1zm4 0h2V6H5zm4 0h2V4H9zm4 0h2V1h-2z" fill="currentColor"/></svg> <svg viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="currentColor"/><rect x="2.5" y="2.5" width="13" height="7" rx="1" fill="currentColor"/><path d="M22 4v4" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
-        <iframe id="demo" src="demo.html#/home" title="Ajé con datos de ejemplo" allow="camera 'none'; microphone 'none'" loading="eager"></iframe>
+<section id="que-hace" class="tour" aria-label="Qué hace Ajé, en la app">
+  <div class="stage">
+    <div class="caption" aria-live="polite">
+      <span class="eyebrow" id="cap-eyebrow"></span>
+      <h2 id="cap-title"></h2>
+      <p id="cap-text"></p>
+      <button type="button" class="guide" id="guide">▶ Recorrido guiado</button>
+    </div>
+    <div class="phone" id="phone" aria-hidden="true">
+      <div class="screen" id="screen">
+        <div class="status"><span>9:41</span><span class="carrier">Cubacel <svg viewBox="0 0 18 12"><path d="M1 11h2V8H1zm4 0h2V6H5zm4 0h2V4H9zm4 0h2V1h-2z" fill="currentColor"/></svg> <svg viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="currentColor"/><rect x="2.5" y="2.5" width="13" height="7" rx="1" fill="currentColor"/><path d="M22 4v4" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+        <iframe id="demo" src="demo.html#/home" title="Ajé con datos de ejemplo" tabindex="-1" allow="camera 'none'; microphone 'none'"></iframe>
+        <div class="finger" id="finger"></div>
       </div>
     </div>
-    <p class="hint">Ajé de verdad, con datos inventados. <button type="button" class="reset" data-try="reset">Empezar de nuevo</button></p>
+    <ol class="index" id="index" aria-label="Pasos"></ol>
+  </div>
+
+  <div class="beats">
+    <article class="beat" data-play="deck" data-eyebrow="Tus cuentas"><h3>Todas tus cuentas, en una baraja</h3><p>Tarjetas de BPA, BANDEC, Metropolitano y la Clásica, y tus líneas Cubacel.</p></article>
+    <article class="beat" data-play="edit" data-eyebrow="Tus cuentas" data-new><h3>Ordénalas y ponles nombre</h3><p>Alias, orden, la tarjeta por defecto, o quitarla.</p></article>
+    <article class="beat" data-play="balance" data-eyebrow="Tus cuentas"><h3>El saldo, sin datos móviles</h3><p>Ajé marca el USSD del banco y el SMS lo verifica.</p></article>
+    <article class="beat" data-play="transfer" data-eyebrow="Mover dinero"><h3>Transferir</h3><p>Confirmas en el marcador, como siempre; el SMS del banco la verifica.</p></article>
+    <article class="beat" data-play="plans" data-eyebrow="Mover dinero"><h3>Planes de Cubacel</h3><p>Del catálogo, con el saldo de la línea; Cubacel confirma por SMS.</p></article>
+    <article class="beat" data-play="charge" data-eyebrow="Mover dinero"><h3>Pide saldo con un QR</h3><p>Quien lo escanea te paga, y el cobro se cierra solo.</p></article>
+    <article class="beat" data-play="pay" data-eyebrow="Pagar servicios" data-new><h3>Luz, agua, gas, teléfono y Nauta</h3><p>Ajé pregunta si debes y pagas con un toque.</p></article>
+    <article class="beat" data-play="settle" data-eyebrow="Saber qué pasó" data-new><h3>Historial verificado</h3><p>Revisar SMS pone al día lo que pasó con la app cerrada.</p></article>
+    <article class="beat" data-play="receipt" data-eyebrow="Saber qué pasó" data-new><h3>El SMS, como recibo</h3><p>Discreto: esconde tu nombre y tu saldo.</p></article>
+    <article class="beat" data-play="received" data-eyebrow="Saber qué pasó"><h3>Te avisa cuando te llega dinero</h3><p>Aunque la app esté cerrada, con el nombre del contacto.</p></article>
+    <article class="beat" data-play="import" data-eyebrow="Sin empezar de cero"><h3>Trae tu Transfermóvil</h3><p>Tarjetas, destinatarios y contratos, desde su respaldo.</p></article>
+    <article class="beat" data-play="settings" data-eyebrow="Sin empezar de cero" data-new><h3>Se actualiza sola</h3><p>Busca versiones firmadas, ahora también en segundo plano.</p></article>
   </div>
 </section>
 
@@ -361,60 +313,233 @@ footer p{max-width:52em;margin:0 0 10px}
 </footer>
 </div>
 <script>
-// The phone runs demo.html, the app against its mock. Each chapter moves it to its screen;
-// a "try" button does one thing in it, the way a finger would.
+// Qué hace: the phone runs demo.html, the app against its mock. Each beat plays a short script in it,
+// a finger tapping and typing as a person would. The guided tour plays them in order and scrolls on;
+// any scroll, key or touch by the visitor ends the tour.
 (() => {
   const frame = document.getElementById("demo");
   const phone = document.getElementById("phone");
-  const steps = [...document.querySelectorAll(".step")];
+  const finger = document.getElementById("finger");
+  const caption = document.querySelector(".caption");
+  const guide = document.getElementById("guide");
+  const index = document.getElementById("index");
+  const beats = [...document.querySelectorAll(".beat")];
+  const STOP = Symbol("stop");
   const app = () => frame.contentWindow;
-  const ready = () => app()?.ajeDev?.store;
-  const state = () => app().ajeDev.store.state;
-  const fill = (r) => r.replace("{card}", () => state().cards[0].id)
-    .replace("{receipt}", () => (state().attempts.find((a) => a.op === "41") ?? state().attempts[0]).id);
-  const go = (r) => { if (ready()) app().location.hash = "#/" + fill(r); };
-  const q = (sel) => app().document.querySelector(sel);
-  const later = (fn) => setTimeout(fn, 450);
-  const front = () => `#deck .acct[data-id="card:${state().cards[0].id}"]`;
-  const TRY = {
-    next: () => q('#deck [aria-label="Cuenta siguiente"]')?.click(),
-    edit: () => { go("home"); later(() => q(`${front()} [data-action="edit"]`)?.click()); },
-    balance: () => { go("home"); later(() => q(`${front()} [data-action="balance"]`)?.click()); },
-    qr: () => { go("qr"); later(() => app().dispatchEvent(new (app().CustomEvent)("aje-qr", { detail: "aje:saldo?v=1&n=56666666&m=150&a=Ana" }))); },
-    received: () => { app().ajeDev.bridge.cardReceived(); later(() => go("inbox")); },
-    reset: () => { frame.src = "demo.html#/" + (current?.dataset.route ?? "home").replace(/[?/].*/, ""); },
+  const doc = () => app().document;
+  const dev = () => app()?.ajeDev;
+  const q = (sel) => doc().querySelector(sel);
+  const all = (sel) => [...doc().querySelectorAll(sel)];
+  const withText = (sel, text) => all(sel).find((e) => e.textContent.includes(text));
+  const sleep = (ms, t) => new Promise((ok, no) => setTimeout(() => (t.dead ? no(STOP) : ok()), ms));
+  async function until(fn, t, ms = 12000) {
+    for (const end = Date.now() + ms; ;) {
+      if (t.dead) throw STOP;
+      const v = fn();
+      if (v) return v;
+      if (Date.now() > end) throw new Error("timed out");
+      await sleep(120, t);
+    }
+  }
+  // A wait that may run out without ending the play; stopping still ends it.
+  const soft = (p) => p.catch((e) => { if (e === STOP) throw e; });
+  const go = (r) => { app().location.hash = "#/" + r; };
+  const esc = () => doc().dispatchEvent(new (app().KeyboardEvent)("keydown", { key: "Escape" }));
+  const lift = () => { finger.style.opacity = "0"; };
+  const card = () => dev().store.state.cards[0].id;
+  const front = () => `#deck .acct[data-id="card:${card()}"]`;
+
+  async function tap(target, t) {
+    const el = typeof target === "string" ? await until(() => q(target), t) : target;
+    if (!el) throw new Error(`nothing to tap: ${target}`);
+    el.scrollIntoView({ block: "nearest" });
+    await sleep(60, t);
+    const r = el.getBoundingClientRect();
+    finger.style.opacity = "1";
+    finger.style.transform = `translate(${r.left + r.width / 2 - 22}px,${34 + r.top + r.height / 2 - 22}px)`;
+    await sleep(520, t);
+    finger.classList.add("press");
+    await sleep(150, t);
+    finger.classList.remove("press");
+    el.click();
+    await sleep(380, t);
+  }
+  async function type(sel, text, t) {
+    const el = await until(() => q(sel), t);
+    await tap(el, t);
+    const put = (v) => { el.value = v; el.dispatchEvent(new (app().Event)("input", { bubbles: true })); };
+    put("");
+    for (const ch of text) { put(el.value + ch); await sleep(75, t); }
+    await sleep(250, t);
+  }
+  // The PIN sheet comes when the mock's bank asks for a session; any four digits open it.
+  async function pinIfAsked(t) {
+    await soft(until(() => q("#sheet"), t, 3000));
+    const seen = await soft(until(() => q("#pin") || q('#bill-result:not([data-state="sent"])') || !q("#sheet"), t, 8000));
+    if (seen?.id === "pin") { await type("#pin", "1234", t); await tap("#pin-submit", t); }
+    lift();
+  }
+  const TRANSFER_SMS = "Banco Metropolitano:  La Transferencia fue completada. \n Fecha: 1/2/2026 \n Beneficiario: 9200XXXXXXXX0001 \n" +
+    " Ordenante: CUP \n Monto: 100.00 CUP \n Nro. Transaccion: AB0000XYZ0001 \n Saldo restante: CR 1134.56 CUP ";
+
+  const PLAYS = {
+    async deck(t) {
+      go("home"); await sleep(900, t);
+      for (let i = 0; i < 3; i++) { await tap('#deck [aria-label="Cuenta siguiente"]', t); await sleep(650, t); }
+      for (let i = 0; i < 3; i++) await tap('#deck [aria-label="Cuenta anterior"]', t);
+    },
+    async edit(t) {
+      go("home"); await sleep(900, t);
+      await tap(`${front()} [data-action="edit"]`, t); await sleep(500, t);
+      await type("#edit-alias", "Metro casa", t);
+      await tap("#edit-save", t); lift();
+      await soft(until(() => !q("#sheet"), t, 4000)); await sleep(1200, t);
+    },
+    async balance(t) {
+      go("home"); await sleep(900, t);
+      await tap(`${front()} [data-action="balance"]`, t);
+      await pinIfAsked(t);
+      await soft(until(() => !q("#sheet"), t, 12000)); await sleep(1500, t);
+    },
+    async transfer(t) {
+      go(`transfer?card=${card()}`); await sleep(900, t);
+      await type("#tr-to", "9200 9500 0000 0001", t);
+      await type("#tr-amount", "100", t);
+      await tap("#tr-submit", t); lift();
+      await soft(until(() => q("#sheet .status")?.textContent.includes("marcador"), t, 6000)); await sleep(1600, t);
+      dev().bridge.injectSms("PAGOxMOVIL", TRANSFER_SMS);
+      await soft(until(() => q("#sheet .status")?.textContent.includes("Verificada"), t, 8000)); await sleep(2000, t);
+    },
+    async plans(t) {
+      go("plans?sub=3"); await sleep(1000, t);
+      await tap("#plan-1-2", t); await sleep(900, t);
+      await tap("#plan-buy", t); lift();
+      await soft(until(() => q('#plan-result[data-outcome="bought"]'), t, 12000)); await sleep(2000, t);
+    },
+    async charge(t) {
+      go("line-charge?sub=3"); await sleep(1000, t);
+      if (q("#lc-number")) await type("#lc-number", "5555 5555", t);
+      if (q("#lc-amount")) await type("#lc-amount", "25", t);
+      await tap("#lc-show", t); lift(); await sleep(2200, t);
+      dev().bridge.lineReceived();
+      await soft(until(() => q("#lc-status")?.textContent.includes("Recibido"), t, 8000)); await sleep(2000, t);
+    },
+    async pay(t) {
+      go("pay"); await sleep(1000, t);
+      const row = () => all("#bills [data-bill]").find((r) => r.textContent.includes("Casa"));
+      await tap(row().querySelector("[data-debt]"), t);
+      await pinIfAsked(t);
+      await soft(until(() => !q("#sheet"), t, 12000)); await sleep(1100, t);
+      const pay = row()?.querySelector("[data-pay]");
+      if (pay) { await tap(pay, t); lift(); await soft(until(() => !q("#sheet"), t, 12000)); }
+      await sleep(2000, t);
+    },
+    async settle(t) {
+      go("history"); await sleep(1000, t);
+      await tap("#settle", t); lift();
+      await soft(until(() => q("#settle-note")?.textContent.trim(), t, 8000)); await sleep(2400, t);
+    },
+    async receipt(t) {
+      go("history"); await sleep(900, t);
+      await tap(all('#history .row[data-state="verified"]').find((r) => r.textContent.trim().startsWith("Luz")), t);
+      lift(); await sleep(2600, t);
+    },
+    async received(t) {
+      go("home"); await sleep(1000, t);
+      dev().bridge.cardReceived();
+      await soft(until(() => q("#bell .count"), t, 6000)); await sleep(1000, t);
+      await tap("#bell", t); lift(); await sleep(2600, t);
+    },
+    async import(t) { go("import"); await sleep(2600, t); },
+    async settings(t) {
+      go("settings"); await sleep(1000, t);
+      const check = withText("#settings button", "Buscar actualización");
+      if (check) { await tap(check, t); lift(); }
+      await sleep(2400, t);
+    },
   };
-  let current = null;
-  function show(step) {
-    if (step === current) return;
-    current = step;
-    for (const s of steps) s.classList.toggle("on", s === step);
-    go(step.dataset.route);
+
+  let current = -1;
+  let run = { dead: true };
+  let touring = false;
+  async function play(i) {
+    run.dead = true;
+    const t = (run = { dead: false });
+    lift();
+    try {
+      await until(() => dev()?.store, t, 20000);
+      esc();
+      await PLAYS[beats[i].dataset.play](t);
+    } catch (e) {
+      if (e === STOP) return;
+      console.warn("demo:", beats[i].dataset.play, e);
+    }
+    lift();
+    if (touring && !t.dead) advance(i);
   }
-  for (const b of document.querySelectorAll("[data-try]")) b.addEventListener("click", () => {
-    const step = b.closest(".step");
-    if (step) show(step);
-    if (ready() || b.dataset.try === "reset") TRY[b.dataset.try]();
-  });
-  // The step whose text crosses the middle of the window, or the phone's top edge on a narrow screen.
+  function show(i) {
+    if (i === current) return;
+    current = i;
+    const b = beats[i];
+    caption.classList.add("swap");
+    setTimeout(() => {
+      document.getElementById("cap-eyebrow").textContent = b.dataset.eyebrow + ("new" in b.dataset ? " · nuevo en 1.1" : "");
+      document.getElementById("cap-title").textContent = b.querySelector("h3").textContent;
+      document.getElementById("cap-text").textContent = b.querySelector("p").textContent;
+      caption.classList.remove("swap");
+    }, 200);
+    [...index.children].forEach((li, k) => li.classList.toggle("on", k === i));
+    play(i);
+  }
+  const top = (i) => beats[i].getBoundingClientRect().top + scrollY;
+  const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
   function pick() {
-    const line = matchMedia("(max-width:900px)").matches ? phone.getBoundingClientRect().bottom + innerHeight * .18 : innerHeight / 2;
-    let best = steps[0];
-    for (const s of steps) if (s.getBoundingClientRect().top < line) best = s;
-    show(best);
+    const i = Math.floor((scrollY - top(0)) / innerHeight + 0.5);
+    show(Math.max(0, Math.min(beats.length - 1, i)));
   }
-  addEventListener("scroll", () => requestAnimationFrame(pick), { passive: true });
-  frame.addEventListener("load", () => {
-    const wait = setInterval(() => { if (ready()) { clearInterval(wait); const r = current?.dataset.route; current = null; if (r) pick(); } }, 100);
+  function setTour(on) {
+    touring = on;
+    guide.classList.toggle("on", on);
+    guide.textContent = on ? "■ Detener el recorrido" : "▶ Recorrido guiado";
+  }
+  function advance(i) {
+    if (i + 1 >= beats.length) return setTour(false);
+    setTimeout(() => { if (touring) scrollTo({ top: top(i + 1), behavior: smooth() }); }, 700);
+  }
+  function startTour() {
+    setTour(true);
+    if (Math.abs(scrollY - top(0)) < 4 && current === 0) return play(0);
+    current = -1;
+    scrollTo({ top: top(0), behavior: smooth() });
+  }
+  // The visitor's own hand ends the tour; the tour's scrolling makes none of these events.
+  for (const ev of ["wheel", "touchstart", "keydown", "mousedown"]) addEventListener(ev, (e) => {
+    if (touring && !(ev === "mousedown" && e.target.closest?.("#guide, #try-tour"))) setTour(false);
+  }, { passive: true });
+  guide.addEventListener("click", () => (touring ? setTour(false) : startTour()));
+  for (const a of document.querySelectorAll("#try-tour")) a.addEventListener("click", (e) => { e.preventDefault(); startTour(); });
+
+  beats.forEach((b, k) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = b.querySelector("h3").textContent;
+    btn.addEventListener("click", () => { setTour(false); scrollTo({ top: top(k), behavior: smooth() }); });
+    li.append(btn);
+    index.append(li);
   });
-  // The phone fits the window's height, or half of it on a narrow screen.
+
+  // The phone fills the window's height beside the caption, or below it on a narrow screen.
   function fit() {
     const narrow = matchMedia("(max-width:900px)").matches;
-    const s = Math.min(narrow ? (innerHeight * .5) / 884 : (innerHeight - 70) / 884, narrow ? .62 : .9, (innerWidth - 44) / 410);
+    const room = narrow ? innerHeight - caption.offsetHeight - 40 : innerHeight - 56;
+    const s = Math.max(.4, Math.min(room / 884, (innerWidth - 24) / 410, 1));
     phone.style.setProperty("--s", s.toFixed(3));
-    document.documentElement.style.setProperty("--ph", `${Math.round(884 * s)}px`);
   }
+  addEventListener("scroll", () => requestAnimationFrame(pick), { passive: true });
   addEventListener("resize", () => { fit(); pick(); });
+  // A reload of the frame (not expected, but cheap) replays the beat on screen.
+  frame.addEventListener("load", () => { if (current >= 0) play(current); });
   fit();
   pick();
 })();
