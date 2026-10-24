@@ -61,7 +61,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
 
   function pendingWhere(at, test) {
     // An SMS read back from the inbox can be older than an operation; it never confirms a later one.
-    return state.attempts.find((a) => a.state !== "verified" && at >= a.startedAt && at - a.startedAt < WINDOW_MS && test(a));
+    // One the bank or the phone refused never produced an SMS.
+    return state.attempts.find((a) => a.state !== "verified" && a.state !== "failed" && at >= a.startedAt && at - a.startedAt < WINDOW_MS && test(a));
   }
 
   const store = {
@@ -141,6 +142,8 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       if (!pending) return null;
       confirmCard(pending.cardId);
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", transactionId: sms.transactionId, verifiedAt: at }));
+      const bill = state.bills.find((b) => b.id === pending.billId);
+      if (bill?.paid?.at === pending.startedAt) await store.markBill(bill.id, { paid: { ...bill.paid, verified: true } });
       return at - pending.startedAt;
     },
 
@@ -157,6 +160,7 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
         (state.bills.some((b) => digits(b.number) === digits(sms.number)) ? null : pendingWhere(at, (a) => a.op === "47"));
       if (!pending) return null;
       await store.patch(pending.id, (a) => ({ ...a, state: "verified", debtCents: sms.cents, verifiedAt: at }));
+      await store.markBill(pending.billId, { checked: { at, cents: sms.cents } });
       return at - pending.startedAt;
     },
 
@@ -262,6 +266,13 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
       state.bills = state.bills.some((b) => b.id === saved.id) ? state.bills.map((b) => (b.id === saved.id ? saved : b)) : [...state.bills, saved];
       await commit();
       return saved;
+    },
+
+    /** Keeps what Servicios shows on a saved bill: its last debt check or payment (billStatus). */
+    async markBill(id, patch) {
+      if (!state.bills.some((b) => b.id === id)) return;
+      state.bills = state.bills.map((b) => (b.id === id ? { ...b, ...patch } : b));
+      await commit();
     },
 
     async removeBill(id) {

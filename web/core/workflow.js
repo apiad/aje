@@ -220,6 +220,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       try {
         await bridge.dial(dial(ussd, config, s));
         await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "dialer" }));
+        if (!debt) await markPaid(bill, current(attempt.id));
       } catch (e) {
         // The dialer never opened (no call permission, no dialer): nothing can have been sent.
         await store.patch(attempt.id, (a) => ({ ...a, state: "failed", failureCode: -100 }));
@@ -234,7 +235,14 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const lost = needsLogin(r.reply);
     // The bank's SMS may have verified it before this reply landed: keep it verified.
     await store.patch(attempt.id, (a) => (a.state === "verified" ? { ...a, reply: r.reply } : { ...a, state: lost ? "failed" : "replied", reply: r.reply }));
+    if (!debt && !lost) await markPaid(bill, current(attempt.id));
     return { attempt: current(attempt.id), needsLogin: lost };
+  }
+
+  /** A payment the bank took: Nauta's amount, or the debt the last check found; verified by its SMS. */
+  function markPaid(bill, attempt) {
+    const cents = bill.kind === "nauta" ? Math.round(bill.amount * 100) : bill.checked?.cents ?? null;
+    return store.markBill(bill.id, { paid: { at: attempt.startedAt, cents, verified: attempt.state === "verified" } });
   }
 
   /**
@@ -456,8 +464,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   }
 
   /**
-   * Settles the history with the service SMS of the last 72 hours (issue #28). An SMS Ajé already
-   * handled is skipped. Any other one confirms the unverified operation it matches, as if it had
+   * Settles the history with the service SMS of the last 72 hours (issue #28). Each one confirms the unverified operation it matches, as if it had
    * arrived live, but adds no row, opens no session and gives no notice. One the parser does not
    * know goes to telemetry, redacted, while it is on. Both are remembered, so a second run skips
    * them. Returns how many SMS it read, verified and reported.
@@ -468,9 +475,13 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     for (const { sender, body, sentAt = null, receivedAt, subId = null } of list) {
       const tag = senderTag(sender);
       const key = `${sentAt ?? receivedAt}:${fnv1a(body)}`;
-      if (tag === "number" || store.state.seenSms.includes(key)) continue;
+      if (tag === "number") continue;
+      // A seen SMS may still verify: an older build reported it as unknown. Verifying twice is not
+      // possible, since a verified operation never matches again.
+      const seen = store.state.seenSms.includes(key);
       const known = await settleOne({ sender, body, receivedAt, subId });
       if (known === "verified") result.verified++;
+      if (seen) continue;
       if (known === "unknown") {
         if (!settings().telemetry) continue;
         reportUnparsed(tag, body, "inbox");

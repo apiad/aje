@@ -67,7 +67,8 @@ function settleButton(ctx, a = null) {
     }
     btn.disabled = false;
     btn.textContent = "Revisar SMS";
-    note.textContent = settled.text;
+    // A verified row redraws the screen while settle runs: write to the note that is on screen now.
+    (document.getElementById("settle-note") ?? note).textContent = settled.text;
   } }, icon("sms"), "Revisar SMS");
   return [btn, note];
 }

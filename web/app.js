@@ -21,7 +21,7 @@ import { renderQrScan } from "./ui/qrscan.js";
 import { renderBill, renderPay } from "./ui/pay.js";
 import { autoCheck } from "./ui/updates.js";
 
-const NAV = [["home", "Inicio", "home"], ["pay", "Pagar", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
+const NAV = [["home", "Inicio", "home"], ["pay", "Servicios", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
 
 // `live` screens redraw when the store changes; forms do not, so typing is never lost.
