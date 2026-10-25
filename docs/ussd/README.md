@@ -30,3 +30,11 @@ Safety rules the script keeps:
 After a new capture, rebuild the app's plan catalog from it and commit both outputs:
 
     python3 tools/plan-catalog.py   # writes web/core/plancatalog.js and site/plans.json
+
+`confirm.json` holds the confirmation menus of a card transfer (op 45) and a balance
+transfer (`*234*1`) as the dialer showed them on the `captured` date, one screen per
+operation with its op and its redacted text. They were read with a throwaway build whose
+accessibility service, in capture mode, logs each USSD dialog and only cancels it, so
+nothing was sent. Both were dialed for 1 CUP, so the amounts are the real ones; the card
+number keeps its layout (16 digits, no spaces) as 12 `X` and a made-up last 4, and the
+line becomes `5XXXXXXX`.
