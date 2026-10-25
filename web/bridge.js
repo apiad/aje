@@ -1,7 +1,7 @@
 // The native primitives, over the message channel the WebView shell injects as
 // `ajeNative` (WebViewCompat.addWebMessageListener), or the browser mock when it is absent.
 //
-// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget"|"pickContact"|"contactNames"|"readSms"|"installUpdate"|"wakeAt"|"notify"|"done"|"share", "args": {...}}
+// JS to native: {"id": N, "method": "sendUssd"|"dial"|"listSims"|"requestPermissions"|"ready"|"secretStatus"|"secretSave"|"secretLoad"|"secretForget" (args.unattended on the last three)|"pickContact"|"contactNames"|"readSms"|"installUpdate"|"wakeAt"|"notify"|"done"|"share", "args": {...}}
 // Native to JS: {"id": N, "result": ...} | {"id": N, "error": "..."} | {"id": N, "progress": {received, total}} | {"event": "sms", "sender", "body", "sentAt", "receivedAt", "subId"?}
 //   | {"event": "open", "route": "inbox/<id>"}, when a tapped notification opens the app
 //   | {"event": "wake", "at": ms}, when the shell wakes the open page for its background jobs (web/core/jobs.js)
@@ -73,12 +73,16 @@ export async function connect({ native = globalThis.ajeNative, loadMock = () => 
     requestPermissions: () => call("requestPermissions"),
     // The secret store. Save and load show the fingerprint or screen-lock prompt, so they wait on
     // the person with no timeout; load answers null when nothing is saved or the person cancels.
+    // With `unattended`, they work on the second copy, under a key that needs no authentication:
+    // no prompt, so a job with no window can load it. Save answers false on a phone with no screen lock.
     secretStatus: (name) => call("secretStatus", { name }),
-    secretSave: (name, value, days) => call("secretSave", { name, value, days }),
-    secretLoad: (name) => call("secretLoad", { name }),
+    secretSave: (name, value, days, { unattended = false } = {}) =>
+      call("secretSave", { name, value, days, ...(unattended && { unattended }) }, unattended ? timeoutMs : null),
+    secretLoad: (name, { unattended = false } = {}) => call("secretLoad", { name, ...(unattended && { unattended }) }, unattended ? timeoutMs : null),
     // The system contact picker: the one contact the person picks, {name, number}, or null; no timeout.
     pickContact: () => call("pickContact"),
-    secretForget: (name) => call("secretForget", { name }),
+    // Forgets both copies; with `unattended`, only the second one.
+    secretForget: (name, { unattended = false } = {}) => call("secretForget", { name, ...(unattended && { unattended }) }),
     // The contact names of these numbers, `{number: name}` for those in the contacts. With `ask`, the
     // shell first asks for the contacts permission, so it waits on the person: no timeout.
     contactNames: (numbers, ask) => call("contactNames", { numbers, ask }),

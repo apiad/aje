@@ -83,12 +83,19 @@ class NativeBridge(private val context: Context, private val activity: MainActiv
                     window.permissions.launch(PERMISSIONS)
                 }
                 "secretStatus" -> reply(replyProxy, id, SecretStore.status(context, name(args)))
-                "secretSave" -> SecretStore.save(window(), name(args), args.getString("value"), args.optInt("days", 180)) {
-                    reply(replyProxy, id, it)
+                // The unattended copy needs no prompt, so its branches never ask for a window.
+                "secretSave" -> if (args.optBoolean("unattended")) {
+                    reply(replyProxy, id, SecretStore.saveUnattended(context, name(args), args.getString("value"), args.optInt("days", 180)))
+                } else {
+                    SecretStore.save(window(), name(args), args.getString("value"), args.optInt("days", 180)) { reply(replyProxy, id, it) }
                 }
-                "secretLoad" -> SecretStore.load(window(), name(args)) { reply(replyProxy, id, it ?: JSONObject.NULL) }
+                "secretLoad" -> if (args.optBoolean("unattended")) {
+                    reply(replyProxy, id, SecretStore.loadUnattended(context, name(args)) ?: JSONObject.NULL)
+                } else {
+                    SecretStore.load(window(), name(args)) { reply(replyProxy, id, it ?: JSONObject.NULL) }
+                }
                 "secretForget" -> {
-                    SecretStore.forget(context, name(args))
+                    if (args.optBoolean("unattended")) SecretStore.forgetUnattended(context, name(args)) else SecretStore.forget(context, name(args))
                     reply(replyProxy, id, JSONObject.NULL)
                 }
                 "pickContact" -> window().pickContact { reply(replyProxy, id, it ?: JSONObject.NULL) }

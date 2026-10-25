@@ -248,7 +248,7 @@ test("a login with remember keeps the PIN in the device store for 180 days, unde
   const r = await w.wf.login("METROPOLITANO", "4321", { remember: true });
   assert.equal(r.remembered, true);
   assert.deepEqual(w.bridge.calls.at(-1), { method: "secretSave", args: { name: "pin:METROPOLITANO", days: 180 } });
-  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: true, saved: true, expiresAt: 180 * 86_400_000 });
+  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: true, saved: true, expiresAt: 180 * 86_400_000, unattended: false, deviceSecure: true });
 });
 
 test("a login the phone did not send does not remember the PIN", async () => {

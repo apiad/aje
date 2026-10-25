@@ -61,8 +61,10 @@ off until the person turns it on; the script checks it is there.
 - A bank PIN or a transfer key is a `field(value, true)` in `web/core/ussd.js`. Only
   `dial` returns it; nothing stores, logs or reports a dialed string that carries one.
   The one exception is the PIN the person asks to remember: it goes only to the shell's
-  secret store (`secretSave`), encrypted under a Keystore key that needs the fingerprint
-  or the screen lock on each use, and it lapses after `PIN_DAYS` in `web/core/workflow.js`.
+  secret store (`secretSave`), under a Keystore key that needs the fingerprint or the screen
+  lock on each use. While the person keeps the automatic mode on, a second copy lives under a
+  key that needs no authentication, so a job can use it with no one in front. Both lapse after
+  `PIN_DAYS` in `web/core/workflow.js`, and turning the mode off drops the second copy.
 - Telemetry is opt-in and unlinkable: one event per request, no install id, no time (the
   collector stamps the hour). Texts and error messages go through `redact` in
   `web/core/redact.js` before they are queued: digits become `#`, and any word outside the
