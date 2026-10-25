@@ -1,0 +1,15 @@
+{
+  "captured": "2026-10-25",
+  "android": "14",
+  "maker": "Xiaomi",
+  "screens": [
+    {
+      "op": "45",
+      "text": "Confirmar la Transferencia de 1 CUP a la cuenta: XXXXXXXXXXXX0001 \nIndique 1 para Confirmar"
+    },
+    {
+      "op": "234*1",
+      "text": "Usted va a transferir 1 CUP al numero 5XXXXXXX. Marque 1 para confirmar o 2 para cancelar."
+    }
+  ]
+}
