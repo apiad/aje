@@ -107,8 +107,6 @@
 .nav button{flex:1;border:0;background:none;color:var(--faint);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font:500 10px var(--sans)}
 .nav button svg{width:20px;height:20px}
 .nav button.on{color:var(--gold)}
-.nav .qrbtn{background:var(--gold);color:var(--on-gold);border-radius:14px;padding:7px 0;margin-top:-2px}
-.nav .qrbtn svg{width:22px;height:22px}
 /* motion: one decelerating curve for movement; presses scale with the spring of the shine layer (end of file) */
 :root{--se:cubic-bezier(.2,0,0,1);--sd:300ms}
 .rm *,.rm *:before,.rm *:after{transition-duration:0s!important;animation-duration:0s!important;animation-iteration-count:1!important}
@@ -169,9 +167,6 @@ pre.ev{font:11px/1.45 var(--mono);color:var(--muted);white-space:pre-wrap;overfl
 .remember{display:flex;gap:11px;align-items:center;margin:14px 0 0;font-size:11px;color:var(--muted);line-height:1.4;cursor:pointer}
 .remember b{display:block;font-size:13px;color:var(--bone);font-weight:600}
 .nav{position:relative}
-.nav a .qrbtn{background:var(--gold);color:var(--on-gold);border-radius:14px;width:42px;height:34px;margin-top:-6px;display:grid;place-items:center}
-.nav a .qrbtn svg{width:22px;height:22px}
-.nav a.on .qrbtn{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--gold-deep)}
 .acct .bal.none{font-size:12.5px;font-weight:500;letter-spacing:0;color:#b49a6f}
 .reply .k .spin{width:13px;height:13px;flex:none;border-radius:50%;border:2px solid var(--line);border-top-color:var(--gold);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -286,9 +281,9 @@ progress.dl::-webkit-progress-value{background:var(--gold);border-radius:3px}
 .acct.glint:after{animation:glint 1s cubic-bezier(.3,.1,.2,1)}
 @keyframes glint{from{background-position:160% 0,0 0}to{background-position:-60% 0,0 0}}
 
-.btn,.paybtn,.checkbtn,.qa button,.chips button,.acct .acts button,.addchip,.sbtn,.back,.nav .qrbtn{position:relative;overflow:hidden;
+.btn,.paybtn,.checkbtn,.qa button,.chips button,.acct .acts button,.addchip,.sbtn,.back{position:relative;overflow:hidden;
   transition:transform .5s var(--spring),background-color .2s var(--se),border-color .2s var(--se),opacity .2s var(--se),color .2s var(--se)}
-.btn:active,.paybtn:active,.checkbtn:active,.qa button:active,.chips button:active,.acct .acts button:active,.addchip:active,.sbtn:active,.back:active,.nav a:active .qrbtn{transform:scale(.95);transition-duration:90ms,60ms,60ms,60ms,60ms}
+.btn:active,.paybtn:active,.checkbtn:active,.qa button:active,.chips button:active,.acct .acts button:active,.addchip:active,.sbtn:active,.back:active{transform:scale(.95);transition-duration:90ms,60ms,60ms,60ms,60ms}
 .btn:disabled:active,.paybtn:disabled:active,.chips button:disabled:active{transform:none}
 .qa button svg{transition:transform .5s var(--spring)}
 .qa button:active svg{transform:translateY(-3px) scale(1.14)}
@@ -328,7 +323,7 @@ progress.dl::-webkit-progress-value{background:linear-gradient(90deg,var(--gold)
 
 @media (prefers-reduced-motion:reduce){
   .acct.glint:after,.ripple,.btn.gold:after,.paybtn:after,.reply.pending:after,.reply.settled,.reply.settled:after,.reply.settled .k .dot:before,.reply.settled .k .dot:after,.sheet,.scrim,progress.dl::-webkit-progress-value{animation:none!important}
-  .btn:active,.paybtn:active,.checkbtn:active,.qa button:active,.chips button:active,.acct .acts button:active,.addchip:active,.sbtn:active,.back:active,.nav a:active .qrbtn,.qa button:active svg{transform:none}
+  .btn:active,.paybtn:active,.checkbtn:active,.qa button:active,.chips button:active,.acct .acts button:active,.addchip:active,.sbtn:active,.back:active,.qa button:active svg{transform:none}
 }
 /* The receipt of a verified operation (web/core/receipt.js) in the history detail, and "Mostrar". */
 .receipt{margin-bottom:14px}
@@ -369,3 +364,22 @@ progress.dl::-webkit-progress-value{background:linear-gradient(90deg,var(--gold)
 .rshow .big{margin-top:24px;display:grid;gap:14px}
 .rshow .big span{display:block;font-size:12px;color:var(--muted)}
 .rshow .big b{font:600 22px var(--mono);overflow-wrap:anywhere}
+
+/* Automático (ui/automations.js) */
+.sbar .pill{margin-left:auto;font-size:11px;border-radius:999px;padding:4px 9px;border:1px solid var(--line);color:var(--river);background:var(--river-bg)}
+.sbar .pill.off{color:var(--muted);background:var(--surface)}
+.row.rule{align-items:flex-start;cursor:default}
+.row.rule .tx{cursor:pointer}
+.row.rule .last{font-size:11px;margin-top:5px}
+.last.ok{color:var(--river)}.last.bad{color:var(--clay)}.last.wait{color:var(--muted)}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:4px 0 6px}
+.types button{border:1px solid var(--line);border-radius:12px;padding:10px 9px;font:600 12px var(--sans);display:flex;gap:7px;align-items:center;background:var(--surface);color:var(--bone);text-align:left;cursor:pointer}
+.types button svg{width:16px;height:16px;color:var(--gold);flex:none}
+.types button.on{border-color:var(--gold);background:#2c2010}
+.types button:disabled{opacity:.5;cursor:default}
+.types button small{margin-left:auto;font-size:10px;color:var(--faint);font-weight:500}
+.consent-box p{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 8px}
+.consent-box h3{margin:0 0 10px;font-size:16px}
+.addrule{width:100%;border:1px dashed var(--line);background:none;color:var(--gold);border-radius:13px;padding:12px;font:600 13px var(--sans);margin-top:8px;cursor:pointer}
+.pair .field{flex:1}
+.set-row .cap{width:96px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;color:var(--bone);font:15px var(--sans);text-align:right}

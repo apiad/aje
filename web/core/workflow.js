@@ -11,6 +11,9 @@ import { BANKISH, centsOf, formatMoney, parseBankSms, parseDebtSms, parseLineSms
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
+/** The name a bank's PIN is saved under in the shell's secret store. */
+export const pinName = (bank) => `pin:${bank}`;
+
 /** How long a remembered bank PIN lasts before the app asks for it again. */
 export const PIN_DAYS = 180;
 
@@ -168,7 +171,6 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * The bank PIN can live in the shell's secret store: encrypted with a device key that needs the
    * fingerprint or the screen lock on every use, and dropped after PIN_DAYS. Nothing else keeps it.
    */
-  const pinName = (bank) => `pin:${bank}`;
   async function savedPin(bank) {
     if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
     return bridge.secretStatus(pinName(bank)).catch(() => ({ available: false, saved: false, expiresAt: null }));

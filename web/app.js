@@ -24,8 +24,9 @@ import { renderLineCharge } from "./ui/charge.js";
 import { renderQrScan } from "./ui/qrscan.js";
 import { renderBill, renderPay } from "./ui/pay.js";
 import { autoCheck } from "./ui/updates.js";
+import { renderAutomationRule, renderAutomations } from "./ui/automations.js";
 
-const NAV = [["home", "Inicio", "home"], ["pay", "Servicios", "bolt"], ["qr", "QR", "qr"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
+const NAV = [["home", "Inicio", "home"], ["pay", "Servicios", "bolt"], ["auto", "Automático", "auto"], ["history", "Historial", "history"], ["settings", "Ajustes", "settings"]];
 
 
 // `live` screens redraw when the store changes; forms do not, so typing is never lost.
@@ -43,12 +44,14 @@ const SCREENS = {
   pay: { render: renderPay, live: true },
   bill: { render: renderBill },
   qr: { render: renderQrScan },
+  auto: { render: renderAutomations, live: true },
+  "auto-rule": { render: renderAutomationRule },
 };
 
 // A form or a detail sits one level inside its tab: it slides in from the right and back out.
-const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox", "bill"]);
+const FORMS = new Set(["transfer", "line-transfer", "plans", "line-charge", "add", "import", "inbox", "bill", "qr", "auto-rule"]);
 const DEPTH = (r) => (FORMS.has(r.name) || (r.name === "history" && r.param) ? 1 : 0);
-const tabOf = (r) => (r.name === "bill" ? "pay" : FORMS.has(r.name) ? "home" : r.name);
+const tabOf = (r) => (r.name === "bill" ? "pay" : r.name === "auto-rule" ? "auto" : FORMS.has(r.name) ? "home" : r.name);
 const TABS = NAV.map(([name]) => name);
 const EASE = "cubic-bezier(.2,0,0,1)";
 
@@ -87,7 +90,7 @@ async function boot() {
 
   const view = h("main", { id: "view" });
   const links = NAV.map(([name, label, ic]) => h("a", { href: `#/${name}`, "data-nav": name },
-    name === "qr" ? h("span", { class: "qrbtn" }, icon(ic)) : icon(ic), label));
+    icon(ic), label));
   const ind = h("span", { class: "ind", "aria-hidden": "true" });
   const nav = h("nav", { class: "nav" }, ind, links);
   mount(root, h("div", { style: "display:contents" }, view, nav));
@@ -101,6 +104,7 @@ async function boot() {
     go: (r) => { location.hash = `#/${r}`; },
     act(action, account) {
       if (action === "pay") return ctx.go("pay");
+      if (action === "qr") return ctx.go("qr");
       if (action === "transfer") return ctx.go(`transfer?card=${account.cardId}`);
       if (action === "line-transfer") return ctx.go(`line-transfer?sub=${account.subId}`);
       if (action === "plans") return ctx.go(`plans?sub=${account.subId}`);

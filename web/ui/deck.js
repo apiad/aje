@@ -19,7 +19,7 @@ const ACTIONS = {
     ["balance", "Ver saldo", "card"],
     ["transfer", "Transferir", "send"],
     ["pay", "Servicios", "bolt"],
-    ["soon", "Cobrar o pagar con QR", "qr"],
+    ["qr", "Cobrar o pagar con QR", "qr"],
   ],
   clasica: [
     ["balance", "Ver saldo", "card"],
