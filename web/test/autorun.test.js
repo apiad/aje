@@ -274,3 +274,12 @@ test("a Nauta account cannot be paid by rule: it asks nothing", async () => {
 });
 
 test("MAX_FAILS is the jobs' own", () => assert.equal(MAX_FAILS, 3));
+
+test("a session lost right before the payment is retried, and that failed try never counts as a payment", async () => {
+  const lost = { ok: true, reply: "No es posible realizar la operacion. Debe autenticarse." };
+  const w = await world({ script: { 47: [DEBT("85.40"), DEBT("85.40")], 46: [SMS.BALANCE, SMS.BALANCE], 41: [lost, BILL_ELECTRICITY] } });
+  assert.equal(await w.run(), "failed");
+  w.clock.t += HOUR;
+  assert.equal(await w.run(), "paid");
+  assert.deepEqual(w.sent.filter((op) => op === "41"), ["41", "41"]);
+});

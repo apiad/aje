@@ -120,14 +120,15 @@ export async function runRule({ store, bridge, workflow, smsMs = SMS_MS, deadlin
   if (deadline - Date.now() < payMarginMs) return transient();
   await store.reload?.();
   if (current().cycle?.month !== month || current().cycle.state !== "open") return null;
-  const paying = (a) => a.billId === bill.id && !a.debt && a.op !== "47" && monthOf(a.startedAt) === month && !(a.state === "failed" && a.failureCode === -1);
+  // A failed attempt paid nothing: the phone or the bank refused it, or the bank wanted a session first.
+  const paying = (a) => a.billId === bill.id && !a.debt && a.op !== "47" && monthOf(a.startedAt) === month && a.state !== "failed";
   if (store.state.attempts.some(paying)) {
     await save((r) => ({ ...close("done", "already")(r), ...last("already") }));
     return "already";
   }
   const paid = await workflow.payBill(bill.id, { debt: false, unattended: true, ruleId: rule.id });
   if (paid.needsMenu) return stop("menu", { amount: money(amount) });
-  if (paid.needsLogin) return transient();
+  if (paid.needsLogin || paid.attempt.state === "failed") return transient();
   // Sent: the month is done, verified or not.
   await save((r) => ({ cycle: { ...r.cycle, state: "done", reason: "sent", paidCents: (r.cycle.paidCents ?? 0) + amount } }));
   const verified = await workflow.waitVerified(paid.attempt.id, wait());
