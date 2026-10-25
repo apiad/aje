@@ -28,6 +28,9 @@ that page to the maintainer; an aegis session sends it as a live artifact with
 change to `web/`. An APK goes out only when `app/` changed or a release is cut, and
 then with a short list of what only a phone can check. The build host has no radio: anything about telephony or SMS is
 verified on a phone, and a report says which of the two a claim came from.
+A change to `app/` is developed with the phone on USB and adb (`adb install -r`, `adb logcat`),
+only while the maintainer's phone is connected; without adb, stop and ask the maintainer to connect
+it. The steps and what to ask at each one are in the maintainer's notes.
 
 ## Releases
 
