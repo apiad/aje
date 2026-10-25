@@ -12,7 +12,7 @@ const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 const WHY = {
   max: "pasa de tu límite", min: "dejaría la tarjeta bajo el mínimo", cap: "pasa del tope del mes", unknown: "el banco no dijo cuánto debes",
   menu: "el banco pide confirmar en un menú", missed: "se cerró la ventana", failed: "el banco no respondió", stopped: "la clave guardada ya no sirve",
-  "no-bill": "el servicio ya no está guardado",
+  "no-bill": "el servicio ya no está guardado", nokey: "falta la clave de su banco",
 };
 
 /** 200000 cents as "2 000.00 CUP", thousands apart with a no-break space. */
@@ -41,6 +41,7 @@ function lastRun(rule, currency) {
   if (last.outcome === "paid") return ["ok", `✓ Pagado ${money(cycle?.paidCents ?? 0, currency)}${when}`];
   if (last.outcome === "unverified") return ["ok", `✓ Pagado ${money(cycle?.paidCents ?? 0, currency)}, sin confirmar${when}`];
   if (last.outcome === "no-debt") return ["wait", `○ Sin deuda${when}`];
+  if (last.outcome === "already") return ["wait", `○ Ya hubo un pago este mes${when}`];
   return ["bad", `✕ No pagado: ${WHY[last.outcome] ?? "no se pudo"}${when}`];
 }
 
@@ -78,7 +79,8 @@ export function renderAutomations(ctx) {
 export function renderAutomationRule(ctx, r) {
   const { store } = ctx;
   const editing = r.param ? store.state.automations.find((x) => x.id === r.param) : null;
-  const bills = store.state.bills;
+  // A Nauta account has no debt to ask; a bill another rule pays is not offered twice.
+  const bills = store.state.bills.filter((b) => b.kind !== "nauta" && !store.state.automations.some((x) => x.billId === b.id && x.id !== editing?.id));
   const s = editing
     ? { billId: editing.billId, from: editing.window.from, to: editing.window.to, max: String(editing.maxCents / 100), min: String(editing.minLeftCents / 100) }
     : { billId: bills[0]?.id ?? null, from: 1, to: 10, max: "", min: "" };
@@ -92,8 +94,14 @@ export function renderAutomationRule(ctx, r) {
     if (s.from > s.to) return fail("El primer día va antes del último.");
     if (!(max > 0)) return fail("Pon cuánto puede pagar como mucho cada mes.");
     if (!(min >= 0)) return fail("El mínimo que se deja en la tarjeta es un número.");
+    const card = store.state.cards.find((c) => c.id === bills.find((b) => b.id === s.billId)?.cardId);
+    if (!card) return fail("Ese servicio no tiene tarjeta para pagar. Elígela en Servicios.");
+    if (!(await ctx.workflow.savedPin(ctx.workflow.sessionOf(card.bank))).unattended) {
+      return fail("Ajé no tiene la clave del banco de esa tarjeta. Guárdala al consultar un saldo y activa el modo de nuevo en Ajustes.");
+    }
     const window = { from: s.from, to: s.to };
-    const changed = !editing || editing.billId !== s.billId || editing.window.from !== s.from || editing.window.to !== s.to;
+    // The month's record stays with its bill, so editing a window or a limit never pays the month again.
+    const changed = !editing || editing.billId !== s.billId;
     await store.saveAutomation({
       id: editing?.id ?? null, type: "bill", billId: s.billId, window, maxCents: Math.round(max * 100), minLeftCents: Math.round(min * 100),
       on: editing?.on ?? true, cycle: changed ? null : editing.cycle, last: changed ? null : editing.last,

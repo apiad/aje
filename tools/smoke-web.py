@@ -941,6 +941,7 @@ def automation_rules(page):
     page.evaluate("""async () => {
         const s = ajeDev.store;
         await s.update({ automation: { on: true, capCents: 1000000 } });
+        await ajeDev.bridge.secretSave("pin:METROPOLITANO", "1234", 180, { unattended: true });
         if (!s.state.bills.some((b) => b.number === "1234567890999"))
             await s.saveBill({ kind: "electricity", alias: "Taller", number: "1234567890999", cardId: s.state.cards[0].id });
     }""")

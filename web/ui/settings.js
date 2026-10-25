@@ -3,7 +3,7 @@
 import { PRIVACY_URL } from "./consent.js";
 import { simLabel as slotLabel } from "../core/accounts.js";
 import { BANKS } from "../core/money.js";
-import { pinName, PIN_DAYS } from "../core/workflow.js";
+import { pinName, PIN_BANKS, PIN_DAYS } from "../core/workflow.js";
 import { h } from "./dom.js";
 import { openSheet } from "./sheets.js";
 import { updateSettings } from "./updates.js";
@@ -30,9 +30,6 @@ function pinRow(ctx, bank) {
   return box;
 }
 
-// The banks whose PIN Ajé can keep: those a card logs in to on its own.
-const PIN_BANKS = Object.keys(BANKS).filter((b) => BANKS[b].agency && !BANKS[b].session);
-
 /**
  * Turns the automatic mode on: each saved bank PIN is unlocked once with the fingerprint and saved
  * again under the key that needs none. Answers the reason it could not, or null.
@@ -45,9 +42,12 @@ async function turnOn(ctx) {
   if (statuses.some((st) => st && st.deviceSecure === false)) return "Ponle bloqueo de pantalla al teléfono primero.";
   for (const bank of saved) {
     const pin = await bridge.secretLoad(pinName(bank)).catch(() => null);
-    if (!pin) return "No se pudo abrir la clave guardada. Prueba otra vez.";
-    if (!(await bridge.secretSave(pinName(bank), pin, PIN_DAYS, { unattended: true }).catch(() => false))) {
-      return "Ponle bloqueo de pantalla al teléfono primero.";
+    const why = !pin ? "No se pudo abrir la clave guardada. Prueba otra vez."
+      : !(await bridge.secretSave(pinName(bank), pin, PIN_DAYS, { unattended: true }).catch(() => false)) ? "Ponle bloqueo de pantalla al teléfono primero." : null;
+    // Half on is off: the copies already made go.
+    if (why) {
+      await ctx.workflow.dropUnattended();
+      return why;
     }
   }
   await store.update({ automation: { ...store.state.settings.automation, on: true } });
@@ -56,7 +56,7 @@ async function turnOn(ctx) {
 
 /** Turns it off: the copies that need no fingerprint go, and every rule stops. */
 async function turnOff(ctx) {
-  await Promise.all(PIN_BANKS.map((b) => ctx.bridge.secretForget(pinName(b), { unattended: true }).catch(() => null)));
+  await ctx.workflow.dropUnattended();
   await ctx.store.update({ automation: { ...ctx.store.state.settings.automation, on: false } });
 }
 
