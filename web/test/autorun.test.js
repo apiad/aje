@@ -5,6 +5,7 @@ import { runRule } from "../core/autorun.js";
 import { automationJob } from "../core/jobs.js";
 import { memoryBackend, openStore } from "../core/store.js";
 import { createWorkflow, PIN_DAYS } from "../core/workflow.js";
+import { MAX_FAILS } from "../core/jobs.js";
 import { BILL_ELECTRICITY, fakeBridge, SMS } from "./helpers.js";
 
 // Local times, as the phone keeps them: October 2026.
@@ -18,11 +19,11 @@ const telemetry = { event() {}, flush: async () => {}, idle: async () => {} };
  * A store with one card, one electricity bill, a rule and the mode on; a bridge whose sendUssd answers
  * by op from `script`, each entry an SMS the bank sends back (or null for none), and records notify.
  */
-async function world({ script = {}, on = true, rule = {}, pin = true, card = {} } = {}) {
+async function world({ script = {}, on = true, rule = {}, pin = true, card = {}, backend = memoryBackend(), ctx: extra = {} } = {}) {
   const clock = { t: at(6, 9) };
   const now = () => clock.t;
   let ids = 0;
-  const store = await openStore(memoryBackend(), { now, newId: () => `id-${++ids}` });
+  const store = await openStore(backend, { now, newId: () => `id-${++ids}` });
   await store.update({ subId: 3, automation: { on, capCents: 1_000_000 } });
   const c = await store.addCard({ alias: "Ahorro", pan: "9227959900000001", bank: "METROPOLITANO", currency: "CUP" });
   await store.updateCard(c.id, { state: "linked", ...card });
@@ -44,7 +45,7 @@ async function world({ script = {}, on = true, rule = {}, pin = true, card = {} 
     return { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" };
   };
   const workflow = createWorkflow({ bridge, store, telemetry, now, seed: () => 61 });
-  const ctx = { store, bridge, workflow, smsMs: 50 };
+  const ctx = { store, bridge, workflow, smsMs: 50, ...extra };
   const rule0 = () => store.state.automations[0];
   return { clock, store, bridge, workflow, ctx, notices, sent, rule: rule0, run: () => runRule(ctx, rule0(), clock.t) };
 }
@@ -193,3 +194,83 @@ test("a rule that throws counts as a failure, so the job is not due again at onc
   assert.deepEqual([w.rule().last.outcome, w.rule().last.failsToday], ["failed", 1]);
   assert.equal(automationJob.nextAt(w.store.state, w.clock.t), w.clock.t + HOUR);
 });
+
+// Review findings.
+
+test("a run cut short after the payment, on a day that already failed, is not due again that day", async () => {
+  const w = await world({ script: { 47: [DEBT("85.40")], 46: [SMS.BALANCE] }, rule: { last: { at: at(6, 9), outcome: "failed", failsToday: 1 } } });
+  w.clock.t = at(6, 10);
+  w.workflow.waitVerified = () => Promise.reject(new Error("the shell closed the page"));
+  await automationJob.run({ ...w.ctx, now: w.clock.t });
+  for (let i = 0; i < 3; i++) {
+    const next = automationJob.nextAt(w.store.state, w.clock.t);
+    assert.ok(next > w.clock.t, `due again at ${new Date(next)}`);
+    w.clock.t = Math.min(next, at(6, 21));
+    await automationJob.run({ ...w.ctx, now: w.clock.t });
+  }
+  assert.equal(w.sent.filter((op) => op === "41").length, 1);
+});
+
+test("with too little time left in the wake-up, nothing is paid and the run counts as a failure", async () => {
+  const w = await world({ script: HAPPY, ctx: { deadline: Date.now() + 5_000 } });
+  assert.equal(await w.run(), "failed");
+  assert.ok(!w.sent.includes("41"));
+});
+
+test("the job asks for a wake-up in an hour before it runs, in case the page is closed mid-run", async () => {
+  const w = await world({ script: HAPPY });
+  const wakes = [];
+  w.bridge.wakeAt = async (t) => { wakes.push(t); };
+  await automationJob.run({ ...w.ctx, now: w.clock.t });
+  assert.deepEqual(wakes, [w.clock.t + HOUR]);
+});
+
+test("a payment of the bill already made this month, by any rule or by hand, is never sent again", async () => {
+  const w = await world({ script: HAPPY });
+  await w.workflow.payBill(w.store.state.bills[0].id);
+  const before = w.sent.filter((op) => op === "41").length;
+  assert.equal(await w.run(), "already");
+  assert.equal(w.sent.filter((op) => op === "41").length, before);
+  assert.equal(w.rule().cycle.state, "done");
+});
+
+test("a stale page reloads the store before it runs, so it sees the payment another page made", async () => {
+  const backend = memoryBackend();
+  const a = await world({ script: HAPPY, backend });
+  // The open page read the document before the background page paid.
+  const stale = await openStore(backend);
+  assert.equal(await a.run(), "paid");
+  a.sent.length = 0;
+  await automationJob.run({ ...a.ctx, store: stale, now: a.clock.t + HOUR });
+  assert.deepEqual(a.sent, []);
+});
+
+test("a login that opens no session stops the automations at once, so a wrong PIN goes out once", async () => {
+  const w = await world({ script: { 47: [{ ok: true, reply: "Debe autenticarse" }], 40: [null] } });
+  assert.equal(await w.run(), "stopped");
+  assert.deepEqual(w.sent, ["47", "40"]);
+  assert.equal(w.store.state.settings.automation.on, false);
+  assert.equal(w.bridge.vault.has("unattended:pin:METROPOLITANO"), false);
+  assert.equal(w.notices[0].title, "Las automatizaciones están detenidas");
+});
+
+test("a rule whose bank has no unattended PIN stops alone while the others keep running", async () => {
+  const w = await world({ script: HAPPY });
+  await w.bridge.secretSave("pin:BANDEC", "1234", PIN_DAYS, { unattended: true });
+  w.bridge.vault.delete("unattended:pin:METROPOLITANO");
+  assert.equal(await w.run(), "nokey");
+  assert.deepEqual(w.sent, []);
+  assert.equal(w.rule().on, false);
+  assert.equal(w.store.state.settings.automation.on, true);
+  assert.equal(w.notices[0].title, "No pagué Luz · Casa");
+});
+
+test("a Nauta account cannot be paid by rule: it asks nothing", async () => {
+  const w = await world({ script: HAPPY });
+  await w.store.saveBill({ ...w.store.state.bills[0], kind: "nauta", number: "usuario", amount: 100 });
+  assert.equal(await w.run(), "no-bill");
+  assert.deepEqual(w.sent, []);
+  assert.ok(nextAt(w.rule(), w.clock.t) > w.clock.t);
+});
+
+test("MAX_FAILS is the jobs' own", () => assert.equal(MAX_FAILS, 3));

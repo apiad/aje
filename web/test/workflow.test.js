@@ -1152,11 +1152,12 @@ test("loginUnattended logs in with the unattended copy and waits for the bank's 
   assert.deepEqual(w.bridge.calls.find((c) => c.method === "secretLoad").args, { name: "pin:METROPOLITANO", unattended: true });
 });
 
-test("loginUnattended answers failed when no session opens in time, and no-key when the bank refuses the PIN", async () => {
-  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Clave incorrecta" }]);
+test("loginUnattended: no-session when no session opens in time, no-key when the bank refuses the PIN, failed when the USSD fails", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Clave incorrecta" }, { ok: false, failureCode: 1 }]);
   await w.bridge.secretSave("pin:METROPOLITANO", "1234", PIN_DAYS, { unattended: true });
-  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "failed");
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "no-session");
   assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "no-key");
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "failed");
 });
 
 test("an unattended payment that meets a menu never dials, and names its rule", async () => {

@@ -57,3 +57,5 @@ test("every notice kind has its copy", () => {
     assert.ok(n.title && n.text && !/[{}]/.test(n.title + n.text), kind);
   }
 });
+test("a failure today does not retry a cycle that closed this month", () =>
+  assert.equal(nextAt(rule({ cycle: { month: "2026-10", state: "done" }, last: { at: at(9, 6, 10), outcome: "failed", failsToday: 2 } }), at(9, 6, 10, 5)), at(10, 5, 9)));

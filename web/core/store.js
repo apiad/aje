@@ -31,8 +31,8 @@ export function memoryBackend(initial = null) {
   return backend;
 }
 
-export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
-  const loaded = await backend.load();
+/** The state of a saved document: defaults fill in what an older build did not write, and dropped keys go. */
+function fromDoc(loaded) {
   const defaults = {
     // `defaultCard` comes first in the deck and in every card choice; `lines` holds each line's alias and whether it is hidden.
     settings: { subId: -1, plans: {}, lineNumbers: {}, lines: {}, defaultCard: null, telemetry: false, telemetryAsked: false, channel: "stable",
@@ -47,7 +47,6 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
     // The automation rules, in the order they were saved (web/core/automations.js).
     automations: [],
   };
-  // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
   // Keys of the one-bank model, which stored cards replaced; nothing is migrated.
   for (const k of ["bank", "currency", "enabledCurrencies"]) delete state.settings[k];
@@ -56,6 +55,11 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   delete state.installId;
   // Levels of the *133 menu read over the API, which the plan catalog replaced.
   delete state.planMenus;
+  return state;
+}
+
+export async function openStore(backend, { now = Date.now, newId = () => crypto.randomUUID() } = {}) {
+  const state = fromDoc(await backend.load());
   const listeners = new Set();
   // An imported card is linked on trust until the bank serves it once (see trm.js and import.js).
   function confirmCard(cardId) {
@@ -83,6 +87,14 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
 
   const store = {
     get state() { return state; },
+
+    /** Reads the saved document again: another page (the one a background wake-up opens) may have written it. */
+    async reload() {
+      const fresh = fromDoc(await backend.load());
+      for (const k of Object.keys(state)) delete state[k];
+      Object.assign(state, fresh);
+      for (const fn of listeners) fn(state);
+    },
 
     subscribe(fn) {
       listeners.add(fn);

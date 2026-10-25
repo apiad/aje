@@ -13,6 +13,8 @@ import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
 
 /** The name a bank's PIN is saved under in the shell's secret store. */
 export const pinName = (bank) => `pin:${bank}`;
+/** The banks whose PIN Ajé can keep: those a card logs in to on its own. */
+export const PIN_BANKS = Object.keys(BANKS).filter((b) => BANKS[b].agency && !BANKS[b].session);
 
 /** How long a remembered bank PIN lasts before the app asks for it again. */
 export const PIN_DAYS = 180;
@@ -184,8 +186,9 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
 
   /**
    * Op 40 with the unattended copy of the PIN, for a job with no one in front. "ok" once the bank's
-   * session opens after the call; "no-key" with no copy, or when the bank refuses the PIN, so a wrong
-   * one is never sent again; "failed" when no session opens within `timeoutMs`.
+   * session opens after the call; "no-key" with no copy, or when the bank refuses the PIN in its
+   * reply; "no-session" when the bank took the login but no session opened within `timeoutMs`, which
+   * may be a wrong PIN refused by SMS; "failed" when the USSD itself did not go out.
    */
   async function loginUnattended(bank, { timeoutMs = 60_000 } = {}) {
     const start = now();
@@ -194,8 +197,17 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const r = await login(bank, pin);
     if (!r.ok) return "failed";
     if (REFUSED.test(r.reply)) return "no-key";
-    return (await until(() => (authenticatedAt(bank) ?? -Infinity) >= start, timeoutMs)) ? "ok" : "failed";
+    return (await until(() => (authenticatedAt(bank) ?? -Infinity) >= start, timeoutMs)) ? "ok" : "no-session";
   }
+
+  /** Whether any bank keeps an unattended copy of its PIN. */
+  async function anyUnattended() {
+    const all = await Promise.all(PIN_BANKS.map((b) => savedPin(b)));
+    return all.some((st) => st.unattended);
+  }
+
+  /** Drops every unattended copy, as turning the automatic mode off does. */
+  const dropUnattended = () => Promise.all(PIN_BANKS.map((b) => bridge.secretForget?.(pinName(b), { unattended: true })?.catch(() => null)));
 
   /**
    * Op 49: registers the phone with a bank. Name, surnames and carné go into the dialed string
@@ -662,5 +674,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, freshBalance, freshDebt, waitVerified, loginUnattended, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
+  return { balance, freshBalance, freshDebt, waitVerified, loginUnattended, anyUnattended, dropUnattended, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
 }

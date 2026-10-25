@@ -54,9 +54,10 @@ export function nextAt(rule, now) {
   if (windowClosed(rule, now)) return now;
   const { last, cycle } = rule;
   const ranToday = last && dayOf(last.at) === dayOf(now);
-  if (ranToday && last.outcome === "failed" && last.failsToday < MAX_FAILS) return last.at + RETRY_MS;
-  const d = new Date(now);
   const closed = cycle && cycle.month === monthOf(now) && cycle.state !== "open";
+  // A cycle that closed this month is never retried, whatever failed after it closed.
+  if (!closed && ranToday && last.outcome === "failed" && last.failsToday < MAX_FAILS) return last.at + RETRY_MS;
+  const d = new Date(now);
   const start = closed ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : new Date(d.getFullYear(), d.getMonth(), d.getDate());
   let slot = null;
   for (let add = 0; add < SEARCH_DAYS && slot === null; add++) {
@@ -94,6 +95,7 @@ const NOTICES = {
   menu: ["Toca para pagar {name}", "El banco pide confirmar en un menú: {amount}."],
   failed: ["No pude pagar {name} hoy", "El banco no respondió. Lo intento mañana."],
   missed: ["No pagué {name} este mes", "Se cerró la ventana sin poder pagar."],
+  nokey: ["No pagué {name}", "Ajé no tiene la clave del banco de esta tarjeta. Guárdala y activa el modo de nuevo en Ajustes."],
   stopped: ["Las automatizaciones están detenidas", "La clave guardada ya no sirve. Actívalas de nuevo en Ajustes."],
 };
 
