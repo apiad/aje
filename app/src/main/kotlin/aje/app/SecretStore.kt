@@ -84,10 +84,13 @@ object SecretStore {
         prompt(activity, "Usar la clave guardada", cipher) { c -> done(c?.doFinal(e.ct)?.decodeToString()) }
     }
 
-    /** Saves the unattended copy with no prompt; false on a phone without a secure screen lock. */
+    /**
+     * Saves the unattended copy with no prompt; false on a phone without a secure screen lock. It
+     * lapses with the fingerprint copy, so turning the mode on again never stretches a PIN's life.
+     */
     fun saveUnattended(context: Context, name: String, value: String, days: Int): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !deviceSecure(context)) return false
-        val expiresAt = System.currentTimeMillis() + days * DAY_MS
+        val expiresAt = entry(context, name)?.expiresAt ?: (System.currentTimeMillis() + days * DAY_MS)
         return try {
             forgetUnattended(context, name)
             val c = Cipher.getInstance("AES/GCM/NoPadding").apply {
@@ -101,8 +104,15 @@ object SecretStore {
         }
     }
 
-    /** The unattended copy, with no prompt; null when there is none or its key no longer works. */
+    /**
+     * The unattended copy, with no prompt; null when there is none or its key no longer works. A key
+     * with no authentication survives the screen lock's removal, so the copy goes with the lock.
+     */
     fun loadUnattended(context: Context, name: String): String? {
+        if (!deviceSecure(context)) {
+            forgetUnattended(context, name)
+            return null
+        }
         val e = entry(context, UNATTENDED + name) ?: return null
         return try {
             val key = keystore().getKey(alias(UNATTENDED + name), null) as SecretKey
