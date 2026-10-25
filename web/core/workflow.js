@@ -7,9 +7,14 @@ import { chargeUri } from "./qr.js";
 import { changeKey, transferBalance as transferBalanceCode } from "./lines.js";
 import { planCode } from "./plans.js";
 import { fnv1a, noticeOf } from "./notice.js";
-import { BANKISH, formatMoney, parseBankSms, parseDebtSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
+import { BANKISH, centsOf, formatMoney, parseBankSms, parseDebtSms, parseLineSms, parsePlanSms, senderTag } from "./sms.js";
 import { WINDOW_MS } from "./store.js";
 import { DEFAULT_CONFIG, dial, display } from "./ussd.js";
+
+/** The name a bank's PIN is saved under in the shell's secret store. */
+export const pinName = (bank) => `pin:${bank}`;
+/** The banks whose PIN Ajé can keep: those a card logs in to on its own. */
+export const PIN_BANKS = Object.keys(BANKS).filter((b) => BANKS[b].agency && !BANKS[b].session);
 
 /** How long a remembered bank PIN lasts before the app asks for it again. */
 export const PIN_DAYS = 180;
@@ -54,12 +59,12 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return r;
   }
 
-  async function balance(cardId, { viaDialer = false } = {}) {
+  async function balance(cardId, { viaDialer = false, ruleId = null } = {}) {
     const card = cardOf(cardId);
     const ussd = card.bank === "CLASICA" ? clasicaBalance(card) : balanceCode(card);
     const s = seed();
     const attempt = await store.add({
-      id: null, startedAt: now(), code: display(ussd, config, s), state: viaDialer ? "dialer" : "sent", op: "46", cardId,
+      id: null, startedAt: now(), code: display(ussd, config, s), state: viaDialer ? "dialer" : "sent", op: "46", cardId, ruleId,
     });
     telemetry.event("ussd_sent", { op: "46", bank: card.bank, via: viaDialer ? "dialer" : "api" });
     if (viaDialer) {
@@ -83,6 +88,53 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
   /** Op 47: asks the bank what a saved bill owes; the answer is the bank's reply, kept on the attempt. */
   const debtQuery = (billId) => payBill(billId, { debt: true });
 
+  /** True once `test()` holds, checked now and on every store change; false after `timeoutMs`. */
+  function until(test, timeoutMs) {
+    if (test()) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const stop = (ok) => {
+        clearTimeout(timer);
+        off();
+        resolve(ok);
+      };
+      const off = store.subscribe(() => { if (test()) stop(true); });
+      const timer = setTimeout(() => stop(false), timeoutMs);
+    });
+  }
+
+  /** Whether the bank's SMS verified this attempt within `timeoutMs`. */
+  const waitVerified = (attemptId, timeoutMs = 180_000) => until(() => current(attemptId)?.state === "verified", timeoutMs);
+
+  // An attempt the bank refused, or one it answered and then verified or refused by SMS.
+  const settled = (id) => ["verified", "failed"].includes(current(id)?.state);
+
+  /**
+   * Op 46 for an automation: the card's balance in cents, from the SMS that answers this very query,
+   * never from one read before. `needs-login` when the bank wants a session; `failed` when the bank
+   * or the phone refused it; `no-sms` when no answer came within `timeoutMs`.
+   */
+  async function freshBalance(cardId, { ruleId = null, timeoutMs = 180_000 } = {}) {
+    const { attempt, needsLogin: lost } = await balance(cardId, { ruleId });
+    if (lost) return { error: "needs-login" };
+    if (!(await until(() => settled(attempt.id), timeoutMs))) return { error: "no-sms" };
+    const a = current(attempt.id);
+    const cents = a.state === "verified" && a.available ? centsOf(a.available.split(" ")[0]) : null;
+    return cents === null ? { error: "failed" } : { cents };
+  }
+
+  /**
+   * Op 47 for an automation: what the bill owes in cents, from the SMS that answers this query; null
+   * when the bank says there is a debt but not how much. Errors as freshBalance, and a menu is `failed`.
+   */
+  async function freshDebt(billId, { ruleId = null, timeoutMs = 180_000 } = {}) {
+    const { attempt, needsLogin: lost, needsMenu } = await payBill(billId, { debt: true, unattended: true, ruleId });
+    if (lost) return { error: "needs-login" };
+    if (needsMenu || attempt.state === "failed") return { error: "failed" };
+    if (!(await until(() => settled(attempt.id), timeoutMs))) return { error: "no-sms" };
+    const a = current(attempt.id);
+    return a.state === "verified" ? { cents: a.debtCents ?? null } : { error: "failed" };
+  }
+
   /**
    * Sends op 40 with the key. The key goes into the dialed string only and nothing here keeps it.
    * With `retryCardId`, the bank's "se ha autenticado" SMS reruns that card's balance query.
@@ -100,6 +152,8 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
       return { ok: false, failureCode: r.failureCode };
     }
     const remembered = remember && bridge.secretSave ? await bridge.secretSave(pinName(bank), pin, PIN_DAYS).catch(() => false) : false;
+    // Saving a PIN drops its unattended copy in the shell: with the automatic mode on, it is saved again.
+    if (remembered && settings().automation?.on) await bridge.secretSave(pinName(bank), pin, PIN_DAYS, { unattended: true }).catch(() => false);
     // A MiTransfer reply that does not refuse the login opens the session, unless it says to wait for
     // the SMS, as phones have seen it do: then that SMS opens it and reruns the balance (handleSms).
     // Any bank's reply that the session is already open opens it too: no SMS follows that one.
@@ -119,7 +173,6 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * The bank PIN can live in the shell's secret store: encrypted with a device key that needs the
    * fingerprint or the screen lock on every use, and dropped after PIN_DAYS. Nothing else keeps it.
    */
-  const pinName = (bank) => `pin:${bank}`;
   async function savedPin(bank) {
     if (!bridge.secretStatus) return { available: false, saved: false, expiresAt: null };
     return bridge.secretStatus(pinName(bank)).catch(() => ({ available: false, saved: false, expiresAt: null }));
@@ -130,6 +183,31 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return pin ? login(bank, pin, options) : null;
   }
   const forgetPin = (bank) => bridge.secretForget?.(pinName(bank));
+
+  /**
+   * Op 40 with the unattended copy of the PIN, for a job with no one in front. "ok" once the bank's
+   * session opens after the call; "no-key" with no copy, or when the bank refuses the PIN in its
+   * reply; "no-session" when the bank took the login but no session opened within `timeoutMs`, which
+   * may be a wrong PIN refused by SMS; "failed" when the USSD itself did not go out.
+   */
+  async function loginUnattended(bank, { timeoutMs = 60_000 } = {}) {
+    const start = now();
+    const pin = bridge.secretLoad ? await bridge.secretLoad(pinName(bank), { unattended: true }).catch(() => null) : null;
+    if (!pin) return "no-key";
+    const r = await login(bank, pin);
+    if (!r.ok) return "failed";
+    if (REFUSED.test(r.reply)) return "no-key";
+    return (await until(() => (authenticatedAt(bank) ?? -Infinity) >= start, timeoutMs)) ? "ok" : "no-session";
+  }
+
+  /** Whether any bank keeps an unattended copy of its PIN. */
+  async function anyUnattended() {
+    const all = await Promise.all(PIN_BANKS.map((b) => savedPin(b)));
+    return all.some((st) => st.unattended);
+  }
+
+  /** Drops every unattended copy, as turning the automatic mode off does. */
+  const dropUnattended = () => Promise.all(PIN_BANKS.map((b) => bridge.secretForget?.(pinName(b), { unattended: true })?.catch(() => null)));
 
   /**
    * Op 49: registers the phone with a bank. Name, surnames and carné go into the dialed string
@@ -202,7 +280,7 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
    * When the bank answers with a menu the API cannot follow, the code goes to the dialer, where the
    * person answers it. `needsLogin` says the bank wants a session first; nothing was paid then.
    */
-  async function payBill(billId, { debt = false } = {}) {
+  async function payBill(billId, { debt = false, unattended = false, ruleId = null } = {}) {
     const bill = store.state.bills.find((b) => b.id === billId);
     if (!bill) throw new RangeError(`no bill ${billId}`);
     const card = cardOf(bill.cardId);
@@ -211,10 +289,15 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     const s = seed();
     const attempt = await store.add({
       id: null, startedAt: now(), code: display(ussd, config, s), state: "sent", op, cardId: card.id, billId, kind: bill.kind, alias: bill.alias,
-      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null, debt,
+      to: bill.kind === "nauta" ? bill.number : null, amount: bill.kind === "nauta" ? bill.amount : null, debt, ruleId,
     });
     telemetry.event("ussd_sent", { op, bank: card.bank, via: "api", kind: bill.kind });
     const r = await send(op, settings().subId, dial(ussd, config, s));
+    // With no one in front, a menu is left alone: nothing was paid.
+    if (!r.ok && r.failureCode === -1 && unattended) {
+      await store.patch(attempt.id, (a) => (a.state === "verified" ? a : { ...a, state: "failed", failureCode: -1 }));
+      return { attempt: current(attempt.id), needsLogin: false, needsMenu: true };
+    }
     if (!r.ok && r.failureCode === -1) {
       telemetry.event("ussd_sent", { op, bank: card.bank, via: "dialer", kind: bill.kind });
       try {
@@ -591,5 +674,5 @@ export function createWorkflow({ bridge, store, telemetry, now = Date.now, seed 
     return sms;
   }
 
-  return { balance, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
+  return { balance, freshBalance, freshDebt, waitVerified, loginUnattended, anyUnattended, dropUnattended, login, loginWithSaved, savedPin, forgetPin, registerBank, registerMiTransfer, sessionOf, linkCard, associateClasica, movements, transfer, payBill, debtQuery, mobileBalance, refreshBalance, transferBalance, savedLineKey, forgetLineKey, changeLineKey, transfersToday, buyPlan, charge, handleSms, openNotice, settle };
 }

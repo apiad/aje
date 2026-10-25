@@ -26,12 +26,32 @@ test("the mock answers both mobile balance codes and lists two SIMs", async () =
 
 test("the mock keeps a secret until it is forgotten", async () => {
   const m = createMock({ delayMs: 0 });
-  assert.deepEqual(await m.secretStatus("pin:BM"), { available: true, saved: false, expiresAt: null });
+  assert.deepEqual(await m.secretStatus("pin:BM"), { available: true, saved: false, expiresAt: null, unattended: false, deviceSecure: true });
   assert.equal(await m.secretSave("pin:BM", "1234", 180), true);
   assert.equal((await m.secretStatus("pin:BM")).saved, true);
   assert.equal(await m.secretLoad("pin:BM"), "1234");
   await m.secretForget("pin:BM");
   assert.equal(await m.secretLoad("pin:BM"), null);
+});
+
+test("an unattended copy is read without the prompt and dropped on its own", async () => {
+  const b = createMock({ delayMs: 0 });
+  await b.secretSave("pin:BANDEC", "1234", 180);
+  assert.equal(await b.secretLoad("pin:BANDEC", { unattended: true }), null);
+  assert.equal(await b.secretSave("pin:BANDEC", "1234", 180, { unattended: true }), true);
+  assert.equal(await b.secretLoad("pin:BANDEC", { unattended: true }), "1234");
+  assert.equal((await b.secretStatus("pin:BANDEC")).unattended, true);
+  await b.secretForget("pin:BANDEC", { unattended: true });
+  assert.equal(await b.secretLoad("pin:BANDEC", { unattended: true }), null);
+  assert.equal(await b.secretLoad("pin:BANDEC"), "1234");
+});
+
+test("forgetting a secret drops both copies", async () => {
+  const b = createMock({ delayMs: 0 });
+  await b.secretSave("pin:BANDEC", "1234", 180);
+  await b.secretSave("pin:BANDEC", "1234", 180, { unattended: true });
+  await b.secretForget("pin:BANDEC");
+  assert.deepEqual([await b.secretLoad("pin:BANDEC"), await b.secretLoad("pin:BANDEC", { unattended: true })], [null, null]);
 });
 
 test("op 49 starts a registration and op 60 links a card once logged in", async () => {

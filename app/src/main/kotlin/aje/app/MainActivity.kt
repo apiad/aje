@@ -214,7 +214,7 @@ class MainActivity : FragmentActivity() {
         const val DOMAIN = "appassets.androidplatform.net"
         const val ORIGIN = "https://$DOMAIN"
         const val ROUTE = "route"
-        val ROUTES = Regex("""^(inbox/\d+:[0-9a-f]+|home|settings)$""")
+        val ROUTES = Regex("""^(inbox/\d+:[0-9a-f]+|home|settings|auto)$""")
 
         /**
          * The settings both pages share, this one and AjeWorker's with no window, and the loader that

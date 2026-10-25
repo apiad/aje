@@ -248,7 +248,7 @@ test("a login with remember keeps the PIN in the device store for 180 days, unde
   const r = await w.wf.login("METROPOLITANO", "4321", { remember: true });
   assert.equal(r.remembered, true);
   assert.deepEqual(w.bridge.calls.at(-1), { method: "secretSave", args: { name: "pin:METROPOLITANO", days: 180 } });
-  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: true, saved: true, expiresAt: 180 * 86_400_000 });
+  assert.deepEqual(await w.wf.savedPin("METROPOLITANO"), { available: true, saved: true, expiresAt: 180 * 86_400_000, unattended: false, deviceSecure: true });
 });
 
 test("a login the phone did not send does not remember the PIN", async () => {
@@ -1097,4 +1097,92 @@ test("a refused payment leaves no paid mark, and the Nauta SMS verifies the rech
   w.clock.t += 30_000;
   await w.sms(NAUTA_SMS);
   assert.deepEqual(w.store.state.bills[0].paid, { at: w.clock.t - 30_000, cents: 10000, verified: true });
+});
+
+// Fresh checks for automations: the bank's SMS lands after the call that asked for it. `box.w` is the
+// world, set once it exists.
+const later = (box, body) => () => {
+  setTimeout(() => box.w.sms(body), 1);
+  return { ok: true, reply: "Su solicitud esta siendo procesada, espere un SMS" };
+};
+
+test("freshBalance ignores a balance read before it and answers with its own SMS", async () => {
+  const box = {};
+  const w = box.w = await world([later(box, SMS.BALANCE)]);
+  await w.store.updateCard(w.card.id, { balance: { available: "99999.00 CUP", at: w.clock.t - MIN, op: "46", attemptId: 99 } });
+  assert.deepEqual(await w.wf.freshBalance(w.card.id, { ruleId: "r1" }), { cents: 120006 });
+  assert.equal(w.store.state.attempts[0].ruleId, "r1");
+});
+
+test("freshBalance answers no-sms when the bank's SMS does not come", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  assert.deepEqual(await w.wf.freshBalance(w.card.id, { timeoutMs: 50 }), { error: "no-sms" });
+});
+
+test("freshBalance answers needs-login when the bank asks for a session", async () => {
+  const w = await world([{ ok: true, reply: "Debe autenticarse" }]);
+  assert.deepEqual(await w.wf.freshBalance(w.card.id, { timeoutMs: 50 }), { error: "needs-login" });
+});
+
+test("freshDebt answers the debt of its own SMS, or null when the SMS gives no figure", async () => {
+  const box = {};
+  const w = box.w = await world([
+    later(box, "Consulta de servicio completada. \r\n La Factura: 1234567890123 tiene una deuda de 85.40 CUP"),
+    later(box, "Consulta de servicio completada. \r\n La Factura: 1234567890123 debe algo"),
+  ]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  assert.deepEqual(await w.wf.freshDebt(bill.id, { ruleId: "r1" }), { cents: 8540 });
+  assert.equal(w.store.state.attempts[0].ruleId, "r1");
+  w.clock.t += MIN;
+  assert.deepEqual(await w.wf.freshDebt(bill.id), { cents: null });
+});
+
+test("loginUnattended answers no-key and sends nothing without the unattended copy", async () => {
+  const w = await world();
+  await w.bridge.secretSave("pin:METROPOLITANO", "1234", PIN_DAYS);
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO"), "no-key");
+  assert.equal(w.bridge.calls.filter((c) => c.method === "sendUssd").length, 0);
+});
+
+test("loginUnattended logs in with the unattended copy and waits for the bank's SMS", async () => {
+  const box = {};
+  const w = box.w = await world([later(box, SMS.AUTH)]);
+  await w.bridge.secretSave("pin:METROPOLITANO", "1234", PIN_DAYS, { unattended: true });
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO"), "ok");
+  assert.deepEqual(w.bridge.calls.find((c) => c.method === "secretLoad").args, { name: "pin:METROPOLITANO", unattended: true });
+});
+
+test("loginUnattended: no-session when no session opens in time, no-key when the bank refuses the PIN, failed when the USSD fails", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Clave incorrecta" }, { ok: false, failureCode: 1 }]);
+  await w.bridge.secretSave("pin:METROPOLITANO", "1234", PIN_DAYS, { unattended: true });
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "no-session");
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "no-key");
+  assert.equal(await w.wf.loginUnattended("METROPOLITANO", { timeoutMs: 50 }), "failed");
+});
+
+test("an unattended payment that meets a menu never dials, and names its rule", async () => {
+  const w = await world([{ ok: false, failureCode: -1 }]);
+  const bill = await w.store.saveBill({ kind: "electricity", alias: "Casa", number: "1234567890123", cardId: w.card.id });
+  const r = await w.wf.payBill(bill.id, { unattended: true, ruleId: "r1" });
+  assert.deepEqual([r.needsLogin, r.needsMenu, r.attempt.ruleId], [false, true, "r1"]);
+  assert.equal(w.bridge.calls.filter((c) => c.method === "dial").length, 0);
+});
+
+test("waitVerified answers whether the attempt's SMS came in time", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  const { attempt } = await w.wf.balance(w.card.id);
+  setTimeout(() => w.sms(SMS.BALANCE), 1);
+  assert.equal(await w.wf.waitVerified(attempt.id, 1000), true);
+  w.clock.t += MIN;
+  const second = await w.wf.balance(w.card.id);
+  assert.equal(await w.wf.waitVerified(second.attempt.id, 50), false);
+});
+
+test("a PIN remembered while the automatic mode is on gets its unattended copy too", async () => {
+  const w = await world([{ ok: true, reply: "Su solicitud esta siendo procesada" }, { ok: true, reply: "Su solicitud esta siendo procesada" }]);
+  await w.wf.login("METROPOLITANO", "1234", { remember: true });
+  assert.equal(w.bridge.vault.has("unattended:pin:METROPOLITANO"), false);
+  await w.store.update({ automation: { on: true, capCents: 1_000_000 } });
+  await w.wf.login("METROPOLITANO", "5678", { remember: true });
+  assert.equal(w.bridge.vault.get("unattended:pin:METROPOLITANO").value, "5678");
 });

@@ -186,3 +186,16 @@ test("wake calls done even when the store write fails", async () => {
   await assert.rejects(wake({ ...s.ctx, now: () => at(6, 10) }, null, [job("a", () => 0)]), /IndexedDB/);
   assert.deepEqual(s.bridge.calls.map(([m]) => m), ["wakeAt", "done"]);
 });
+
+test("nextWake weighs the automation rules with the update job", async () => {
+  const store = await openStore(memoryBackend({
+    settings: { automation: { on: true, capCents: 1_000_000 } },
+    jobRuns: { update: { at: at(4, 19, 1), ok: true, fails: 0 } },
+    automations: [{ id: "r1", type: "bill", billId: "b1", window: { from: 5, to: 10 }, maxCents: 80000, minLeftCents: 0, on: true, cycle: null, last: null }],
+  }));
+  assert.equal(nextWake(store.state, at(4, 20)), at(5, 7));
+  await store.setJobRun("update", { at: at(5, 7), ok: true, fails: 0 });
+  assert.equal(nextWake(store.state, at(5, 7, 1)), at(5, 9));
+  await store.update({ automation: { on: false, capCents: 1_000_000 } });
+  assert.equal(nextWake(store.state, at(5, 7, 1)), at(5, 13));
+});

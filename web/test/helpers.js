@@ -41,29 +41,32 @@ export const POSTPAID_REPLY =
  * A bridge whose sendUssd answers from `replies` in order. Each reply is a result, or a function
  * returning a promise of one, for tests that control when the reply lands. Calls are recorded.
  */
-export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true, inbox = [] } = {}) {
+export function fakeBridge(replies = [], { dialFails = false, secrets = true, unlock = true, inbox = [], deviceSecure = true } = {}) {
   const calls = [];
   const queue = [...replies];
   const vault = new Map();
-  // The device secret store; `unlock: false` is a person who cancels the fingerprint prompt.
+  // The device secret store; `unlock: false` is a person who cancels the fingerprint prompt. The
+  // unattended copy is "unattended:<name>" in the vault; it needs no unlock, only a screen lock.
+  const key = (name, unattended) => (unattended ? `unattended:${name}` : name);
   const secretStore = secrets ? {
     vault,
     async secretStatus(name) {
-      return { available: true, saved: vault.has(name), expiresAt: vault.get(name)?.expiresAt ?? null };
+      return { available: true, saved: vault.has(name), expiresAt: vault.get(name)?.expiresAt ?? null, unattended: vault.has(key(name, true)), deviceSecure };
     },
-    async secretSave(name, value, days) {
-      calls.push({ method: "secretSave", args: { name, days } });
-      if (!unlock) return false;
-      vault.set(name, { value, expiresAt: days * 86_400_000 });
+    async secretSave(name, value, days, { unattended = false } = {}) {
+      calls.push({ method: "secretSave", args: { name, days, ...(unattended && { unattended }) } });
+      if (unattended ? !deviceSecure : !unlock) return false;
+      vault.set(key(name, unattended), { value, expiresAt: days * 86_400_000 });
       return true;
     },
-    async secretLoad(name) {
-      calls.push({ method: "secretLoad", args: { name } });
-      return unlock ? vault.get(name)?.value ?? null : null;
+    async secretLoad(name, { unattended = false } = {}) {
+      calls.push({ method: "secretLoad", args: { name, ...(unattended && { unattended }) } });
+      return unattended || unlock ? vault.get(key(name, unattended))?.value ?? null : null;
     },
-    async secretForget(name) {
-      calls.push({ method: "secretForget", args: { name } });
-      vault.delete(name);
+    async secretForget(name, { unattended = false } = {}) {
+      calls.push({ method: "secretForget", args: { name, ...(unattended && { unattended }) } });
+      vault.delete(key(name, true));
+      if (!unattended) vault.delete(name);
     },
   } : {};
   return {

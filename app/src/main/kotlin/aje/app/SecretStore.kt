@@ -1,5 +1,6 @@
 package aje.app
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -23,12 +24,17 @@ private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val PREFS = "secrets"
 private const val AUTHENTICATORS = BIOMETRIC_STRONG or DEVICE_CREDENTIAL
 private const val DAY_MS = 86_400_000L
+private const val UNATTENDED = "unattended:"
 
 /**
  * Secrets the person asked the app to keep (the bank PIN). Each one is encrypted with its own
  * AES key in the Android Keystore; the key needs the fingerprint or the screen lock on every use
  * and stops working at its expiry, when the entry is also dropped. Only ciphertext touches disk.
  * Android 11 and later: before that a key bound to the screen lock cannot back a crypto prompt.
+ *
+ * While the person keeps the automatic mode on, a second copy lives under its own key that needs no
+ * authentication, so a job with no window can read it. It lapses with the same expiry, and only a
+ * phone with a secure screen lock can hold it.
  */
 object SecretStore {
     fun available(context: Context): Boolean =
@@ -41,12 +47,17 @@ object SecretStore {
             .put("available", available(context))
             .put("saved", expiresAt != null)
             .put("expiresAt", expiresAt ?: JSONObject.NULL)
+            .put("unattended", entry(context, UNATTENDED + name) != null)
+            .put("deviceSecure", deviceSecure(context))
     }
+
+    private fun deviceSecure(context: Context) = context.getSystemService(KeyguardManager::class.java).isDeviceSecure
 
     fun save(activity: FragmentActivity, name: String, value: String, days: Int, done: (Boolean) -> Unit) {
         if (!available(activity)) return done(false)
         val expiresAt = System.currentTimeMillis() + days * DAY_MS
         val cipher = try {
+            // A new PIN also drops the unattended copy: the page saves that one again if the mode is on.
             forget(activity, name)
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, newKey(name, expiresAt)) }
         } catch (_: Exception) {
@@ -67,16 +78,64 @@ object SecretStore {
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, e.iv)) }
         } catch (_: Exception) {
             // A new fingerprint or a removed screen lock invalidates the key: the PIN is gone.
-            forget(activity, name)
+            drop(activity, name)
             return done(null)
         }
         prompt(activity, "Usar la clave guardada", cipher) { c -> done(c?.doFinal(e.ct)?.decodeToString()) }
     }
 
+    /**
+     * Saves the unattended copy with no prompt; false on a phone without a secure screen lock. It
+     * lapses with the fingerprint copy, so turning the mode on again never stretches a PIN's life.
+     */
+    fun saveUnattended(context: Context, name: String, value: String, days: Int): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !deviceSecure(context)) return false
+        val expiresAt = entry(context, name)?.expiresAt ?: (System.currentTimeMillis() + days * DAY_MS)
+        return try {
+            forgetUnattended(context, name)
+            val c = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.ENCRYPT_MODE, newKey(UNATTENDED + name, expiresAt, authenticated = false))
+            }
+            val ct = c.doFinal(value.toByteArray())
+            prefs(context).edit().putString(UNATTENDED + name, "${b64(c.iv)}:${b64(ct)}:$expiresAt").apply()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * The unattended copy, with no prompt; null when there is none or its key no longer works. A key
+     * with no authentication survives the screen lock's removal, so the copy goes with the lock.
+     */
+    fun loadUnattended(context: Context, name: String): String? {
+        if (!deviceSecure(context)) {
+            forgetUnattended(context, name)
+            return null
+        }
+        val e = entry(context, UNATTENDED + name) ?: return null
+        return try {
+            val key = keystore().getKey(alias(UNATTENDED + name), null) as SecretKey
+            Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, e.iv)) }
+                .doFinal(e.ct).decodeToString()
+        } catch (_: Exception) {
+            forgetUnattended(context, name)
+            null
+        }
+    }
+
+    /** Drops both copies, as "Olvidar" means. */
     fun forget(context: Context, name: String) {
-        prefs(context).edit().remove(name).apply()
+        drop(context, name)
+        forgetUnattended(context, name)
+    }
+
+    fun forgetUnattended(context: Context, name: String) = drop(context, UNATTENDED + name)
+
+    private fun drop(context: Context, key: String) {
+        prefs(context).edit().remove(key).apply()
         try {
-            keystore().deleteEntry(alias(name))
+            keystore().deleteEntry(alias(key))
         } catch (_: Exception) {
         }
     }
@@ -92,19 +151,23 @@ object SecretStore {
             null
         }
         if (e == null || e.expiresAt <= System.currentTimeMillis()) {
-            forget(context, name)
+            drop(context, name)
             return null
         }
         return e
     }
 
-    private fun newKey(name: String, expiresAt: Long): SecretKey {
+    private fun newKey(name: String, expiresAt: Long, authenticated: Boolean = true): SecretKey {
         val spec = KeyGenParameterSpec.Builder(alias(name), KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
-            .setUserAuthenticationRequired(true)
-            .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+            .apply {
+                if (authenticated) {
+                    setUserAuthenticationRequired(true)
+                    setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+                }
+            }
             .setKeyValidityEnd(Date(expiresAt))
             .build()
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE).apply { init(spec) }.generateKey()
@@ -134,7 +197,9 @@ object SecretStore {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private fun keystore() = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-    private fun alias(name: String) = "aje.secret.$name"
+    // The unattended copy's prefs key is "unattended:<name>", and its Keystore alias "aje.unattended.<name>".
+    private fun alias(key: String) =
+        if (key.startsWith(UNATTENDED)) "aje.unattended.${key.removePrefix(UNATTENDED)}" else "aje.secret.$key"
     private fun b64(b: ByteArray) = Base64.encodeToString(b, Base64.NO_WRAP)
     private fun unb64(s: String) = Base64.decode(s, Base64.NO_WRAP)
 }

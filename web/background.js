@@ -20,7 +20,7 @@ try {
   const workflow = createWorkflow({ bridge, store, telemetry });
   // Sends ready: the shell hands over the SMS it queued and pushes new ones here while the page lives.
   bridge.onSms((sms) => workflow.handleSms(sms).catch(() => {}));
-  await wake({ bridge, store, telemetry, config, fetch }, at);
+  await wake({ bridge, store, telemetry, config, fetch, workflow }, at);
 } catch {
   // Without a store there is nothing to run or schedule; the next opening of the app asks again.
   await bridge.done();

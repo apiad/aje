@@ -898,9 +898,79 @@ def inbox_from_sms(page):
     expect(page.locator("#bell .count")).to_have_count(0)
 
 
+def nav_has_automatico(page):
+    """The bar has Automático where the QR button was; QR lives on in each card's operations."""
+    expect(page.locator("nav.nav a")).to_have_text(["Inicio", "Servicios", "Automático", "Historial", "Ajustes"])
+    expect(page.locator(card_sel(page))).to_have_count(1)
+    page.click('.qa [data-qa="qr"]')
+    expect(page.locator("#qr-scan")).to_be_visible()
+
+
+def automatic_mode(page):
+    """Off, Automático points to Ajustes; turning it on asks for consent, a saved PIN and the screen lock."""
+    page.evaluate("ajeDev.store.update({ automation: { on: false, capCents: 1000000 } })")
+    page.click('nav a[href="#/auto"]')
+    expect(page.locator("#auto")).to_contain_text("Las automatizaciones están apagadas")
+    page.click("#auto-settings")
+    expect(page.locator("#settings")).to_be_visible()
+    page.click("#auto-mode")
+    expect(page.locator("#sheet")).to_contain_text("La clave del banco quedará guardada en el teléfono sin pedir la huella. Quien tenga tu teléfono desbloqueado podría usar Ajé para mover dinero. Ponle bloqueo de pantalla al teléfono.")
+    expect(page.locator("#auto-activate")).to_be_disabled()
+    page.click("#auto-understand")
+    expect(page.locator("#auto-activate")).to_be_enabled()
+    # The mock lost its saved PINs on reload: the sheet asks for one first.
+    page.click("#auto-activate")
+    expect(page.locator("#auto-msg")).to_have_text("Primero guarda la clave del banco: consulta un saldo y marca Recordar.")
+    page.evaluate("ajeDev.bridge.secretSave('pin:METROPOLITANO', '1234', 180)")
+    page.click("#auto-activate")
+    expect(page.locator("#sheet")).to_have_count(0, timeout=10_000)
+    expect(page.locator("#auto-mode")).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("ajeDev.bridge.secretLoad('pin:METROPOLITANO', { unattended: true })") == "1234"
+    page.fill("#auto-cap", "5000")
+    page.locator("#auto-cap").dispatch_event("change")
+    page.wait_for_function("ajeDev.store.state.settings.automation.capCents === 500000")
+    # Off drops the unattended copy and leaves the fingerprint one.
+    page.click("#auto-mode")
+    expect(page.locator("#auto-mode")).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("ajeDev.bridge.secretLoad('pin:METROPOLITANO', { unattended: true })") is None
+    assert page.evaluate("ajeDev.bridge.secretLoad('pin:METROPOLITANO')") == "1234"
+
+
+def automation_rules(page):
+    """A rule to pay a saved bill: created, switched off and deleted."""
+    page.evaluate("""async () => {
+        const s = ajeDev.store;
+        await s.update({ automation: { on: true, capCents: 1000000 } });
+        await ajeDev.bridge.secretSave("pin:METROPOLITANO", "1234", 180, { unattended: true });
+        if (!s.state.bills.some((b) => b.number === "1234567890999"))
+            await s.saveBill({ kind: "electricity", alias: "Taller", number: "1234567890999", cardId: s.state.cards[0].id });
+    }""")
+    page.click('nav a[href="#/auto"]')
+    expect(page.locator("#auto .pill")).to_have_text("● Activo")
+    page.click("#auto-new")
+    expect(page.locator("#auto-rule")).to_be_visible()
+    expect(page.locator("#ar-type button:disabled")).to_have_count(3)
+    page.select_option("#ar-bill", label="Luz · Taller")
+    page.select_option("#ar-from", "5")
+    page.select_option("#ar-to", "10")
+    page.fill("#ar-max", "800")
+    page.fill("#ar-min", "2000")
+    page.click("#ar-save")
+    row = page.locator("#auto [data-rule]").filter(has_text="Luz · Taller")
+    expect(row).to_contain_text("Días 5 a 10 · hasta 800.00 CUP · deja 2 000.00 CUP")
+    expect(row).to_contain_text("Aún no hizo falta")
+    row.locator(".toggle").click()
+    expect(row.locator(".toggle")).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("ajeDev.store.state.automations.find((r) => r.billId && r.maxCents === 80000).on") is False
+    row.locator(".tx").click()
+    expect(page.locator("#ar-max")).to_have_value("800")
+    page.click("#ar-delete")
+    expect(page.locator("#auto [data-rule]")).to_have_count(0)
+
+
 STEPS = [seed_card, deck, balance_with_login, saved_pin_logs_in, transfer_refuses_decimals, mobile_balance, history_and_verified_transfer, receipt_discreet, settle_history,
          double_tap_transfers_once, inbox_from_sms,
-         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
+         line_transfer_by_number, buy_plan_from_catalog, charge_with_the_sims_number, charge_by_qr, pay_by_qr, line_transfer_saved_key, line_transfer_forget_key, no_key_double_tap_sends_once, contact_with_landline, double_tap_sends_once, add_card_linked_bank, add_clasica_via_mitransfer, pending_card_resumes_guide, pending_card_resumes_ask, pending_card_already_in_use, import_backup, pay_bills, import_not_a_backup, nav_has_automatico, automatic_mode, automation_rules, update_beta, refused_login, already_authenticated_login, scanner_without_reader]
 
 
 def main():

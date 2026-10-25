@@ -75,6 +75,21 @@ test("the secret calls post their name and wait on the person without a timeout"
   assert.deepEqual([await save, await load], [true, "1234"]);
 });
 
+test("an unattended secret call says so, and only then, and does not wait forever", async () => {
+  const f = fakeNative();
+  const b = await connect({ native: f.native, timeoutMs: 10 });
+  const load = b.secretLoad("pin:BANDEC", { unattended: true });
+  assert.deepEqual([f.sent.at(-1).method, f.sent.at(-1).args], ["secretLoad", { name: "pin:BANDEC", unattended: true }]);
+  const save = b.secretSave("pin:BANDEC", "1234", 180, { unattended: true });
+  assert.deepEqual(f.sent.at(-1).args, { name: "pin:BANDEC", value: "1234", days: 180, unattended: true });
+  await assert.rejects(load, /no answer to secretLoad/);
+  await assert.rejects(save, /no answer to secretSave/);
+  b.secretForget("pin:BANDEC", { unattended: true });
+  assert.deepEqual(f.sent.at(-1).args, { name: "pin:BANDEC", unattended: true });
+  b.secretForget("pin:BANDEC");
+  assert.deepEqual(f.sent.at(-1).args, { name: "pin:BANDEC" });
+});
+
 test("installUpdate posts the url and checksum and waits for the shell without a timeout", async () => {
   const f = fakeNative();
   const b = await connect({ native: f.native, timeoutMs: 10 });

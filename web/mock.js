@@ -132,22 +132,28 @@ export function createMock({ delayMs = 800, sims = SIMS, mode = MODE } = {}) {
     },
     listSims: async () => sims.map((s) => ({ ...s })),
     requestPermissions: async () => ({ callPhone: true, readPhoneState: true, receiveSms: true }),
-    // The device's fingerprint prompt always succeeds here, except in ?mock=no-unlock.
+    // The device's fingerprint prompt always succeeds here, except in ?mock=no-unlock. The unattended
+    // copy lives under "unattended:<name>", as in the shell; ?mock=no-lock is a phone with no screen lock.
     async secretStatus(name) {
-      return { available: true, saved: secrets.has(name), expiresAt: secrets.get(name)?.expiresAt ?? null };
+      return {
+        available: true, saved: secrets.has(name), expiresAt: secrets.get(name)?.expiresAt ?? null,
+        unattended: secrets.has(`unattended:${name}`), deviceSecure: mode !== "no-lock",
+      };
     },
-    async secretSave(name, value, days) {
+    async secretSave(name, value, days, { unattended = false } = {}) {
       await wait();
-      if (mode === "no-unlock") return false;
-      secrets.set(name, { value, expiresAt: Date.now() + days * 86_400_000 });
+      if (unattended ? mode === "no-lock" : mode === "no-unlock") return false;
+      secrets.set(unattended ? `unattended:${name}` : name, { value, expiresAt: Date.now() + days * 86_400_000 });
       return true;
     },
-    async secretLoad(name) {
+    async secretLoad(name, { unattended = false } = {}) {
+      if (unattended) return secrets.get(`unattended:${name}`)?.value ?? null;
       await wait();
       return mode === "no-unlock" ? null : secrets.get(name)?.value ?? null;
     },
-    async secretForget(name) {
-      secrets.delete(name);
+    async secretForget(name, { unattended = false } = {}) {
+      secrets.delete(`unattended:${name}`);
+      if (!unattended) secrets.delete(name);
     },
     async pickContact() {
       calls.push({ method: "pickContact", args: {} });
