@@ -141,7 +141,7 @@ async function boot() {
 
   // Background work (web/core/jobs.js): the shell wakes Ajé when the next job is due. While this page
   // is alive the shell sends it the wake-up instead of opening a page without a window.
-  const jobs = { bridge, store, telemetry, config, fetch: (url, init) => globalThis.fetch(url, init) };
+  const jobs = { bridge, store, telemetry, config, workflow, fetch: (url, init) => globalThis.fetch(url, init) };
   let asked;
   const schedule = () => {
     const at = nextWake(store.state, Date.now());

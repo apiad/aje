@@ -3,6 +3,8 @@
 // event to the open page, and either one runs `wake`. The shell decides nothing: every rule of when
 // lives here. Each job is {id, nextAt(state, now), run(ctx)}; `run` may return fields to keep in its
 // record, which jobRuns holds as {at, ok, fails, ...}, `fails` counting the failures of the day of `at`.
+import { nextAt as ruleNextAt } from "./automations.js";
+import { runRule } from "./autorun.js";
 import { checkForUpdate, shouldAutoCheck } from "./update.js";
 
 /** Nothing runs from 22:00 to 7:00: a USSD holds the line and a notice at night is a nuisance. */
@@ -71,7 +73,34 @@ export const updateJob = {
   },
 };
 
-export const JOBS = [updateJob];
+/** Pays saved services by rule (web/core/autorun.js): the due rules, one at a time, in the order saved. */
+export const automationJob = {
+  id: "automations",
+  nextAt(state, now) {
+    if (!state.settings.automation?.on) return Infinity;
+    return Math.min(Infinity, ...state.automations.map((r) => ruleNextAt(r, now)).filter((t) => t !== null));
+  },
+  async run(ctx) {
+    const done = [];
+    for (const rule of ctx.store.state.automations) {
+      const r = ctx.store.state.automations.find((x) => x.id === rule.id);
+      if (!r || !ctx.store.state.settings.automation.on) continue;
+      const at = ruleNextAt(r, ctx.now);
+      if (at === null || at > ctx.now) continue;
+      try {
+        done.push(await runRule(ctx, r, ctx.now));
+      } catch {
+        // Counted as a failure, so the rule waits an hour instead of waking Ajé again at once.
+        const fails = r.last && new Date(r.last.at).toDateString() === new Date(ctx.now).toDateString() ? r.last.failsToday : 0;
+        await ctx.store.patchAutomation(r.id, { last: { at: ctx.now, outcome: "failed", failsToday: fails + 1 } });
+        done.push("error");
+      }
+    }
+    return { outcomes: done };
+  },
+};
+
+export const JOBS = [updateJob, automationJob];
 
 /** When the shell should wake Ajé next: the earliest job, never in the past, moved out of the night. */
 export function nextWake(state, now, jobs = JOBS) {
