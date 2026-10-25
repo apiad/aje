@@ -54,7 +54,7 @@ object Notices {
     }
 
     /** The channels a background job (web/core/jobs.js) may post on: id to the name Android's settings show. */
-    private val JOB_CHANNELS = mapOf("updates" to "Actualizaciones")
+    private val JOB_CHANNELS = mapOf("updates" to "Actualizaciones", "automations" to "Automatizaciones")
 
     /** A notification a background job asked for, `{id, channel, title, text, route}`; a tap opens Ajé on `route`. */
     fun job(context: Context, n: JSONObject) {
