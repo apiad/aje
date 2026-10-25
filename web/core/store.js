@@ -18,6 +18,8 @@ const RECEIVED_OPS = { "line-received": "234-in", "card-received": "in-card", "r
 const ATTEMPT = {
   id: null, startedAt: null, code: "", state: "sent", op: "46", cardId: null, subId: null, to: null, amount: null,
   transactionId: null, reply: null, failureCode: null, accounting: null, available: null, verifiedAt: null,
+  // The automation rule that ran this attempt, if any (web/core/autorun.js).
+  ruleId: null,
 };
 
 export function memoryBackend(initial = null) {
@@ -33,13 +35,17 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
   const loaded = await backend.load();
   const defaults = {
     // `defaultCard` comes first in the deck and in every card choice; `lines` holds each line's alias and whether it is hidden.
-    settings: { subId: -1, plans: {}, lineNumbers: {}, lines: {}, defaultCard: null, telemetry: false, telemetryAsked: false, channel: "stable" },
+    settings: { subId: -1, plans: {}, lineNumbers: {}, lines: {}, defaultCard: null, telemetry: false, telemetryAsked: false, channel: "stable",
+      // The automatic mode, and the most all automation rules may move in a month, per currency.
+      automation: { on: false, capCents: 1_000_000 } },
     update: { checkedAt: null, available: null },
     cards: [], bills: [], banks: {}, attempts: [], mobileBalances: {}, mobileDetails: {}, planCatalog: null, retryBalance: null, seenSms: [], inbox: [],
     // What a Transfermóvil backup held that Ajé keeps for later: recipients, contracts, numbers.
     imported: null,
     // What each background job last did: `{at, ok, fails, failDay, ...}` by job id (web/core/jobs.js).
     jobRuns: {},
+    // The automation rules, in the order they were saved (web/core/automations.js).
+    automations: [],
   };
   // A document written by an older build may lack newer keys; defaults fill them in.
   const state = { ...defaults, ...loaded, settings: { ...defaults.settings, ...loaded?.settings } };
@@ -316,6 +322,28 @@ export async function openStore(backend, { now = Date.now, newId = () => crypto.
 
     async removeBill(id) {
       state.bills = state.bills.filter((b) => b.id !== id);
+      await commit();
+    },
+
+    /** Saves an automation rule; a null id gets a new one, a saved id is replaced in place. */
+    async saveAutomation(rule) {
+      const saved = { ...rule, id: rule.id ?? newId() };
+      state.automations = state.automations.some((r) => r.id === saved.id)
+        ? state.automations.map((r) => (r.id === saved.id ? saved : r)) : [...state.automations, saved];
+      await commit();
+      return saved;
+    },
+
+    /** Patches a rule with an object, or replaces it with what a function of the current rule returns. */
+    async patchAutomation(id, patch) {
+      if (!state.automations.some((r) => r.id === id)) return;
+      state.automations = state.automations.map((r) => (r.id !== id ? r : typeof patch === "function" ? patch(r) : { ...r, ...patch }));
+      await commit();
+    },
+
+    /** Removes a rule; the history keeps the attempts it ran. */
+    async removeAutomation(id) {
+      state.automations = state.automations.filter((r) => r.id !== id);
       await commit();
     },
 

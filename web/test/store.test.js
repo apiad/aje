@@ -292,3 +292,35 @@ test("moveCard moves past the default card, which stays first", async () => {
   await s.moveCard(b.id, -1);
   assert.deepEqual(s.state.cards.map((x) => x.id), [b.id, d.id, a.id]);
 });
+
+test("a document from an older build gets the automation defaults", async () => {
+  const s = await openStore(memoryBackend({ settings: { subId: 3 }, attempts: [] }));
+  assert.deepEqual(s.state.settings.automation, { on: false, capCents: 1_000_000 });
+  assert.deepEqual(s.state.automations, []);
+  assert.equal((await s.add(attempt({ id: 1 }))).ruleId, null);
+});
+
+test("saveAutomation gives a new rule an id and replaces a saved one by id", async () => {
+  const s = await openStore(memoryBackend(), { newId: () => "r1" });
+  const r = await s.saveAutomation({ id: null, type: "bill", billId: "b1", on: true });
+  assert.equal(r.id, "r1");
+  await s.saveAutomation({ ...r, on: false });
+  assert.deepEqual(s.state.automations, [{ id: "r1", type: "bill", billId: "b1", on: false }]);
+});
+
+test("patchAutomation takes a patch or a function of the current rule", async () => {
+  const s = await openStore(memoryBackend(), { newId: () => "r1" });
+  await s.saveAutomation({ id: null, type: "bill", last: { failsToday: 1 } });
+  await s.patchAutomation("r1", { on: true });
+  await s.patchAutomation("r1", (r) => ({ ...r, last: { failsToday: r.last.failsToday + 1 } }));
+  assert.deepEqual(s.state.automations[0], { id: "r1", type: "bill", on: true, last: { failsToday: 2 } });
+});
+
+test("removeAutomation keeps the attempts that name the rule", async () => {
+  const s = await openStore(memoryBackend(), { newId: () => "r1" });
+  await s.saveAutomation({ id: null, type: "bill" });
+  await s.add(attempt({ id: 1, ruleId: "r1" }));
+  await s.removeAutomation("r1");
+  assert.deepEqual(s.state.automations, []);
+  assert.equal(s.state.attempts[0].ruleId, "r1");
+});
